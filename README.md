@@ -106,7 +106,8 @@ make deploy
 
 | Command | What it does |
 | --- | --- |
-| `make deploy` | Validate `.env`, test host DB, build & start all services, run health checks |
+| `make deploy` | Pull `origin/main`, regenerate `.env`, stop/remove this stack's containers, rebuild & start all services, run health checks |
+| `./deploy.sh --all-containers` | Same as `make deploy`, but also stops/removes every Docker container on the host |
 | `make ps` | Show running container status |
 | `make logs` | Tail logs from all containers |
 | `make health` | Check HTTP status of API, Games, Web, and Admin |
