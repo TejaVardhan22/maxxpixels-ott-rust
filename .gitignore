@@ -1,0 +1,16 @@
+.env
+.env.ott
+.env.games
+.env.local
+.env.*.local
+.DS_Store
+node_modules/
+target/
+.next/
+dist/
+archive/backups/*.sql
+*.log
+*.exe
+archive/games-service-go/games-service-go
+
+services/media-streamer/credentials.json

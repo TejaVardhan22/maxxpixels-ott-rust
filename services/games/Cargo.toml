@@ -1,0 +1,45 @@
+[package]
+name = "maxx-games-service"
+version = "1.0.0"
+edition = "2021"
+description = "Standalone MaxxPixels games service (PlayforFun SSO launch signing + match webhooks) with its own separate database"
+
+[dependencies]
+# Web engine & runtime
+axum = { version = "0.7", features = ["macros"] }
+tokio = { version = "1.40", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Database (separate games DB)
+sea-orm = { version = "1.1", features = ["sqlx-postgres", "runtime-tokio-rustls"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.10", features = ["v4"] }
+
+# Security & signing
+jsonwebtoken = "9.3"
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
+# HTTP client (user details from main NestJS API)
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# Observability & config
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+dotenvy = "0.15"
+anyhow = "1.0"
+thiserror = "1.0"
+
+[[bin]]
+name = "maxx-games-service"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true

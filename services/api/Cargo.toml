@@ -1,0 +1,106 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/common",
+    "crates/core",
+    "crates/api",
+    "crates/modules/auth",
+    "crates/modules/users",
+    "crates/modules/content",
+    "crates/modules/catalogue",
+    "crates/modules/playback",
+    "crates/modules/subscriptions",
+    "crates/modules/payments",
+    "crates/modules/advertising",
+    "crates/modules/marketing",
+    "crates/modules/watch_history",
+    "crates/modules/notifications",
+    "crates/modules/analytics",
+    "crates/modules/admin",
+    "crates/modules/home_content",
+    "crates/modules/graphql",
+    "crates/integrations/razorpay",
+    "crates/integrations/bunny",
+    "crates/integrations/email",
+    "crates/integrations/oauth",
+    "crates/integrations/kafka",
+    "crates/workers/event_worker",
+    "crates/workers/analytics_worker",
+    "crates/workers/notification_worker",
+    "crates/workers/billing_worker",
+]
+
+[workspace.package]
+version = "2.0.0"
+edition = "2021"
+authors = ["MaxxPixels Engineering <engineering@maxxpixels.com>"]
+license = "Proprietary"
+
+[workspace.dependencies]
+# Internal workspace crates
+maxx-common = { path = "crates/common" }
+maxx-core = { path = "crates/core" }
+maxx-module-auth = { path = "crates/modules/auth" }
+maxx-module-users = { path = "crates/modules/users" }
+maxx-module-content = { path = "crates/modules/content" }
+maxx-module-catalogue = { path = "crates/modules/catalogue" }
+maxx-module-playback = { path = "crates/modules/playback" }
+maxx-module-subscriptions = { path = "crates/modules/subscriptions" }
+maxx-module-payments = { path = "crates/modules/payments" }
+maxx-module-advertising = { path = "crates/modules/advertising" }
+maxx-module-marketing = { path = "crates/modules/marketing" }
+maxx-module-watch-history = { path = "crates/modules/watch_history" }
+maxx-module-notifications = { path = "crates/modules/notifications" }
+maxx-module-analytics = { path = "crates/modules/analytics" }
+maxx-module-admin = { path = "crates/modules/admin" }
+maxx-module-home-content = { path = "crates/modules/home_content" }
+maxx-module-graphql = { path = "crates/modules/graphql" }
+maxx-integration-razorpay = { path = "crates/integrations/razorpay" }
+maxx-integration-bunny = { path = "crates/integrations/bunny" }
+maxx-integration-email = { path = "crates/integrations/email" }
+maxx-integration-kafka = { path = "crates/integrations/kafka" }
+
+# Asynchronous runtime & web engine
+tokio = { version = "1.40", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+regex = { version = "1.10" }
+rand = { version = "0.8" }
+axum = { version = "0.7", features = ["macros", "multipart"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "request-id", "timeout", "compression-gzip"] }
+
+# Database & ORM
+sea-orm = { version = "1.1", features = ["sqlx-postgres", "runtime-tokio-rustls", "macros", "with-chrono", "with-json", "with-rust_decimal"] }
+
+# Serialization & Math
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+rust_decimal = { version = "1.36", features = ["serde-with-str"] }
+uuid = { version = "1.10", features = ["v4", "serde"] }
+
+# Redis & Cache
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager", "aio"] }
+
+# Security & Cryptography
+jsonwebtoken = "9.3"
+argon2 = "0.5"
+bcrypt = "0.15"
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
+# Observability & Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+prometheus = "0.13"
+
+# Networking & HTTP Client
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+dotenvy = "0.15"
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Kafka
+rskafka = { version = "0.5", default-features = false }
+

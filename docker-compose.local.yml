@@ -1,0 +1,58 @@
+# ==============================================================================
+# Local Development Override (adds a local PostgreSQL container)
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+#   # or: make local-up
+#
+# On the VPS (where PostgreSQL runs natively on the host), DO NOT use this file;
+# run `make deploy` or `docker compose up -d --build` directly.
+# ==============================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: maxx-postgres-local
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: localdevpassword
+      POSTGRES_DB: maxxpixels_ott
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_local_data:/var/lib/postgresql/data
+      - ./infra/sql/00_create_local_dbs.sql:/docker-entrypoint-initdb.d/01_create_games_db.sql:ro
+      - ./infra/sql/00_init_schema.sql:/docker-entrypoint-initdb.d/02_init_schema.sql:ro
+      - ./infra/sql/fix_parity_100.sql:/docker-entrypoint-initdb.d/03_fix_parity.sql:ro
+      - ./infra/sql/04_local_schema_sync.sql:/docker-entrypoint-initdb.d/04_local_schema_sync.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d maxxpixels_ott"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - maxx-net
+
+  api:
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:localdevpassword@postgres:5432/maxxpixels_ott?schema=public
+      PUBLIC_BASE_URL: http://127.0.0.1:8081
+
+  games:
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    environment:
+      GAMES_DATABASE_URL: postgres://postgres:localdevpassword@postgres:5432/maxxpixels_games
+
+volumes:
+  postgres_local_data:

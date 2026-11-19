@@ -1,0 +1,22 @@
+[Unit]
+Description=MaxxPixels OTT NestJS API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=maxx-nestjs
+Group=maxx-nestjs
+StateDirectory=maxxpixels-nestjs
+StateDirectoryMode=0750
+WorkingDirectory=/var/lib/maxxpixels-nestjs
+EnvironmentFile=/etc/maxxpixels-ott/backend.env
+ExecStart=/usr/bin/env NODE_ENV=production HOST=127.0.0.1 PORT=8081 /usr/bin/node /opt/maxxpixels-ott/current/backend/dist/main.js
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,8 @@
+{
+  "name": "MaxxPixelsMobile",
+  "displayName": "MaxxPixelsMobile",
+  "react-native-google-mobile-ads": {
+    "android_app_id": "ca-app-pub-2191993313473081~5839116549",
+    "ios_app_id": "ca-app-pub-3940256099942544~1458002511"
+  }
+}

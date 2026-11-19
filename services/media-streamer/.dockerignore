@@ -1,0 +1,6 @@
+.env
+.env.*
+.DS_Store
+*.exe
+credentials.json
+*.log

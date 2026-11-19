@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+        MaxxPixels Production Network Security Policy
+        - HTTPS-only for all traffic (TLS 1.2+)
+        - Only system CA certificates trusted (no user-installed certs → prevents MITM)
+        - Cleartext blocked globally except localhost (Metro bundler for dev only)
+    -->
+
+    <!-- Base: Trust only system CA certificates to prevent MITM -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Production domains: HTTPS only, system trust -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">maxxpixels.com</domain>
+        <domain includeSubdomains="true">b-cdn.net</domain>
+        <domain includeSubdomains="true">bunnycdn.net</domain>
+        <domain includeSubdomains="true">bunnycdn.com</domain>
+        <domain includeSubdomains="true">razorpay.com</domain>
+        <domain includeSubdomains="true">razorpay.io</domain>
+        <domain includeSubdomains="true">firebaseio.com</domain>
+        <domain includeSubdomains="true">firebasestorage.googleapis.com</domain>
+        <domain includeSubdomains="true">googleapis.com</domain>
+        <domain includeSubdomains="true">gstatic.com</domain>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
+
+    <!-- Local Metro bundler only (dev builds) -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

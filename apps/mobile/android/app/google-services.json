@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "20475196962",
+    "project_id": "maxxpixelsott",
+    "storage_bucket": "maxxpixelsott.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:20475196962:android:c5306a59cb77a90decbc7b",
+        "android_client_info": {
+          "package_name": "com.maxxpixels"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCOtafkjuDheRrAJ-97hQejyfXE0I6yAhY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:20475196962:android:c5306a59cb77a90decbc7b",
+        "android_client_info": {
+          "package_name": "com.maxxpixelsmobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCOtafkjuDheRrAJ-97hQejyfXE0I6yAhY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

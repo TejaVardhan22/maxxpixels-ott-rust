@@ -1,0 +1,7 @@
+target/
+**/*.target
+.git/
+.env*
+!*.env.template
+.DS_Store
+Thumbs.db

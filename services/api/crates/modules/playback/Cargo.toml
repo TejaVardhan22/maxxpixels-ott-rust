@@ -1,0 +1,25 @@
+[package]
+name = "maxx-module-playback"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+maxx-common = { workspace = true }
+maxx-core = { workspace = true }
+maxx-integration-kafka = { workspace = true }
+tokio = { workspace = true }
+axum = { workspace = true }
+sea-orm = { workspace = true }
+uuid = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+tower = { workspace = true }
+http-body-util = "0.1"

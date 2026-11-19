@@ -1,0 +1,19 @@
+{
+  "clientId": "maxxpixels-web",
+  "enabled": true,
+  "publicClient": true,
+  "standardFlowEnabled": true,
+  "directAccessGrantsEnabled": true,
+  "redirectUris": [
+    "http://localhost:3000/*",
+    "http://localhost:3000/auth/callback",
+    "https://*.maxxpixels.com/*"
+  ],
+  "webOrigins": [
+    "http://localhost:3000",
+    "*"
+  ],
+  "attributes": {
+    "pkce.code.challenge.method": "S256"
+  }
+}

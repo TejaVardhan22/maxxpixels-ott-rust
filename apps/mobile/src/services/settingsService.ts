@@ -1,0 +1,115 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ApiClient } from './apiClient';
+
+export class SettingsService {
+  private static readonly KEY_WIFI_ONLY = 'settings_wifi_only';
+  private static readonly KEY_AUTOPLAY = 'settings_autoplay';
+  private static readonly KEY_PUSH_NOTIFICATIONS = 'settings_push_notifications';
+  private static readonly KEY_VIDEO_QUALITY = 'settings_video_quality';
+  private static readonly KEY_CELLULAR_DATA = 'settings_cellular_data';
+  private static readonly KEY_PLAYER_THEME = 'settings_player_theme';
+
+  // Default values
+  private static _wifiOnly = false;
+  private static _autoplay = true;
+  private static _pushNotifications = true;
+  private static _videoQuality = 'High'; // High, Medium, Low
+  private static _cellularData = 'Automatic'; // Automatic, Save Data
+  private static _playerTheme = 'netflix'; // netflix, hotstar
+  private static _remoteSettings: Record<string, string> = {};
+
+  public static async init(): Promise<void> {
+    try {
+      const [wifiOnly, autoplay, push, quality, cellular, theme] = await Promise.all([
+        AsyncStorage.getItem(this.KEY_WIFI_ONLY),
+        AsyncStorage.getItem(this.KEY_AUTOPLAY),
+        AsyncStorage.getItem(this.KEY_PUSH_NOTIFICATIONS),
+        AsyncStorage.getItem(this.KEY_VIDEO_QUALITY),
+        AsyncStorage.getItem(this.KEY_CELLULAR_DATA),
+        AsyncStorage.getItem(this.KEY_PLAYER_THEME),
+      ]);
+
+      if (wifiOnly !== null) this._wifiOnly = wifiOnly === 'true';
+      if (autoplay !== null) this._autoplay = autoplay === 'true';
+      if (push !== null) this._pushNotifications = push === 'true';
+      if (quality !== null) this._videoQuality = quality;
+      if (cellular !== null) this._cellularData = cellular;
+      if (theme !== null) this._playerTheme = theme;
+
+      // Fetch remote system settings from Spring Boot backend
+      try {
+        const remote = await ApiClient.getApi('settings');
+        if (remote && typeof remote === 'object') {
+          this._remoteSettings = remote;
+        }
+      } catch {}
+    } catch (e) {
+      console.warn('SettingsService.init error:', e);
+    }
+  }
+
+  public static get wifiOnly(): boolean {
+    return this._wifiOnly;
+  }
+
+  public static get autoplay(): boolean {
+    return this._autoplay;
+  }
+
+  public static get pushNotifications(): boolean {
+    return this._pushNotifications;
+  }
+
+  public static get videoQuality(): string {
+    return this._videoQuality;
+  }
+
+  public static get cellularData(): string {
+    return this._cellularData;
+  }
+
+  public static get playerTheme(): string {
+    return this._playerTheme;
+  }
+
+  public static getRemoteSetting(key: string, defaultValue: string = ''): string {
+    const value: unknown = this._remoteSettings[key];
+    // Backend may return booleans/numbers (e.g. admob_enabled: false); coerce safely.
+    if (value === undefined || value === null || value === '') return defaultValue;
+    return String(value);
+  }
+
+  public static async setWifiOnly(val: boolean): Promise<void> {
+    this._wifiOnly = val;
+    await AsyncStorage.setItem(this.KEY_WIFI_ONLY, String(val));
+  }
+
+  public static async setAutoplay(val: boolean): Promise<void> {
+    this._autoplay = val;
+    await AsyncStorage.setItem(this.KEY_AUTOPLAY, String(val));
+  }
+
+  public static async setPushNotifications(val: boolean): Promise<void> {
+    this._pushNotifications = val;
+    await AsyncStorage.setItem(this.KEY_PUSH_NOTIFICATIONS, String(val));
+  }
+
+  public static async setVideoQuality(val: string): Promise<void> {
+    this._videoQuality = val;
+    await AsyncStorage.setItem(this.KEY_VIDEO_QUALITY, val);
+  }
+
+  public static async setCellularData(val: string): Promise<void> {
+    this._cellularData = val;
+    await AsyncStorage.setItem(this.KEY_CELLULAR_DATA, val);
+  }
+
+  public static async setPlayerTheme(val: string): Promise<void> {
+    this._playerTheme = val;
+    await AsyncStorage.setItem(this.KEY_PLAYER_THEME, val);
+  }
+
+  public static async clearCache(): Promise<void> {
+    throw new Error('Manage cached files from your device app settings.');
+  }
+}

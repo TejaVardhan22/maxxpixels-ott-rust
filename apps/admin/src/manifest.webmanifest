@@ -1,0 +1,40 @@
+{
+  "name": "MaxxPixels OTT - 4K Movies, Web Series & Live TV",
+  "short_name": "MaxxPixels",
+  "description": "Watch 4K UHD movies, web series, live sports, and TV channels on MaxxPixels OTT.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#06070A",
+  "theme_color": "#06070A",
+  "categories": ["entertainment", "movies", "video"],
+  "icons": [
+    {
+      "src": "/assets/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Live TV & Sports",
+      "short_name": "Live TV",
+      "description": "Watch Live Sports & News Channels",
+      "url": "/live"
+    },
+    {
+      "name": "Search Movies",
+      "short_name": "Search",
+      "description": "Search 4K Movies & Shows",
+      "url": "/search"
+    }
+  ]
+}

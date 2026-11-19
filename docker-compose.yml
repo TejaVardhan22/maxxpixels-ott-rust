@@ -1,0 +1,271 @@
+name: maxxpixels
+
+services:
+  # ============================================================================
+  # Redis (runs inside Docker; PostgreSQL runs on the VPS host outside Docker)
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: maxx-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - maxx-net
+
+  # ============================================================================
+  # Confluent Kafka (KRaft mode — no ZooKeeper required)
+  # Consumed by Rust API's spawn_kafka_view_consumer (ott.content.views,
+  # ott.watch.history). Auto-creates topics.
+  # ============================================================================
+  kafka:
+    image: confluentinc/cp-kafka:7.7.1
+    container_name: maxx-kafka
+    restart: unless-stopped
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: "-Xmx512M -Xms256M"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server 127.0.0.1:9092 >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - maxx-net
+
+  # ============================================================================
+  # Main OTT API (Rust + Axum)
+  # Runs built-in cron workers (billing_worker, analytics_worker, event_worker,
+  # notification_worker) + Kafka view consumer.
+  # Connects to PostgreSQL on the VPS host via host.docker.internal.
+  # ============================================================================
+  api:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+    container_name: maxx-api
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${API_PORT:-8081}:8081"
+    environment:
+      RUST_ENV: ${RUST_ENV:-production}
+      RUST_LOG: ${RUST_LOG:-info}
+      HOST: 0.0.0.0
+      PORT: 8081
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://api.maxxpixels.com}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://maxxpixels.com,https://www.maxxpixels.com,https://admin.maxxpixels.com,https://producer.maxxpixels.com}
+
+      # Host VPS PostgreSQL (outside Docker)
+      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_MAX_CONNECTIONS: ${DATABASE_MAX_CONNECTIONS:-25}
+      DATABASE_MIN_CONNECTIONS: ${DATABASE_MIN_CONNECTIONS:-5}
+      DATABASE_CONNECT_TIMEOUT_SEC: ${DATABASE_CONNECT_TIMEOUT_SEC:-10}
+      DATABASE_IDLE_TIMEOUT_SEC: ${DATABASE_IDLE_TIMEOUT_SEC:-300}
+
+      # Docker Redis
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-20}
+
+      # Kafka (Redpanda inside Docker for batched view/watch collection)
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-true}
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
+      KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-maxxott-rust-backend}
+      KAFKA_CONSUMER_GROUP: ${KAFKA_CONSUMER_GROUP:-maxx-ott-group-rust}
+
+      # Notifications & Email (used by built-in notification_worker)
+      FCM_SERVER_KEY: ${FCM_SERVER_KEY:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+
+      # Auth / JWT
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION_SECONDS: ${JWT_EXPIRATION_SECONDS:-86400}
+      JWT_REFRESH_EXPIRATION_SECONDS: ${JWT_REFRESH_EXPIRATION_SECONDS:-2592000}
+
+      # Bunny.net Stream & Storage
+      BUNNY_STREAM_LIBRARY_ID: ${BUNNY_STREAM_LIBRARY_ID:-}
+      BUNNY_STREAM_API_KEY: ${BUNNY_STREAM_API_KEY:-}
+      BUNNY_STREAM_CDN_HOSTNAME: ${BUNNY_STREAM_CDN_HOSTNAME:-}
+      BUNNY_STREAM_TOKEN_AUTH_KEY: ${BUNNY_STREAM_TOKEN_AUTH_KEY:-}
+      BUNNY_STORAGE_ZONE_NAME: ${BUNNY_STORAGE_ZONE_NAME:-}
+      BUNNY_STORAGE_ZONE_PASSWORD: ${BUNNY_STORAGE_ZONE_PASSWORD:-}
+      BUNNY_PULL_ZONE_DOMAIN: ${BUNNY_PULL_ZONE_DOMAIN:-}
+
+      # Payments (Razorpay)
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+
+      # SMS (MSG91)
+      SMS_PROVIDER: ${SMS_PROVIDER:-MSG91}
+      MSG91_AUTH_KEY: ${MSG91_AUTH_KEY:-}
+      MSG91_TEMPLATE_ID: ${MSG91_TEMPLATE_ID:-}
+
+      # Rate limiting
+      DISABLE_RATE_LIMIT: ${DISABLE_RATE_LIMIT:-false}
+      RATE_LIMIT_GENERAL_PER_MINUTE: ${RATE_LIMIT_GENERAL_PER_MINUTE:-600}
+      RATE_LIMIT_AUTH_PER_MINUTE: ${RATE_LIMIT_AUTH_PER_MINUTE:-30}
+      RATE_LIMIT_PAYMENT_PER_MINUTE: ${RATE_LIMIT_PAYMENT_PER_MINUTE:-30}
+    volumes:
+      - api_uploads:/app/uploads
+      - db_backups:/app/backups
+    networks:
+      - maxx-net
+
+  # ============================================================================
+  # Games & Coins Microservice (Rust + Axum)
+  # Connects to the separate games DB on the VPS host PostgreSQL
+  # ============================================================================
+  games:
+    build:
+      context: ./services/games
+      dockerfile: Dockerfile
+    container_name: maxx-games
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${GAMES_PORT:-8090}:8090"
+    environment:
+      NODE_ENV: production
+      GAMES_SERVICE_PORT: 8090
+      GAMES_DATABASE_URL: ${GAMES_DATABASE_URL}
+      MAIN_API_URL: http://api:8081
+      JWT_SECRET: ${JWT_SECRET}
+      PLAYFORFUN_TENANT_ID: ${PLAYFORFUN_TENANT_ID:-maxxpixels}
+      PLAYFORFUN_SECRET: ${PLAYFORFUN_SECRET:-}
+      PLAYER_TTL_SECONDS: ${PLAYER_TTL_SECONDS:-86400}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://maxxpixels.com,https://www.maxxpixels.com}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${GAMES_RAZORPAY_WEBHOOK_SECRET:-${RAZORPAY_WEBHOOK_SECRET:-}}
+      RAZORPAY_CURRENCY: ${RAZORPAY_CURRENCY:-INR}
+      SUBSCRIPTION_GRANT_COINS: ${SUBSCRIPTION_GRANT_COINS:-1000}
+      SUBSCRIPTION_MONTHLY_COINS: ${SUBSCRIPTION_MONTHLY_COINS:-100}
+      COIN_PACKS: ${COIN_PACKS:-}
+    networks:
+      - maxx-net
+
+  # ============================================================================
+  # Web Frontend (Next.js 14 standalone)
+  # ============================================================================
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      args:
+        API_BACKEND_URL: http://api:8081
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-/api/v1}
+        NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-Maxxpixels}
+        NEXT_PUBLIC_FIREBASE_API_KEY: ${NEXT_PUBLIC_FIREBASE_API_KEY:-}
+        NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}
+        NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}
+        NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:-}
+        NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:-}
+        NEXT_PUBLIC_FIREBASE_APP_ID: ${NEXT_PUBLIC_FIREBASE_APP_ID:-}
+        NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT_ID:-}
+        NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION: ${NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION:-}
+        NEXT_PUBLIC_EXTRA_IMAGE_HOSTS: ${NEXT_PUBLIC_EXTRA_IMAGE_HOSTS:-}
+    container_name: maxx-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3001}:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      API_BACKEND_URL: http://api:8081
+    networks:
+      - maxx-net
+
+  # ============================================================================
+  # Admin & Producer Panel (Angular 17 + Nginx)
+  # ============================================================================
+  admin:
+    build:
+      context: ./apps/admin
+      dockerfile: Dockerfile
+    container_name: maxx-admin
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${ADMIN_PORT:-4200}:80"
+    environment:
+      ADMIN_API_HOST: ${ADMIN_API_HOST:-}
+      ADMIN_API_BASE_URL: ${ADMIN_API_BASE_URL:-/api/v1}
+      ADMIN_APP_NAME: ${ADMIN_APP_NAME:-MaxxPixels OTT Admin}
+    networks:
+      - maxx-net
+
+  # ============================================================================
+  # Google Drive -> Bunny Stream Pipeline (Go zero-disk streaming service)
+  # ============================================================================
+  media-streamer:
+    build:
+      context: ./services/media-streamer
+      dockerfile: Dockerfile
+    container_name: maxx-media-streamer
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${STREAMER_PORT:-8085}:8085"
+    environment:
+      BUNNY_STREAM_LIBRARY_ID: ${BUNNY_STREAM_LIBRARY_ID:-}
+      BUNNY_STREAM_API_KEY: ${BUNNY_STREAM_API_KEY:-}
+      BUNNY_STREAM_CDN_HOSTNAME: ${BUNNY_STREAM_CDN_HOSTNAME:-}
+      GDRIVE_TOKEN_PATH: /app/data/token.json
+    volumes:
+      - ./services/media-streamer/credentials.json:/app/credentials.json:ro
+      - streamer_data:/app/data
+    networks:
+      - maxx-net
+
+networks:
+  maxx-net:
+    driver: bridge
+
+volumes:
+  redis_data:
+  kafka_data:
+  api_uploads:
+  db_backups:
+  streamer_data:

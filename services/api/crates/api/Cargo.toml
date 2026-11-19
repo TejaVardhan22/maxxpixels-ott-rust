@@ -1,0 +1,44 @@
+[package]
+name = "maxx-api"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+maxx-common = { workspace = true }
+maxx-core = { workspace = true }
+maxx-module-auth = { workspace = true }
+maxx-module-users = { workspace = true }
+maxx-module-catalogue = { workspace = true }
+maxx-module-content = { workspace = true }
+maxx-module-playback = { workspace = true }
+maxx-module-subscriptions = { workspace = true }
+maxx-module-payments = { workspace = true }
+maxx-module-advertising = { workspace = true }
+maxx-module-marketing = { workspace = true }
+maxx-module-watch-history = { workspace = true }
+maxx-module-notifications = { workspace = true }
+maxx-module-analytics = { workspace = true }
+maxx-module-admin = { workspace = true }
+maxx-module-home-content = { workspace = true }
+maxx-module-graphql = { workspace = true }
+maxx-worker-event-worker = { path = "../workers/event_worker" }
+maxx-worker-analytics-worker = { path = "../workers/analytics_worker" }
+maxx-worker-notification-worker = { path = "../workers/notification_worker" }
+maxx-worker-billing-worker = { path = "../workers/billing_worker" }
+maxx-integration-kafka = { workspace = true }
+tokio = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+sea-orm = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+prometheus = { workspace = true }
+anyhow = { workspace = true }
+uuid = { workspace = true }
+
