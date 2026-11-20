@@ -6,11 +6,14 @@ use maxx_core::entities::{
 };
 use maxx_core::AppState;
 use maxx_integration_email::FcmClient;
+use maxx_integration_msg91::Msg91Client;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, PaginatorTrait,
     QueryFilter, QueryOrder, QuerySelect, Set, Statement,
 };
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
+use tracing::{info, warn};
 
 type AppResult<T> = Result<T, AppError>;
 
@@ -130,6 +133,126 @@ impl NotificationService {
         all_users.into_iter().map(|u| u.id).collect()
     }
 
+    /// Resolve one or more recipient phone numbers from a user id or audience.
+    async fn resolve_recipient_phones(
+        state: &AppState,
+        target_audience: Option<&str>,
+        target_user_id: Option<&str>,
+    ) -> Vec<String> {
+        if let Some(uid_str) = target_user_id {
+            let raw = uid_str.trim();
+            if let Ok(uid) = raw.parse::<i64>() {
+                if let Ok(Some(u)) = user::Entity::find_by_id(uid).one(&state.db).await {
+                    return u
+                        .phone_number
+                        .or(u.phone)
+                        .map(|p| vec![Msg91Client::normalize_mobile(&p)])
+                        .unwrap_or_default();
+                }
+                return Vec::new();
+            }
+            // Admin SMS handler may pass a raw phone number as `target_user_id`.
+            if raw.chars().filter(|c| c.is_ascii_digit()).count() >= 10 {
+                return vec![Msg91Client::normalize_mobile(raw)];
+            }
+        }
+
+        let ids = Self::resolve_recipient_ids(state, target_audience, None).await;
+        if ids.is_empty() {
+            return Vec::new();
+        }
+
+        let users = user::Entity::find()
+            .filter(user::Column::Id.is_in(ids))
+            .all(&state.db)
+            .await
+            .unwrap_or_default();
+
+        let mut phones: Vec<String> = users
+            .into_iter()
+            .filter_map(|u| u.phone_number.or(u.phone))
+            .map(|p| Msg91Client::normalize_mobile(&p))
+            .filter(|p| p.len() >= 10)
+            .collect();
+        phones.sort_unstable();
+        phones.dedup();
+        phones
+    }
+
+    /// Send a template-based transactional SMS and record it in notification history.
+    /// `vars` uses MSG91 variable names (`VAR1`, `VAR2`, ...).
+    pub async fn send_templated_sms(
+        state: &AppState,
+        mobile: &str,
+        template_id: &str,
+        vars: &BTreeMap<String, String>,
+        title: Option<&str>,
+        created_by: Option<String>,
+    ) -> AppResult<Value> {
+        let phone = Msg91Client::normalize_mobile(mobile);
+        if phone.len() < 10 {
+            return Err(AppError::BadRequest("Valid mobile number is required".to_string()));
+        }
+        if template_id.trim().is_empty() {
+            return Err(AppError::BadRequest("SMS template is not configured".to_string()));
+        }
+
+        let now: chrono::DateTime<chrono::FixedOffset> = Utc::now().into();
+        let am = notification::ActiveModel {
+            channel: Set(Some("SMS".to_string())),
+            title: Set(title
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "Transactional SMS".to_string())),
+            message: Set(
+                vars.get("VAR2")
+                    .or_else(|| vars.get("VAR1"))
+                    .cloned()
+                    .unwrap_or_else(|| "Transactional SMS".to_string()),
+            ),
+            status: Set(Some("PENDING".to_string())),
+            sent_at: Set(Some(now)),
+            sent_count: Set(Some(1)),
+            created_by: Set(created_by),
+            created_at: Set(now),
+            ..Default::default()
+        };
+        let saved = am.insert(&state.db).await?;
+        let notification_id = saved.id;
+
+        let client = Msg91Client::from_env();
+        match client.send_template_sms(&phone, template_id, vars).await {
+            Ok(result) if result.is_success() => {
+                let mut upd: notification::ActiveModel = saved.into();
+                upd.status = Set(Some("SENT".to_string()));
+                let _ = upd.update(&state.db).await;
+                Ok(json!({
+                    "sent": true,
+                    "provider": "msg91",
+                    "requestId": result.request_id,
+                    "templateId": template_id,
+                    "notificationId": notification_id,
+                }))
+            }
+            Ok(result) => {
+                let mut upd: notification::ActiveModel = saved.into();
+                upd.status = Set(Some("SKIPPED".to_string()));
+                let _ = upd.update(&state.db).await;
+                Ok(json!({
+                    "sent": false,
+                    "provider": result.kind,
+                    "reason": result.message,
+                    "templateId": template_id,
+                }))
+            }
+            Err(e) => {
+                let mut upd: notification::ActiveModel = saved.into();
+                upd.status = Set(Some("FAILED".to_string()));
+                let _ = upd.update(&state.db).await;
+                Err(e)
+            }
+        }
+    }
+
     pub async fn send_notification(
         state: &AppState,
         channel: &str,
@@ -196,6 +319,7 @@ impl NotificationService {
         let bg_uid = target_user_id.clone();
         tokio::spawn(async move {
             let fcm = FcmClient::from_env();
+            let mut sms_failed = false;
             if bg_channel.eq_ignore_ascii_case("PUSH") || bg_channel.eq_ignore_ascii_case("FCM") {
                 if let Some(ref uid_str) = bg_uid {
                     if let Ok(uid) = uid_str.parse::<i64>() {
@@ -240,6 +364,45 @@ impl NotificationService {
                 }
             }
 
+            if bg_channel.eq_ignore_ascii_case("SMS") {
+                let msg91 = Msg91Client::from_env();
+                if !msg91.is_transactional_configured() {
+                    warn!("MSG91 transactional template missing; admin SMS notification not dispatched");
+                    sms_failed = true;
+                } else {
+                    let phones = Self::resolve_recipient_phones(
+                        &bg_state,
+                        bg_audience.as_deref(),
+                        bg_uid.as_deref(),
+                    )
+                    .await;
+                    let mut vars = BTreeMap::new();
+                    vars.insert("VAR1".to_string(), bg_saved.title.clone());
+                    vars.insert("VAR2".to_string(), bg_saved.message.clone());
+                    for phone in phones {
+                        match msg91.send_transactional_sms(&phone, &vars).await {
+                            Ok(result) if result.is_success() => {
+                                info!(
+                                    "Transactional SMS dispatched to {} (request {:?})",
+                                    phone, result.request_id
+                                );
+                            }
+                            Ok(result) => {
+                                warn!(
+                                    "Transactional SMS skipped for {}: {:?}",
+                                    phone, result.message
+                                );
+                                sms_failed = true;
+                            }
+                            Err(e) => {
+                                warn!("Transactional SMS failed for {}: {}", phone, e);
+                                sms_failed = true;
+                            }
+                        }
+                    }
+                }
+            }
+
             let recipient_ids = Self::resolve_recipient_ids(
                 &bg_state,
                 bg_audience.as_deref(),
@@ -268,6 +431,9 @@ impl NotificationService {
 
             let mut upd: notification::ActiveModel = bg_saved.into();
             upd.sent_count = Set(Some(delivered.max(1)));
+            if sms_failed && bg_channel.eq_ignore_ascii_case("SMS") {
+                upd.status = Set(Some("FAILED".to_string()));
+            }
             let _ = upd.update(&bg_state.db).await;
         });
 

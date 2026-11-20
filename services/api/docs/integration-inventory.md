@@ -64,9 +64,10 @@ Generated stream URL structure:
 |---|---|
 | **Auth Key** | `MSG91_AUTH_KEY` |
 | **Template ID** | `MSG91_TEMPLATE_ID` (`6a981ea2...`) |
-| **API URL** | `https://api.msg91.com/api/v5/otp` |
+| **Primary API URL** | `https://control.msg91.com/api/v5/flow/` |
+| **Fallback API URL** | `https://control.msg91.com/api/v5/otp` |
 
-Dispatches 6-digit one-time passwords for instant login and registration across India (+91) with zero SMS delay.
+Dispatches 6-digit one-time passwords for instant login and registration across India (+91). The dispatch sequence matches the legacy NestJS service: Flow API first, then direct OTP API if Flow rejects the request. OTP generation and verification stay local in Redis; Firebase/FCM is push-only. Transactional alerts use the same Flow API with separately configured template IDs.
 
 ---
 

@@ -7,8 +7,10 @@ use maxx_integration_razorpay::RazorpayClient;
 type AppResult<T> = Result<T, AppError>;
 use maxx_core::entities::{
     content, content_purchase, coupon, payment, payment_order, plan, subscription, tvod_product,
+    user,
 };
 use maxx_core::AppState;
+use maxx_module_notifications::NotificationService;
 use maxx_module_subscriptions::SubscriptionService;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
@@ -17,6 +19,7 @@ use sea_orm::{
     PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, Statement, TransactionTrait,
 };
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
 impl PaymentService {
@@ -444,6 +447,61 @@ impl PaymentService {
         }
 
         txn.commit().await?;
+
+        // Transactional SMS (best effort, never blocks the payment response).
+        if let Ok(Some(u)) = user::Entity::find_by_id(effective_user_id)
+            .one(&state.db)
+            .await
+        {
+            if let Some(phone) = u.phone_number.or(u.phone) {
+                let is_subscription = subscription_result.is_some();
+                let env_key = if is_subscription {
+                    "MSG91_SUBSCRIPTION_TEMPLATE_ID"
+                } else {
+                    "MSG91_PAYMENT_TEMPLATE_ID"
+                };
+                let template_id = std::env::var(env_key)
+                    .ok()
+                    .filter(|v| !v.trim().is_empty())
+                    .or_else(|| {
+                        std::env::var("MSG91_TRANSACTIONAL_TEMPLATE_ID")
+                            .ok()
+                            .filter(|v| !v.trim().is_empty())
+                    })
+                    .unwrap_or_default();
+
+                if !template_id.is_empty() {
+                    let mut vars = BTreeMap::new();
+                    vars.insert(
+                        "VAR1".to_string(),
+                        u.full_name.unwrap_or_else(|| "Subscriber".to_string()),
+                    );
+                    vars.insert("VAR2".to_string(), ord_final_amount.to_string());
+                    vars.insert("VAR3".to_string(), ord_currency.clone());
+                    let bg_state = state.clone();
+                    let bg_phone = phone.clone();
+                    let bg_template = template_id.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = NotificationService::send_templated_sms(
+                            &bg_state,
+                            &bg_phone,
+                            &bg_template,
+                            &vars,
+                            Some(if is_subscription {
+                                "Subscription activated"
+                            } else {
+                                "Payment received"
+                            }),
+                            None,
+                        )
+                        .await
+                        {
+                            tracing::warn!("Payment transactional SMS skipped: {}", e);
+                        }
+                    });
+                }
+            }
+        }
 
         Ok(json!({
             "verified": true,

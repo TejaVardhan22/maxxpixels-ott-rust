@@ -14,6 +14,7 @@ pub fn notification_routes() -> Router<AppState> {
         .route("/push/user/:userId", post(push_user_handler))
         .route("/sms/send", post(send_sms_handler))
         .route("/sms/bulk", post(send_sms_handler))
+        .route("/sms/template", post(send_sms_template_handler))
         .route("/whatsapp/send", post(send_whatsapp_handler))
         .route("/whatsapp/bulk", post(send_whatsapp_handler));
 

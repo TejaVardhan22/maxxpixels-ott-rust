@@ -18,6 +18,7 @@ use maxx_core::{
     AppConfig, RedisManager,
 };
 use maxx_module_marketing::{link_registration_agent, validate_agent_code};
+use maxx_integration_msg91::{Msg91Client, Msg91Result};
 
 use crate::dto::{AuthResponse, ChangePasswordRequest, DeviceTokenRequest, LoginRequest, RefreshTokenRequest, RegisterRequest, SendOtpRequest, UserDto, VerifyOtpRequest};
 
@@ -603,57 +604,8 @@ impl AuthService {
         Ok(u)
     }
 
-    async fn send_sms_otp(&self, phone_digits: &str, otp: &str) -> Result<String, AppError> {
-        let auth_key = std::env::var("MSG91_AUTH_KEY").unwrap_or_default();
-        let template_id = std::env::var("MSG91_TEMPLATE_ID").unwrap_or_default();
-        let sender_id = std::env::var("MSG91_SENDER_ID").unwrap_or_else(|_| "MAXXPX".to_string());
-        if auth_key.is_empty() || template_id.is_empty() {
-            warn!("MSG91 config missing; OTP generated but SMS not sent");
-            return Ok("noop".to_string());
-        }
-        let mobile = format!("91{}", phone_digits);
-        let body = serde_json::json!({
-            "template_id": template_id,
-            "mobile": mobile,
-            "authkey": auth_key,
-            "otp": otp,
-            "sender": sender_id,
-            "otp_expiry": 5
-        });
-        let client = reqwest::Client::new();
-        let resp = client.post("https://control.msg91.com/api/v5/otp")
-            .header("authkey", &auth_key)
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AppError::BadRequest(format!("Failed to send OTP: {e}")))?;
-        let status = resp.status();
-        let response_body = resp.text().await.unwrap_or_default();
-
-        if !status.is_success() {
-            return Err(AppError::BadRequest(format!("Failed to send OTP via MSG91 ({status})")));
-        }
-
-        // MSG91 can return HTTP 200 with `type: "error"`. Treat that as a real
-        // failure so the client never reports an OTP as sent when SMS was rejected.
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&response_body) {
-            let kind = parsed.get("type").and_then(|v| v.as_str()).unwrap_or_default();
-            if kind.eq_ignore_ascii_case("error") {
-                let detail = parsed
-                    .get("message")
-                    .and_then(|v| v.as_str())
-                    .filter(|m| !m.is_empty())
-                    .unwrap_or("MSG91 rejected the OTP request");
-                warn!("MSG91 OTP request rejected: {}", detail);
-                return Err(AppError::BadRequest(format!("Failed to send OTP: {}", detail)));
-            }
-            if let Some(request_id) = parsed.get("request_id").and_then(|v| v.as_str()) {
-                info!("MSG91 OTP accepted request {}", request_id);
-            }
-        }
-
-        Ok("msg91".to_string())
+    async fn send_sms_otp(&self, phone_digits: &str, otp: &str) -> Result<Msg91Result, AppError> {
+        Msg91Client::from_env().send_otp(phone_digits, otp).await
     }
 
     pub async fn send_otp(&self, req: SendOtpRequest) -> Result<serde_json::Value, AppError> {
@@ -682,14 +634,15 @@ impl AuthService {
         let stored = StoredOtp { otp: otp.clone(), attempts: 0 };
         let key = format!("otp:{}", phone_plus);
         self.redis.set(&key, &stored, 300).await.map_err(|e| AppError::Internal(e.to_string()))?;
-        let provider = match self.send_sms_otp(&last10, &otp).await {
-            Ok(p) => p,
+        let sms = match self.send_sms_otp(&last10, &otp).await {
+            Ok(result) => result,
             Err(e) => { let _ = self.redis.del(&key).await; return Err(e); }
         };
         Ok(serde_json::json!({
             "accepted": true, "success": true, "phone": phone_plus, "mobile": phone_plus,
             "identifier": phone_plus, "otpSent": true, "expiresInSeconds": 300,
-            "provider": provider, "message": "OTP sent successfully"
+            "provider": sms.provider(), "message": "OTP sent successfully",
+            "smsRoute": sms.route, "smsStatus": sms.kind
         }))
     }
 

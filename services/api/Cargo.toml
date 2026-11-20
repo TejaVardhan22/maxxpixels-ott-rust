@@ -24,6 +24,7 @@ members = [
     "crates/integrations/email",
     "crates/integrations/oauth",
     "crates/integrations/kafka",
+    "crates/integrations/msg91",
     "crates/workers/event_worker",
     "crates/workers/analytics_worker",
     "crates/workers/notification_worker",
@@ -59,6 +60,7 @@ maxx-integration-razorpay = { path = "crates/integrations/razorpay" }
 maxx-integration-bunny = { path = "crates/integrations/bunny" }
 maxx-integration-email = { path = "crates/integrations/email" }
 maxx-integration-kafka = { path = "crates/integrations/kafka" }
+maxx-integration-msg91 = { path = "crates/integrations/msg91" }
 
 # Asynchronous runtime & web engine
 tokio = { version = "1.40", features = ["full"] }
