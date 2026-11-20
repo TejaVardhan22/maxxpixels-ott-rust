@@ -13,6 +13,13 @@ use serde_json::{json, Value};
 type AppResult<T> = Result<T, AppError>;
 
 #[derive(Debug, Deserialize)]
+pub struct ProducerPasswordResetQuery {
+    #[serde(rename = "newPassword")]
+    pub new_password: Option<String>,
+    pub password: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct AdQuery {
     pub device: Option<String>,
     pub period: Option<String>,
@@ -335,7 +342,7 @@ pub async fn admin_onboard_producer_handler(
     _claims: Claims,
     Json(body): Json<Value>,
 ) -> AppResult<Response> {
-    let data = AdvertisingService::register_producer_studio(&state, body).await?;
+    let data = AdvertisingService::onboard_producer_studio(&state, body).await?;
     Ok(ApiResponse::ok_response(data))
 }
 
@@ -353,14 +360,18 @@ pub async fn admin_reset_producer_password_handler(
     State(state): State<AppState>,
     _claims: Claims,
     Path(id): Path<i64>,
+    Query(query): Query<ProducerPasswordResetQuery>,
     Json(body): Json<Value>,
 ) -> AppResult<Response> {
     let new_pass = body
         .get("newPassword")
         .or_else(|| body.get("password"))
         .and_then(|v| v.as_str())
-        .unwrap_or("Producer@2026");
-    let data = AdvertisingService::reset_producer_password(&state, id, new_pass).await?;
+        .map(str::to_string)
+        .or(query.new_password)
+        .or(query.password)
+        .unwrap_or_default();
+    let data = AdvertisingService::reset_producer_password(&state, id, &new_pass).await?;
     Ok(ApiResponse::ok_response(data))
 }
 

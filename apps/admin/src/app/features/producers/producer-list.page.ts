@@ -31,6 +31,15 @@ export interface ProducerOnboardingProfile {
   showPassword?: boolean;
 }
 
+function generateProducerPassword(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
+  let password = 'Prod#';
+  for (let i = 0; i < 10; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
+}
+
 @Component({
   selector: 'app-producer-list-page',
   standalone: true,
@@ -648,7 +657,7 @@ export class ProducerListPage implements OnInit {
     aadharNumber: [''],
     bankAccountNumber: [''],
     ifscCode: [''],
-    loginPassword: ['Producer@2026', [Validators.required]],
+    loginPassword: [generateProducerPassword(), [Validators.required]],
     defaultRevenueSharePercentage: [60.0]
   });
 
@@ -720,7 +729,7 @@ export class ProducerListPage implements OnInit {
       aadharNumber: '123456789012',
       bankAccountNumber: '98765432101',
       ifscCode: 'SBIN0001234',
-      loginPassword: 'Producer@2026',
+      loginPassword: generateProducerPassword(),
       defaultRevenueSharePercentage: 60.0
     });
     this.showModal = true;
@@ -754,7 +763,7 @@ export class ProducerListPage implements OnInit {
           this.producers.unshift(newProducer);
           this.filterProducers();
           this.closeModal();
-          this.notificationService.success(`Producer "${dto.studioName}" onboarded! Login email: ${dto.contactEmail}, Password: ${dto.loginPassword}`);
+          this.notificationService.success(`Producer "${dto.studioName}" onboarded! Login email: ${dto.contactEmail}, Password: ${newProducer.loginPassword}`);
         } else {
           this.notificationService.error(res.message || 'Failed to onboard producer');
         }
@@ -766,16 +775,17 @@ export class ProducerListPage implements OnInit {
   }
 
   resetPassword(item: ProducerOnboardingProfile): void {
-    const newPass = 'ProducerReset#' + Math.floor(100 + Math.random() * 900);
+    const newPass = generateProducerPassword();
     this.http.post<any>(`${environment.apiBaseUrl}/admin/producers/${item.id}/reset-password`, {
       newPassword: newPass
     }).subscribe({
       next: (res) => {
         const isOk = res?.success || res?.statusCode === 200 || typeof res === 'string';
         if (isOk) {
-          item.loginPassword = newPass;
+          const activePassword = res?.data?.password || newPass;
+          item.loginPassword = activePassword;
           item.showPassword = true;
-          this.notificationService.success(`Producer password for "${item.studioName}" reset to: ${newPass}`);
+          this.notificationService.success(`Producer password for "${item.studioName}" reset to: ${activePassword}`);
         } else {
           this.notificationService.error(res?.message || 'Failed to reset password');
         }

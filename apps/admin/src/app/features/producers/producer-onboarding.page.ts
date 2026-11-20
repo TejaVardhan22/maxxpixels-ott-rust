@@ -25,6 +25,15 @@ export interface ProvisionedStudioReceipt {
   payoutId: string;
 }
 
+function generateProducerPassword(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
+  let password = 'Prod#';
+  for (let i = 0; i < 10; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
+}
+
 @Component({
   selector: 'app-producer-onboarding-page',
   standalone: true,
@@ -921,7 +930,7 @@ export class ProducerOnboardingPage implements OnInit {
     businessType: ['PRIVATE_LIMITED', [Validators.required]],
     contactEmail: ['', [Validators.required, Validators.email]],
     contactPhone: ['', [Validators.required]],
-    loginPassword: ['ProducerPass#2026', [Validators.required]],
+    loginPassword: [generateProducerPassword(), [Validators.required]],
     panNumber: ['', [Validators.required]],
     panDocUrl: [''],
     gstNumber: ['', [Validators.required]],
@@ -950,11 +959,7 @@ export class ProducerOnboardingPage implements OnInit {
   }
 
   generateRandomPassword(): void {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
-    let pass = 'Pass#';
-    for (let i = 0; i < 7; i++) {
-      pass += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
+    const pass = generateProducerPassword();
     this.onboardForm.patchValue({ loginPassword: pass });
     this.showPassword = true;
     this.notificationService.info('Generated new secure password: ' + pass);
@@ -968,7 +973,7 @@ export class ProducerOnboardingPage implements OnInit {
       businessType: 'PRIVATE_LIMITED',
       contactEmail: `partner${randomId}@cinematichorizons.tv`,
       contactPhone: '9876543210',
-      loginPassword: `ProducerPass#${randomId}`,
+      loginPassword: generateProducerPassword(),
       panNumber: `ABCDE${randomId}F`,
       panDocUrl: `https://cdn.maxxpixels.com/kyc/sample-pan-${randomId}.pdf`,
       gstNumber: `36ABCDE${randomId}F1Z5`,
@@ -1018,7 +1023,7 @@ export class ProducerOnboardingPage implements OnInit {
       businessType: 'PRIVATE_LIMITED',
       contactEmail: '',
       contactPhone: '',
-      loginPassword: 'Producer@2026',
+      loginPassword: generateProducerPassword(),
       panNumber: '',
       panDocUrl: '',
       gstNumber: '',

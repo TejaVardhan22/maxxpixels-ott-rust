@@ -2240,15 +2240,18 @@ export class MovieFormPage implements OnInit {
       this.http.post<any>(`${environment.apiBaseUrl}/admin/producers/onboard`, {
         studioName,
         name: studioName,
-        email,
-        loginPassword: 'ProducerPass2026!'
+        email
       }).subscribe({
         next: (res) => {
           if (!this.producersList.includes(studioName)) {
             this.producersList.push(studioName);
           }
           this.contentForm.patchValue({ producer: studioName });
-          this.notificationService.success(`Producer '${studioName}' onboarded and linked successfully!`);
+          const password = res?.data?.loginPassword;
+          this.notificationService.success(
+            `Producer '${studioName}' onboarded and linked successfully!` +
+            (password ? ` Login password: ${password}` : '')
+          );
         },
         error: () => {
           if (!this.producersList.includes(studioName)) {

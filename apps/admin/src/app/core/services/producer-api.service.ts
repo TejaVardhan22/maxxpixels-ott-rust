@@ -86,7 +86,16 @@ export interface ProducerOnboardingProfile {
   signedAgreementUrl?: string;
   agreementStatus?: string;
   rejectionReason?: string;
-  loginPassword?: string;
+  /** Only present in the one-time onboarding/reset receipt, never on list/profile reads. */
+  loginPassword?: string | null;
+}
+
+export interface ProducerPasswordReset {
+  success: boolean;
+  id: number | string;
+  email?: string | null;
+  password: string;
+  message?: string;
 }
 
 export interface MovieAnalyticsItem {
@@ -145,9 +154,11 @@ export class ProducerApiService {
   }
 
   // 3. Admin: Reset producer password
-  resetProducerPassword(id: number | string, newPassword?: string): Observable<ApiResponse<string>> {
-    const query = newPassword ? `?newPassword=${encodeURIComponent(newPassword)}` : '';
-    return this.http.post<ApiResponse<string>>(`${environment.apiBaseUrl}/admin/producers/${id}/reset-password${query}`, {});
+  resetProducerPassword(id: number | string, newPassword?: string): Observable<ApiResponse<ProducerPasswordReset>> {
+    return this.http.post<ApiResponse<ProducerPasswordReset>>(
+      `${environment.apiBaseUrl}/admin/producers/${id}/reset-password`,
+      newPassword ? { newPassword } : {}
+    );
   }
 
   // 3b. Admin: Toggle active / deactivate producer status

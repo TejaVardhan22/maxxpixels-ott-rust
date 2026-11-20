@@ -44,6 +44,15 @@ use uuid::Uuid;
 
 impl AdvertisingService {
     pub fn format_onboarding_profile(p: &producer_profile::Model) -> Value {
+        Self::format_onboarding_profile_with_password(p, None)
+    }
+
+    /// Formats a producer profile without leaking a stale plaintext password.
+    /// Pass the generated/submitted password only for the one-time onboarding receipt.
+    pub fn format_onboarding_profile_with_password(
+        p: &producer_profile::Model,
+        password: Option<&str>,
+    ) -> Value {
         let rev_percent = p
             .revenue_share_percent
             .and_then(|d| d.to_f64())
@@ -61,7 +70,9 @@ impl AdvertisingService {
             "businessType": "Production Company",
             "contactEmail": default_email,
             "contactPhone": p.phone,
-            "loginPassword": "Producer@2026",
+            // Plaintext passwords are only returned once by onboarding/reset responses.
+            // Never expose a guessed/default value on list or profile reads.
+            "loginPassword": password,
             "bankAccountPayoutId": p.bank_account_payout_id,
             "taxId": p.tax_id,
             "defaultRevenueSharePercentage": rev_percent,
@@ -872,6 +883,20 @@ impl AdvertisingService {
     }
 
     pub async fn register_producer_studio(state: &AppState, body: Value) -> AppResult<Value> {
+        Self::register_producer_studio_internal(state, body, false).await
+    }
+
+    /// Admin onboarding is an explicit credential-provisioning action, so it may
+    /// replace the password on an existing login for the same email.
+    pub async fn onboard_producer_studio(state: &AppState, body: Value) -> AppResult<Value> {
+        Self::register_producer_studio_internal(state, body, true).await
+    }
+
+    async fn register_producer_studio_internal(
+        state: &AppState,
+        body: Value,
+        overwrite_existing_password: bool,
+    ) -> AppResult<Value> {
         let studio_name = body
             .get("studioName")
             .or_else(|| body.get("companyName"))
@@ -896,7 +921,10 @@ impl AdvertisingService {
             .or_else(|| body.get("accountPassword"))
             .or_else(|| body.get("password"))
             .and_then(|v| v.as_str())
-            .unwrap_or("Producer@2026");
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(Self::generate_secure_password);
 
         let mut v = ValidationBag::new();
         v.require_text("studioName", Some(studio_name.as_str()), 2, 160);
@@ -912,13 +940,26 @@ impl AdvertisingService {
             .await
             .map_err(|e| AppError::Internal(format!("Failed hashing password: {}", e)))?;
 
+        let mut password_provisioned = false;
         let user = if !email.is_empty() {
             if let Some(existing) = user::Entity::find()
                 .filter(user::Column::Email.eq(&email))
                 .one(&state.db)
                 .await?
             {
-                existing
+                if overwrite_existing_password {
+                    let mut am: user::ActiveModel = existing.into();
+                    am.password_hash = Set(Some(password_hash.clone()));
+                    am.auth_method = Set(Some("EMAIL_PASSWORD".to_string()));
+                    am.status = Set("ACTIVE".to_string());
+                    am.email_verified = Set(Some(true));
+                    am.updated_at = Set(Utc::now().fixed_offset());
+                    let updated = am.update(&state.db).await?;
+                    password_provisioned = true;
+                    updated
+                } else {
+                    existing
+                }
             } else {
                 let now: chrono::DateTime<chrono::FixedOffset> = Utc::now().into();
                 let am = user::ActiveModel {
@@ -930,11 +971,14 @@ impl AdvertisingService {
                     password_hash: Set(Some(password_hash)),
                     status: Set("ACTIVE".to_string()),
                     auth_method: Set(Some("EMAIL_PASSWORD".to_string())),
+                    email_verified: Set(Some(true)),
                     created_at: Set(now),
                     updated_at: Set(now),
                     ..Default::default()
                 };
-                am.insert(&state.db).await?
+                let inserted = am.insert(&state.db).await?;
+                password_provisioned = true;
+                inserted
             }
         } else {
             return Err(AppError::BadRequest(
@@ -970,7 +1014,14 @@ impl AdvertisingService {
         p_am.updated_at = Set(Some(Utc::now().into()));
         let saved = p_am.update(&state.db).await?;
 
-        Ok(Self::format_onboarding_profile(&saved))
+        if password_provisioned {
+            Ok(Self::format_onboarding_profile_with_password(
+                &saved,
+                Some(&raw_password),
+            ))
+        } else {
+            Ok(Self::format_onboarding_profile(&saved))
+        }
     }
 
     pub async fn submit_producer_content(
@@ -1287,20 +1338,55 @@ impl AdvertisingService {
             .one(&state.db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Producer {} not found", id)))?;
-        let hash = SecurityUtils::hash_password_async(new_password.to_string())
+
+        // Never fall back to a shared default password. Generate a fresh secret
+        // when a caller omits one so the returned password always matches the hash.
+        let raw_password = new_password.trim();
+        let raw_password = if raw_password.is_empty() {
+            Self::generate_secure_password()
+        } else {
+            raw_password.to_string()
+        };
+
+        let hash = SecurityUtils::hash_password_async(raw_password.clone())
             .await
             .map_err(|e| AppError::Internal(format!("Failed hashing password: {}", e)))?;
-        if let Some(user_row) = user::Entity::find_by_id(p.user_id).one(&state.db).await? {
-            let mut u_am: user::ActiveModel = user_row.into();
-            u_am.password_hash = Set(Some(hash));
-            u_am.updated_at = Set(Utc::now().fixed_offset());
-            u_am.update(&state.db).await?;
+
+        let mut linked_user = if p.user_id > 0 {
+            user::Entity::find_by_id(p.user_id).one(&state.db).await?
+        } else {
+            None
+        };
+        if linked_user.is_none() {
+            if let Some(email) = p
+                .email
+                .as_deref()
+                .map(str::trim)
+                .filter(|e| !e.is_empty())
+            {
+                linked_user = user::Entity::find()
+                    .filter(user::Column::Email.eq(email.to_lowercase()))
+                    .one(&state.db)
+                    .await?;
+            }
         }
+        let linked_user = linked_user.ok_or_else(|| {
+            AppError::NotFound("No login account is linked to this producer".to_string())
+        })?;
+        let login_email = linked_user.email.clone();
+
+        let mut u_am: user::ActiveModel = linked_user.into();
+        u_am.password_hash = Set(Some(hash));
+        u_am.auth_method = Set(Some("EMAIL_PASSWORD".to_string()));
+        u_am.updated_at = Set(Utc::now().fixed_offset());
+        u_am.update(&state.db).await?;
+
         Ok(json!({
             "success": true,
             "message": format!("Password for producer {} reset successfully", id),
             "id": id,
-            "password": new_password
+            "email": login_email,
+            "password": raw_password
         }))
     }
 
