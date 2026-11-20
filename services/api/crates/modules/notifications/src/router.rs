@@ -17,6 +17,11 @@ pub fn notification_routes() -> Router<AppState> {
         .route("/whatsapp/send", post(send_whatsapp_handler))
         .route("/whatsapp/bulk", post(send_whatsapp_handler));
 
+    let device_router = Router::new()
+        .route("/device-token", post(register_device_token_handler))
+        .route("/fcm-token", post(register_device_token_handler))
+        .route("/register-token", post(register_device_token_handler));
+
     let user_router = Router::new()
         .route("/my", get(get_my_notifications_handler))
         .route("/unread-count", get(unread_count_handler))
@@ -27,8 +32,8 @@ pub fn notification_routes() -> Router<AppState> {
         .nest("/api/v1/admin/notifications", admin_router.clone())
         .nest("/api/admin/notifications", admin_router.clone())
         .nest("/admin/notifications", admin_router)
-        .nest("/api/v1/notifications", user_router.clone())
-        .nest("/api/notifications", user_router.clone())
-        .nest("/notifications", user_router)
+        .nest("/api/v1/notifications", device_router.clone().merge(user_router.clone()))
+        .nest("/api/notifications", device_router.clone().merge(user_router.clone()))
+        .nest("/notifications", device_router.merge(user_router))
 }
 

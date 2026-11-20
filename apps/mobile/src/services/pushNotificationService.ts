@@ -62,11 +62,24 @@ export async function setupPushNotifications(_authToken?: string): Promise<void>
 
     console.log('[FCM Mobile] FCM Token acquired (length: ' + fcmToken.length + ')');
 
-    // Register token with backend
-    await ApiClient.postApi('notifications/device-token', {
+    // Register token with backend (authenticated). Try auth endpoint first, then notifications alias for compatibility.
+    const devicePayload = {
       fcmToken,
+      deviceToken: fcmToken,
+      token: fcmToken,
       platform: Platform.OS.toUpperCase(),
-    }).catch(e => console.warn('[FCM Mobile] Backend token registration failed:', e));
+      deviceId: Platform.OS === 'android' ? 'android-mobile' : 'ios-mobile',
+      deviceName: Platform.OS === 'android' ? 'Android Mobile' : 'iOS Mobile',
+    };
+
+    try {
+      await ApiClient.postApi('auth/device-token', devicePayload);
+    } catch (err) {
+      console.warn('[FCM Mobile] auth/device-token failed, trying notifications/device-token:', err);
+      await ApiClient.postApi('notifications/device-token', devicePayload).catch((err2) =>
+        console.warn('[FCM Mobile] Backend token registration failed:', err2),
+      );
+    }
 
     console.log('[FCM Mobile] FCM token registered with backend.');
 

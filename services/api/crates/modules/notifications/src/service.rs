@@ -222,11 +222,11 @@ impl NotificationService {
                         }
                     }
                 } else {
-                    let topic = bg_saved
-                        .target_audience
-                        .as_deref()
-                        .unwrap_or("all")
-                        .to_lowercase();
+                    let raw_topic = bg_saved.target_audience.as_deref().unwrap_or("all");
+                    let topic = match raw_topic.trim().to_uppercase().as_str() {
+                        "" | "ALL" | "ALL_USERS" | "EVERYONE" => "all_users".to_string(),
+                        other => other.to_lowercase(),
+                    };
                     let topic_target = format!("/topics/{}", topic);
                     let _ = fcm
                         .send_to_target(
@@ -272,6 +272,50 @@ impl NotificationService {
         });
 
         Ok(saved)
+    }
+
+    pub async fn register_device_token(state: &AppState, user_id: i64, body: Value) -> AppResult<Value> {
+        let fcm = body.get("fcmToken").or_else(|| body.get("fcm_token")).or_else(|| body.get("deviceToken")).or_else(|| body.get("device_token")).or_else(|| body.get("token")).and_then(|v| v.as_str()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        let device_id = body.get("deviceId").or_else(|| body.get("device_id")).and_then(|v| v.as_str()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| "default-device".to_string());
+        let device_name = body.get("deviceName").or_else(|| body.get("device_name")).and_then(|v| v.as_str()).map(|s| s.to_string());
+        let platform = body.get("platform").or_else(|| body.get("os")).and_then(|v| v.as_str()).unwrap_or("ANDROID").to_uppercase();
+        let now: chrono::DateTime<chrono::FixedOffset> = Utc::now().into();
+
+        if let Some(existing) = device::Entity::find()
+            .filter(device::Column::UserId.eq(user_id))
+            .filter(device::Column::DeviceId.eq(device_id.clone()))
+            .one(&state.db)
+            .await? {
+            let mut am: device::ActiveModel = existing.into();
+            am.last_seen = Set(Some(now));
+            am.last_active_at = Set(Some(now));
+            am.is_active = Set(Some(true));
+            am.platform = Set(Some(platform));
+            if let Some(name) = device_name.clone() { if !name.is_empty() { am.device_name = Set(Some(name)); } }
+            if let Some(tok) = fcm.clone() { am.fcm_token = Set(Some(tok)); }
+            am.update(&state.db).await?;
+        } else {
+            let am = device::ActiveModel {
+                user_id: Set(user_id),
+                device_id: Set(device_id.clone()),
+                device_name: Set(device_name.or_else(|| Some("OTT Client".to_string()))),
+                device_model: Set(None),
+                device_type: Set(None),
+                platform: Set(Some(platform)),
+                os_version: Set(None),
+                app_version: Set(None),
+                fcm_token: Set(fcm.clone()),
+                ip_address: Set(None),
+                is_active: Set(Some(true)),
+                last_seen: Set(Some(now)),
+                last_active_at: Set(Some(now)),
+                created_at: Set(now),
+                ..Default::default()
+            };
+            am.insert(&state.db).await?;
+        }
+
+        Ok(json!({ "success": true, "deviceId": device_id, "fcmRegistered": fcm.is_some(), "updatedAt": now }))
     }
 
     pub async fn list_registered_fcm_devices(state: &AppState) -> AppResult<Vec<Value>> {
