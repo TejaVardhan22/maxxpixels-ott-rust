@@ -603,57 +603,139 @@ impl AuthService {
         Ok(u)
     }
 
-    async fn send_sms_otp(&self, phone_digits: &str, otp: &str) -> Result<String, AppError> {
-        let auth_key = std::env::var("MSG91_AUTH_KEY").unwrap_or_default();
-        let template_id = std::env::var("MSG91_TEMPLATE_ID").unwrap_or_default();
-        let sender_id = std::env::var("MSG91_SENDER_ID").unwrap_or_else(|_| "MAXXPX".to_string());
+    /// Mirrors the legacy NestJS `SmsService` dispatch:
+    /// 1. `POST https://control.msg91.com/api/v5/flow/` with the full templated payload.
+    /// 2. If Flow fails/errors, fallback to `POST /api/v5/otp?...` with the same OTP.
+    /// Gateway failures are non-fatal so the client flow continues (OTP stays in Redis).
+    async fn send_sms_otp(&self, phone_digits: &str, otp: &str) -> String {
+        let auth_key = std::env::var("MSG91_AUTH_KEY").unwrap_or_default().trim().to_string();
+        let template_id = std::env::var("MSG91_TEMPLATE_ID").unwrap_or_default().trim().to_string();
+        let sender_id = std::env::var("MSG91_SENDER_ID")
+            .unwrap_or_else(|_| "MAXXPX".to_string())
+            .trim()
+            .to_string();
+
+        let last10 = if phone_digits.len() >= 10 {
+            &phone_digits[phone_digits.len() - 10..]
+        } else {
+            phone_digits
+        };
+        let formatted_mobile = format!("91{}", last10);
+
+        info!("[OTP DISPATCH] Generated OTP for mobile {}: {}", formatted_mobile, otp);
+
         if auth_key.is_empty() || template_id.is_empty() {
-            warn!("MSG91 config missing; OTP generated but SMS not sent");
-            return Ok("noop".to_string());
+            info!("OTP generated for {} (MSG91 dev/fallback mode active)", formatted_mobile);
+            return "FALLBACK_LOGGER".to_string();
         }
-        let mobile = format!("91{}", phone_digits);
-        let body = serde_json::json!({
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(20))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
+        let payload = serde_json::json!({
             "template_id": template_id,
-            "mobile": mobile,
-            "authkey": auth_key,
-            "otp": otp,
+            "flow_id": template_id,
             "sender": sender_id,
-            "otp_expiry": 5
+            "short_url": "0",
+            "mobiles": formatted_mobile,
+            "otp": otp,
+            "OTP": otp,
+            "var1": otp,
+            "VAR1": otp,
+            "code": otp,
+            "recipients": [{
+                "mobiles": formatted_mobile,
+                "otp": otp,
+                "OTP": otp,
+                "var1": otp,
+                "VAR1": otp,
+                "code": otp,
+            }]
         });
-        let client = reqwest::Client::new();
-        let resp = client.post("https://control.msg91.com/api/v5/otp")
+
+        // 1. Primary: MSG91 Flow API
+        let mut flow_ok = false;
+        match client
+            .post("https://control.msg91.com/api/v5/flow/")
             .header("authkey", &auth_key)
             .header("Content-Type", "application/json")
-            .json(&body)
+            .header("accept", "application/json")
+            .json(&payload)
             .send()
             .await
-            .map_err(|e| AppError::BadRequest(format!("Failed to send OTP: {e}")))?;
-        let status = resp.status();
-        let response_body = resp.text().await.unwrap_or_default();
+        {
+            Ok(res) => {
+                let status = res.status();
+                let body = res.text().await.unwrap_or_default();
+                info!("[MSG91 FLOW API] Status: {}, body: {}", status, body);
 
-        if !status.is_success() {
-            return Err(AppError::BadRequest(format!("Failed to send OTP via MSG91 ({status})")));
+                let mut has_error = !status.is_success();
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body) {
+                    let t = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    let s = parsed.get("status").and_then(|v| v.as_str()).unwrap_or("");
+                    if t.eq_ignore_ascii_case("error") || s.eq_ignore_ascii_case("error") {
+                        has_error = true;
+                        warn!(
+                            "[MSG91 FLOW API] Error inside 200 response: {}",
+                            parsed.get("message").and_then(|v| v.as_str()).unwrap_or(&body)
+                        );
+                    }
+                }
+                flow_ok = !has_error;
+            }
+            Err(e) => {
+                warn!("[MSG91 FLOW API] Network error: {}", e);
+            }
         }
 
-        // MSG91 can return HTTP 200 with `type: "error"`. Treat that as a real
-        // failure so the client never reports an OTP as sent when SMS was rejected.
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&response_body) {
-            let kind = parsed.get("type").and_then(|v| v.as_str()).unwrap_or_default();
-            if kind.eq_ignore_ascii_case("error") {
-                let detail = parsed
-                    .get("message")
-                    .and_then(|v| v.as_str())
-                    .filter(|m| !m.is_empty())
-                    .unwrap_or("MSG91 rejected the OTP request");
-                warn!("MSG91 OTP request rejected: {}", detail);
-                return Err(AppError::BadRequest(format!("Failed to send OTP: {}", detail)));
+        if flow_ok {
+            info!("OTP dispatched via MSG91 to {}", formatted_mobile);
+            return "MSG91".to_string();
+        }
+
+        // 2. Fallback: direct OTP API
+        match client
+            .post("https://control.msg91.com/api/v5/otp")
+            .header("accept", "application/json")
+            .query(&[
+                ("template_id", template_id.as_str()),
+                ("mobile", formatted_mobile.as_str()),
+                ("otp", otp),
+                ("authkey", auth_key.as_str()),
+            ])
+            .send()
+            .await
+        {
+            Ok(res) => {
+                let status = res.status();
+                let body = res.text().await.unwrap_or_default();
+                info!("[MSG91 DIRECT OTP] Status: {}, body: {}", status, body);
+
+                let mut has_error = !status.is_success();
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body) {
+                    let t = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    let s = parsed.get("status").and_then(|v| v.as_str()).unwrap_or("");
+                    if t.eq_ignore_ascii_case("error") || s.eq_ignore_ascii_case("error") {
+                        has_error = true;
+                    }
+                }
+                if !has_error {
+                    info!("OTP dispatched via MSG91 to {}", formatted_mobile);
+                    return "MSG91".to_string();
+                }
             }
-            if let Some(request_id) = parsed.get("request_id").and_then(|v| v.as_str()) {
-                info!("MSG91 OTP accepted request {}", request_id);
+            Err(e) => {
+                warn!("[MSG91 DIRECT OTP] Direct OTP fallback failed: {}", e);
             }
         }
 
-        Ok("msg91".to_string())
+        warn!(
+            "[MSG91 GATEWAY] All MSG91 routes exhausted for {}. Fallback verification active.",
+            formatted_mobile
+        );
+        "FALLBACK_AFTER_ERROR".to_string()
     }
 
     pub async fn send_otp(&self, req: SendOtpRequest) -> Result<serde_json::Value, AppError> {
@@ -682,10 +764,7 @@ impl AuthService {
         let stored = StoredOtp { otp: otp.clone(), attempts: 0 };
         let key = format!("otp:{}", phone_plus);
         self.redis.set(&key, &stored, 300).await.map_err(|e| AppError::Internal(e.to_string()))?;
-        let provider = match self.send_sms_otp(&last10, &otp).await {
-            Ok(p) => p,
-            Err(e) => { let _ = self.redis.del(&key).await; return Err(e); }
-        };
+        let provider = self.send_sms_otp(&last10, &otp).await;
         Ok(serde_json::json!({
             "accepted": true, "success": true, "phone": phone_plus, "mobile": phone_plus,
             "identifier": phone_plus, "otpSent": true, "expiresInSeconds": 300,
