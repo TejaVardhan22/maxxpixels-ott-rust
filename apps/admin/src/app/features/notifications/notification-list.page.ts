@@ -86,7 +86,7 @@ export interface NotificationLogItem {
                   <mat-card-subtitle>Instant push to subscribed device topic pools</mat-card-subtitle>
                 </mat-card-header>
                 <mat-card-content>
-                  <form [formGroup]="broadcastForm" (ngSubmit)="onBroadcast()">
+                  <form [formGroup]="broadcastForm">
                     <mat-form-field appearance="outline" class="full-width">
                       <mat-label>Target FCM Topic</mat-label>
                       <mat-select formControlName="topic">
@@ -140,7 +140,7 @@ export interface NotificationLogItem {
                   <mat-card-subtitle>Direct device notification via User ID</mat-card-subtitle>
                 </mat-card-header>
                 <mat-card-content>
-                  <form [formGroup]="userPushForm" (ngSubmit)="onPushToUser()">
+                  <form [formGroup]="userPushForm">
                     <mat-form-field appearance="outline" class="full-width">
                       <mat-label>User ID (UUID or Numeric)</mat-label>
                       <input matInput formControlName="userId" placeholder="e.g. 1001 or user UUID" required>
@@ -200,7 +200,7 @@ export interface NotificationLogItem {
                   <mat-card-subtitle>Single phone destination (E.164 with +91)</mat-card-subtitle>
                 </mat-card-header>
                 <mat-card-content>
-                  <form [formGroup]="directSmsForm" (ngSubmit)="onDirectSms()">
+                  <form [formGroup]="directSmsForm">
                     <mat-form-field appearance="outline" class="full-width">
                       <mat-label>Phone Number</mat-label>
                       <input matInput formControlName="phoneNumber" placeholder="+918904204604" required>
@@ -235,7 +235,7 @@ export interface NotificationLogItem {
                   <mat-card-subtitle>Paste multiple recipients (one phone per line)</mat-card-subtitle>
                 </mat-card-header>
                 <mat-card-content>
-                  <form [formGroup]="bulkSmsForm" (ngSubmit)="onBulkSms()">
+                  <form [formGroup]="bulkSmsForm">
                     <mat-form-field appearance="outline" class="full-width">
                       <mat-label>Phone Numbers (one per line)</mat-label>
                       <textarea matInput formControlName="phoneNumbers" rows="4"
@@ -291,7 +291,7 @@ export interface NotificationLogItem {
                   <mat-card-subtitle>Direct outreach to a single subscriber</mat-card-subtitle>
                 </mat-card-header>
                 <mat-card-content>
-                  <form [formGroup]="directWhatsappForm" (ngSubmit)="onDirectWhatsapp()">
+                  <form [formGroup]="directWhatsappForm">
                     <mat-form-field appearance="outline" class="full-width">
                       <mat-label>WhatsApp Phone Number</mat-label>
                       <input matInput formControlName="phoneNumber" placeholder="+919999999999" required>
@@ -329,7 +329,7 @@ export interface NotificationLogItem {
                   <mat-card-subtitle>Blast campaign to multiple WhatsApp contacts</mat-card-subtitle>
                 </mat-card-header>
                 <mat-card-content>
-                  <form [formGroup]="bulkWhatsappForm" (ngSubmit)="onBulkWhatsapp()">
+                  <form [formGroup]="bulkWhatsappForm">
                     <mat-form-field appearance="outline" class="full-width">
                       <mat-label>Recipient WhatsApp Numbers (one per line)</mat-label>
                       <textarea matInput formControlName="phoneNumbers" rows="4"
@@ -380,7 +380,7 @@ export interface NotificationLogItem {
                   <mat-card-subtitle>Branded responsive HTML delivery via SMTP</mat-card-subtitle>
                 </mat-card-header>
                 <mat-card-content>
-                  <form [formGroup]="singleEmailForm" (ngSubmit)="onSingleEmail()">
+                  <form [formGroup]="singleEmailForm">
                     <mat-form-field appearance="outline" class="full-width">
                       <mat-label>Recipient Email Address</mat-label>
                       <input matInput type="email" formControlName="toEmail" placeholder="subscriber@example.com" required>
@@ -417,7 +417,7 @@ export interface NotificationLogItem {
                   <mat-card-subtitle>One email address per line</mat-card-subtitle>
                 </mat-card-header>
                 <mat-card-content>
-                  <form [formGroup]="bulkEmailForm" (ngSubmit)="onBulkEmail()">
+                  <form [formGroup]="bulkEmailForm">
                     <mat-form-field appearance="outline" class="full-width">
                       <mat-label>Recipient Email Addresses (one per line)</mat-label>
                       <textarea matInput formControlName="toEmails" rows="4"
@@ -465,7 +465,7 @@ export interface NotificationLogItem {
                 <mat-card-subtitle>Dispatches via Push + SMS + WhatsApp + Email simultaneously to a target subscriber</mat-card-subtitle>
               </mat-card-header>
               <mat-card-content>
-                <form [formGroup]="allChannelForm" (ngSubmit)="onAllChannels()">
+                <form [formGroup]="allChannelForm">
                   <mat-form-field appearance="outline" class="full-width">
                     <mat-label>Target User ID</mat-label>
                     <input matInput formControlName="userId" placeholder="e.g. 1001 or user UUID" required>
@@ -691,7 +691,7 @@ export interface NotificationLogItem {
                   <mat-card-subtitle>Cellular SMS & DLT Principal Entity</mat-card-subtitle>
                 </mat-card-header>
                 <mat-card-content>
-                  <form [formGroup]="smsConfigForm" (ngSubmit)="onSaveConfig('SMS')">
+                  <form [formGroup]="smsConfigForm">
                     <mat-form-field appearance="outline" class="full-width">
                       <mat-label>SMS Provider</mat-label>
                       <mat-select formControlName="provider">
@@ -750,7 +750,7 @@ export interface NotificationLogItem {
                   <mat-card-subtitle>Meta Cloud API v18 Integration</mat-card-subtitle>
                 </mat-card-header>
                 <mat-card-content>
-                  <form [formGroup]="whatsappConfigForm" (ngSubmit)="onSaveConfig('WHATSAPP')">
+                  <form [formGroup]="whatsappConfigForm">
                     <mat-form-field appearance="outline" class="full-width">
                       <mat-label>WhatsApp Provider</mat-label>
                       <mat-select formControlName="provider">
@@ -805,7 +805,7 @@ export interface NotificationLogItem {
                   <mat-card-subtitle>Google Firebase HTTP v1 API</mat-card-subtitle>
                 </mat-card-header>
                 <mat-card-content>
-                  <form [formGroup]="pushConfigForm" (ngSubmit)="onSaveConfig('PUSH')">
+                  <form [formGroup]="pushConfigForm">
                     <mat-form-field appearance="outline" class="full-width">
                       <mat-label>Push Provider</mat-label>
                       <mat-select formControlName="provider">
@@ -853,7 +853,7 @@ export interface NotificationLogItem {
                   <mat-card-subtitle>Transactional & Campaign Relay</mat-card-subtitle>
                 </mat-card-header>
                 <mat-card-content>
-                  <form [formGroup]="emailConfigForm" (ngSubmit)="onSaveConfig('EMAIL')">
+                  <form [formGroup]="emailConfigForm">
                     <mat-form-field appearance="outline" class="full-width">
                       <mat-label>Email Protocol / Provider</mat-label>
                       <mat-select formControlName="provider">
