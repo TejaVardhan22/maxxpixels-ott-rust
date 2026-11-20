@@ -306,7 +306,19 @@ export class CatalogService {
         userToken: AuthService.authToken || undefined,
       });
       if (Array.isArray(results)) {
-        return results.map((r: any) => this.mapContentToCatalogItem(r));
+        return results
+          .map((r: any) => this.mapContentToCatalogItem(r))
+          .filter(
+            (item) =>
+              // Only show items that are actually rentable (have rental-specific fields)
+              item.isRent === 1 ||
+              item.is_rent === 1 ||
+              item.rentBuy === 1 ||
+              (item.rentPrice && item.rentPrice > 0) ||
+              (item.rentDay && item.rentDay > 0) ||
+              String((item as any).monetization || '').toUpperCase() === 'TVOD' ||
+              String((item as any).rentType || '').toUpperCase() === 'RENT'
+          );
       }
     } catch (e) {
       console.warn('tvod/products error:', e);
