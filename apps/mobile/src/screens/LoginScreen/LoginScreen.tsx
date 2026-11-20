@@ -19,9 +19,6 @@ import {
   Mail,
   Phone,
   User as UserIcon,
-  Calendar,
-  Briefcase,
-  MapPin,
   KeyRound,
   LogIn,
   UserPlus,
@@ -35,20 +32,9 @@ import { AppConfig } from '../../core/config';
 import { validateRegistration, isValidPhone, COUNTRY_CODES } from '../../core/authValidation';
 import { AuthService } from '../../services/authService';
 import { Toast } from '../../components/Toast';
-import { DobCalendarModal } from '../../components/DobCalendarModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type ScreenMode = 'signin' | 'signup';
-
-const PROFESSION_OPTIONS = [
-  'Employee',
-  'Student',
-  'Self-employed',
-  'Business owner',
-  'Homemaker',
-  'Retired',
-  'Other',
-];
 
 export const LoginScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
@@ -77,12 +63,6 @@ export const LoginScreen: React.FC = () => {
   const [signupReferralCode, setSignupReferralCode] = useState('');
   const [signupMobile, setSignupMobile] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
-  const [signupDob, setSignupDob] = useState('');
-  const [showDobPicker, setShowDobPicker] = useState(false);
-  const [signupProfession, setSignupProfession] = useState('');
-  const [signupOtherProfession, setSignupOtherProfession] = useState('');
-  const [signupPincode, setSignupPincode] = useState('');
-  const [showProfessionPicker, setShowProfessionPicker] = useState(false);
   const [signupOtp, setSignupOtp] = useState('');
   const [signupOtpSent, setSignupOtpSent] = useState(false);
   const [adultConfirmed, setAdultConfirmed] = useState(false);
@@ -104,18 +84,6 @@ export const LoginScreen: React.FC = () => {
     return () => { active = false; };
   }, [route.params]);
 
-  const getAgeDisplay = (dobStr: string): string => {
-    if (!dobStr || !/^\d{4}-\d{2}-\d{2}$/.test(dobStr)) return '';
-    try {
-      const [y, m, d] = dobStr.split('-').map(Number);
-      const today = new Date();
-      let age = today.getFullYear() - y;
-      if (today.getMonth() < m - 1 || (today.getMonth() === m - 1 && today.getDate() < d)) age--;
-      return `${age} yrs`;
-    } catch {
-      return '';
-    }
-  };
 
   const navigatePostAuth = async (userObj: any) => {
     let hasActiveSub = false;
@@ -204,9 +172,6 @@ export const LoginScreen: React.FC = () => {
     }
     const validationError = validateRegistration({
       name: signupFullName, email: signupEmail, phone: signupMobile, countryCode,
-      dateOfBirth: signupDob,
-      profession: signupProfession === 'Other' ? signupOtherProfession : signupProfession,
-      pincode: signupPincode,
       consent: adultConfirmed,
     });
     if (validationError) { Toast.warning(validationError, 'Check your details'); return; }
@@ -251,14 +216,10 @@ export const LoginScreen: React.FC = () => {
       }
       const referralCode = pendingRef;
 
-      const prof = signupProfession === 'Other' ? signupOtherProfession.trim() : signupProfession.trim();
       const newUser = await AuthService.loginWithMobileOtp(`${countryCode}${signupMobile}`, code, signupFullName, {
         firstName: signupFirstName.trim(),
         lastName: signupLastName.trim(),
         email: signupEmail,
-        dob: signupDob,
-        profession: prof,
-        pincode: signupPincode.trim(),
         referenceCode: referralCode,
         agentCode: referralCode,
         isRegistration: true,
@@ -546,106 +507,6 @@ export const LoginScreen: React.FC = () => {
               />
             </View>
 
-            {/* 4. Date of Birth */}
-            <Text style={[styles.inputLabel, { marginTop: 12 }]}>DATE OF BIRTH (OPTIONAL)</Text>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              disabled={signupOtpSent || signupLoading}
-              onPress={() => setShowDobPicker(true)}
-              style={styles.inputBox}
-            >
-              <Calendar size={18} color={signupDob ? AppTheme.primary : '#64748B'} style={styles.fieldIcon} />
-              <View style={{ flex: 1, paddingHorizontal: 12, paddingVertical: 14 }}>
-                <Text style={{ color: signupDob ? '#FFFFFF' : AppTheme.textSecondary, fontSize: 14, fontWeight: signupDob ? '700' : '400' }}>
-                  {signupDob ? signupDob : 'Tap to select Date of Birth'}
-                </Text>
-              </View>
-              {signupDob ? (
-                <View style={styles.dobAgeBadge}>
-                  <Text style={styles.dobAgeBadgeText}>
-                    {getAgeDisplay(signupDob)}
-                  </Text>
-                </View>
-              ) : (
-                <ChevronDown size={16} color="#64748B" style={{ marginRight: 12 }} />
-              )}
-            </TouchableOpacity>
-
-            {/* 5. Profession Selector */}
-            <Text style={[styles.inputLabel, { marginTop: 12 }]}>PROFESSION (OPTIONAL)</Text>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              disabled={signupOtpSent || signupLoading}
-              onPress={() => setShowProfessionPicker(!showProfessionPicker)}
-              style={styles.inputBox}
-            >
-              <Briefcase size={18} color="#64748B" style={styles.fieldIcon} />
-              <Text style={[styles.input, { paddingVertical: 14, color: signupProfession ? '#FFFFFF' : AppTheme.textSecondary }]}>
-                {signupProfession || 'Tap to select Profession'}
-              </Text>
-              <ChevronDown size={16} color="#64748B" style={{ marginRight: 12 }} />
-            </TouchableOpacity>
-
-            {showProfessionPicker && !signupOtpSent && (
-              <View style={styles.professionOptionsList}>
-                {PROFESSION_OPTIONS.map((opt) => (
-                  <TouchableOpacity
-                    key={opt}
-                    activeOpacity={0.7}
-                    onPress={() => {
-                      setSignupProfession(opt);
-                      setShowProfessionPicker(false);
-                    }}
-                    style={[
-                      styles.professionOptionItem,
-                      signupProfession === opt && styles.professionOptionActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.professionOptionText,
-                        signupProfession === opt && styles.professionOptionTextActive,
-                      ]}
-                    >
-                      {opt}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-
-            {signupProfession === 'Other' && (
-              <View style={{ marginTop: 10 }}>
-                <Text style={styles.inputLabel}>SPECIFY PROFESSION (OPTIONAL)</Text>
-                <View style={styles.inputBox}>
-                  <TextInput
-                    placeholder="Enter your profession"
-                    placeholderTextColor={AppTheme.textSecondary}
-                    value={signupOtherProfession}
-                    onChangeText={setSignupOtherProfession}
-                    editable={!signupOtpSent && !signupLoading}
-                    style={styles.input}
-                  />
-                </View>
-              </View>
-            )}
-
-            {/* PINCODE / POSTAL CODE */}
-            <Text style={[styles.inputLabel, { marginTop: 12 }]}>PINCODE / POSTAL CODE (OPTIONAL)</Text>
-            <View style={styles.inputBox}>
-              <MapPin size={18} color="#64748B" style={styles.fieldIcon} />
-              <TextInput
-                placeholder="6-digit Pincode (e.g. 500001)"
-                placeholderTextColor={AppTheme.textSecondary}
-                value={signupPincode}
-                onChangeText={(val) => setSignupPincode(val.replace(/\D/g, '').substring(0, 6))}
-                keyboardType="number-pad"
-                maxLength={6}
-                editable={!signupOtpSent && !signupLoading}
-                style={[styles.input, { letterSpacing: 1, fontWeight: '700' }]}
-              />
-            </View>
-
             {/* 6. 18+ Age & Terms & Conditions Consent */}
             <TouchableOpacity
               activeOpacity={0.8}
@@ -761,13 +622,6 @@ export const LoginScreen: React.FC = () => {
         </View>
       </ScrollView>
 
-      <DobCalendarModal
-        visible={showDobPicker}
-        initialDate={signupDob}
-        onClose={() => setShowDobPicker(false)}
-        onSelectDate={(selectedDate) => setSignupDob(selectedDate)}
-        minAge={18}
-      />
     </KeyboardAvoidingView>
   );
 };
@@ -915,46 +769,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     color: '#FFFFFF',
     fontSize: 14,
-  },
-  dobAgeBadge: {
-    backgroundColor: 'rgba(0, 230, 118, 0.15)',
-    borderWidth: 1,
-    borderColor: '#00E676',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginRight: 12,
-  },
-  dobAgeBadgeText: {
-    color: '#00E676',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  professionOptionsList: {
-    backgroundColor: AppTheme.background,
-    borderRadius: 12,
-    marginTop: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    overflow: 'hidden',
-  },
-  professionOptionItem: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  professionOptionActive: {
-    backgroundColor: AppTheme.tagBg,
-  },
-  professionOptionText: {
-    color: '#94A3B8',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  professionOptionTextActive: {
-    color: AppTheme.primary,
-    fontWeight: '800',
   },
   otpHeaderRow: {
     flexDirection: 'row',

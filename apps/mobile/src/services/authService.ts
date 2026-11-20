@@ -306,9 +306,6 @@ class AuthServiceClass {
       firstName?: string;
       lastName?: string;
       email?: string;
-      dob?: string;
-      profession?: string;
-      pincode?: string;
       referenceCode?: string;
       reference_code?: string;
       agentCode?: string;
@@ -335,12 +332,6 @@ class AuthServiceClass {
       last_name: extra?.lastName?.trim() || undefined,
       lastName: extra?.lastName?.trim() || undefined,
       email: extra?.email ? extra.email.trim() : undefined,
-      date_of_birth: extra?.dob ? extra.dob.trim() : undefined,
-      dateOfBirth: extra?.dob ? extra.dob.trim() : undefined,
-      dob: extra?.dob ? extra.dob.trim() : undefined,
-      profession: extra?.profession ? extra.profession.trim() : undefined,
-      pincode: extra?.pincode ? extra.pincode.trim() : undefined,
-      pin_code: extra?.pincode ? extra.pincode.trim() : undefined,
       reference_code: refCode,
       referenceCode: refCode,
       referral_code: refCode,
