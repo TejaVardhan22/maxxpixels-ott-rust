@@ -1,7 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { StatusBar, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { NavigationContainer, getStateFromPath } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef, getStateFromPath } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking } from 'react-native';
 import { Provider } from 'react-redux';
@@ -11,7 +11,11 @@ import { RootNavigator } from './src/navigation/RootNavigator';
 import { SweetAlertContainer, SweetAlert } from './src/components/SweetAlert';
 import { ToastContainer } from './src/components/Toast';
 import { ErrorTracker } from './src/services/errorTrackerService';
-import { onForegroundMessage } from './src/services/pushNotificationService';
+import {
+  checkInitialNotification,
+  onBackgroundNotificationOpened,
+  onForegroundMessage,
+} from './src/services/pushNotificationService';
 import { ScreenSecurityGuard } from './src/components/ScreenSecurityGuard';
 import { AdMobService } from './src/services/adMobService';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
@@ -268,13 +272,23 @@ const linking = {
   },
 };
 
+const navigationRef = createNavigationContainerRef<any>();
+
+function navigateToNotificationsFromPush() {
+  if (navigationRef.isReady()) {
+    navigationRef.navigate('Notifications');
+  }
+}
+
 function App() {
+  const pendingPushOpenRef = useRef(false);
+
   useEffect(() => {
     ErrorTracker.init();
     AdMobService.init().catch(() => {});
 
     // Listen for foreground push notifications and display in-app banner
-    const unsubscribe = onForegroundMessage((message) => {
+    const unsubscribeForeground = onForegroundMessage((message) => {
       if (message.title || message.body) {
         SweetAlert.show({
           type: 'info',
@@ -284,9 +298,32 @@ function App() {
       }
     });
 
+    // Open notification screen when user taps a push notification (background -> foreground)
+    const unsubscribeOpened = onBackgroundNotificationOpened(() => {
+      if (navigationRef.isReady()) {
+        navigateToNotificationsFromPush();
+      } else {
+        pendingPushOpenRef.current = true;
+      }
+    });
+
+    // Handle app opened from quit state by tapping a push notification
+    checkInitialNotification().then((data) => {
+      if (data) {
+        if (navigationRef.isReady()) {
+          navigateToNotificationsFromPush();
+        } else {
+          pendingPushOpenRef.current = true;
+        }
+      }
+    }).catch(() => {});
+
     return () => {
-      if (typeof unsubscribe === 'function') {
-        unsubscribe();
+      if (typeof unsubscribeForeground === 'function') {
+        unsubscribeForeground();
+      }
+      if (typeof unsubscribeOpened === 'function') {
+        unsubscribeOpened();
       }
     };
   }, []);
@@ -295,7 +332,16 @@ function App() {
     <Provider store={store}>
       <SafeAreaProvider>
         <AuthProvider>
-          <NavigationContainer linking={linking}>
+          <NavigationContainer
+            ref={navigationRef}
+            linking={linking}
+            onReady={() => {
+              if (pendingPushOpenRef.current) {
+                pendingPushOpenRef.current = false;
+                navigateToNotificationsFromPush();
+              }
+            }}
+          >
             <StatusBar barStyle="light-content" />
             <View style={styles.container}>
               <ErrorBoundary>
