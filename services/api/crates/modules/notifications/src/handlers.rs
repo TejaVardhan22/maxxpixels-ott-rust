@@ -81,10 +81,16 @@ pub async fn test_gateway_handler(
         .unwrap_or("PUSH")
         .to_uppercase();
     let configured = match ch.as_str() {
-        "PUSH" | "FCM" => std::env::var("FCM_SERVER_KEY").map(|v| !v.trim().is_empty()).unwrap_or(false),
-        "SMS" => std::env::var("MSG91_AUTH_KEY").map(|v| !v.trim().is_empty()).unwrap_or(false),
-        "EMAIL" => std::env::var("SMTP_HOST").map(|v| !v.trim().is_empty()).unwrap_or(false),
-        "WHATSAPP" => std::env::var("WHATSAPP_ACCESS_TOKEN").map(|v| !v.trim().is_empty()).unwrap_or(false),
+        "PUSH" | "FCM" => maxx_integration_email::FcmClient::is_configured(),
+        "SMS" => std::env::var("MSG91_AUTH_KEY")
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false),
+        "EMAIL" => std::env::var("SMTP_HOST")
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false),
+        "WHATSAPP" => std::env::var("WHATSAPP_ACCESS_TOKEN")
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false),
         _ => false,
     };
     Ok(ApiResponse::ok_response(json!({

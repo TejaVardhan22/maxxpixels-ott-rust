@@ -56,10 +56,15 @@ pub fn spawn_notification_worker(db: DatabaseConnection) {
                             }
                         }
                     } else {
-                        let topic = format!("/topics/{}", item.target_audience.as_deref().unwrap_or("all"));
+                        let raw_topic = item.target_audience.as_deref().unwrap_or("all");
+                        let topic = match raw_topic.trim().to_uppercase().as_str() {
+                            "" | "ALL" | "ALL_USERS" | "EVERYONE" => "all_users".to_string(),
+                            other => other.to_lowercase(),
+                        };
+                        let topic_target = format!("/topics/{}", topic);
                         let _ = fcm
                             .send_to_target(
-                                &topic,
+                                &topic_target,
                                 &item.title,
                                 &item.message,
                                 item.image_url.as_deref(),

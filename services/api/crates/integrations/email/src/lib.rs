@@ -1,9 +1,8 @@
-use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Value};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use tracing::{info, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct EmailClient {
     pub api_url: String,
@@ -62,13 +61,17 @@ impl EmailClient {
     }
 }
 
+// ---------------------------------------------------------------------------
+// FCM HTTP v1 (Firebase Cloud Messaging) — service account authentication only
+// ---------------------------------------------------------------------------
+
 #[derive(Debug, Clone, Deserialize)]
-struct ServiceAccount {
-    project_id: Option<String>,
-    client_email: String,
-    private_key: String,
+pub struct ServiceAccount {
+    pub project_id: Option<String>,
+    pub client_email: String,
+    pub private_key: String,
     #[serde(default = "default_token_uri")]
-    token_uri: String,
+    pub token_uri: String,
 }
 
 fn default_token_uri() -> String {
@@ -76,30 +79,23 @@ fn default_token_uri() -> String {
 }
 
 #[derive(Debug, Clone)]
-struct FcmV1Config {
-    project_id: String,
-    client_email: String,
-    private_key: String,
-    token_uri: String,
+pub struct FcmV1Config {
+    pub project_id: String,
+    pub client_email: String,
+    pub private_key: String,
+    pub token_uri: String,
 }
 
 #[derive(Debug, Clone)]
-struct FcmLegacyConfig {
-    server_key: String,
-    endpoint: String,
-}
-
-#[derive(Debug, Clone)]
-enum FcmMode {
+pub enum FcmMode {
     V1(FcmV1Config),
-    Legacy(FcmLegacyConfig),
-    DryRun,
+    Unconfigured,
 }
 
 #[derive(Debug, Clone)]
-struct CachedToken {
-    access_token: String,
-    expires_at: Instant,
+pub struct CachedToken {
+    pub access_token: String,
+    pub expires_at: Instant,
 }
 
 static FCM_TOKEN_CACHE: OnceLock<Mutex<Option<CachedToken>>> = OnceLock::new();
@@ -139,7 +135,10 @@ fn read_service_account_json() -> Option<String> {
         match std::fs::read_to_string(&path) {
             Ok(s) if !s.trim().is_empty() => return Some(s),
             Ok(_) => warn!("FcmClient: service account file is empty: {}", path),
-            Err(e) => warn!("FcmClient: failed to read service account file {}: {}", path, e),
+            Err(e) => warn!(
+                "FcmClient: failed to read service account file {}: {}",
+                path, e
+            ),
         }
     }
     None
@@ -156,39 +155,55 @@ fn load_fcm_mode() -> FcmMode {
                 ])
                 .or(sa.project_id.clone())
                 .unwrap_or_default();
+
                 if project_id.trim().is_empty() {
-                    warn!("FcmClient: service account configured but project_id is missing");
-                } else if sa.client_email.trim().is_empty() || sa.private_key.trim().is_empty() {
-                    warn!("FcmClient: service account is missing client_email/private_key");
-                } else {
-                    info!(
-                        "FcmClient: using FCM HTTP v1 (project_id={})",
-                        project_id.trim()
+                    warn!(
+                        "FcmClient: service account configured but project_id is missing; FCM will be unconfigured"
                     );
-                    return FcmMode::V1(FcmV1Config {
-                        project_id: project_id.trim().to_string(),
-                        client_email: sa.client_email,
-                        private_key: sa.private_key,
-                        token_uri: sa.token_uri,
-                    });
+                    return FcmMode::Unconfigured;
                 }
+                if sa.client_email.trim().is_empty() {
+                    warn!(
+                        "FcmClient: service account is missing client_email; FCM will be unconfigured"
+                    );
+                    return FcmMode::Unconfigured;
+                }
+                if sa.private_key.trim().is_empty() {
+                    warn!(
+                        "FcmClient: service account is missing private_key; FCM will be unconfigured"
+                    );
+                    return FcmMode::Unconfigured;
+                }
+
+                let pid = project_id.trim().to_string();
+                info!(
+                    "FcmClient: FCM mode=HTTP_V1 project_id={} token_uri={}",
+                    pid,
+                    sa.token_uri
+                );
+                return FcmMode::V1(FcmV1Config {
+                    project_id: pid,
+                    client_email: sa.client_email,
+                    private_key: sa.private_key,
+                    token_uri: sa.token_uri,
+                });
             }
-            Err(e) => warn!("FcmClient: failed to parse service account JSON: {}", e),
+            Err(e) => {
+                warn!(
+                    "FcmClient: failed to parse service account JSON: {}; FCM will be unconfigured",
+                    e
+                );
+            }
         }
     }
 
-    if let Some(server_key) = read_nonempty_env(&["FCM_SERVER_KEY", "FIREBASE_SERVER_KEY"]) {
-        let endpoint = read_nonempty_env(&["FCM_ENDPOINT"])
-            .unwrap_or_else(|| "https://fcm.googleapis.com/fcm/send".to_string());
-        info!(
-            "FcmClient: using legacy FCM endpoint {} (HTTP v1 not configured)",
-            endpoint
-        );
-        return FcmMode::Legacy(FcmLegacyConfig { server_key, endpoint });
-    }
-
-    FcmMode::DryRun
+    info!("FcmClient: FCM mode=UNCONFIGURED (no service account credentials found)");
+    FcmMode::Unconfigured
 }
+
+// ---------------------------------------------------------------------------
+// JWT for Google OAuth2 service account authentication
+// ---------------------------------------------------------------------------
 
 #[derive(serde::Serialize)]
 struct JwtClaims<'a> {
@@ -207,23 +222,52 @@ struct TokenResponse {
     expires_in: Option<i64>,
 }
 
+/// Builds the RFC 7523 JWT claim set for Google service account OAuth2.
+/// Claims: iss=client_email, sub=client_email, aud=token_uri,
+/// scope=firebase.messaging, iat=now, exp=now+3600.
+fn build_jwt_claims<'a>(client_email: &'a str, token_uri: &'a str, now: i64) -> JwtClaims<'a> {
+    JwtClaims {
+        iss: client_email,
+        sub: client_email,
+        aud: token_uri,
+        scope: "https://www.googleapis.com/auth/firebase.messaging",
+        iat: now,
+        exp: now + 3600,
+    }
+}
+
+fn truncate_body(body: &str) -> String {
+    const MAX: usize = 300;
+    if body.len() <= MAX {
+        body.to_string()
+    } else {
+        format!("{}...", &body[..MAX])
+    }
+}
+
+/// Signs a service-account JWT and exchanges it for an OAuth2 access token.
+/// Returns the access token and its remaining TTL in seconds.
 async fn fetch_access_token(
     http: &reqwest::Client,
     cfg: &FcmV1Config,
 ) -> Result<CachedToken, String> {
     let now = chrono::Utc::now().timestamp();
-    let claims = JwtClaims {
-        iss: &cfg.client_email,
-        sub: &cfg.client_email,
-        aud: &cfg.token_uri,
-        scope: "https://www.googleapis.com/auth/firebase.messaging",
-        iat: now,
-        exp: now + 3600,
-    };
-    let key = EncodingKey::from_rsa_pem(cfg.private_key.as_bytes())
+    let claims = build_jwt_claims(&cfg.client_email, &cfg.token_uri, now);
+
+    let key = jsonwebtoken::EncodingKey::from_rsa_pem(cfg.private_key.as_bytes())
         .map_err(|e| format!("invalid service account private key: {}", e))?;
-    let jwt = jsonwebtoken::encode(&Header::new(Algorithm::RS256), &claims, &key)
-        .map_err(|e| format!("failed to sign service account JWT: {}", e))?;
+
+    let jwt = jsonwebtoken::encode(
+        &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256),
+        &claims,
+        &key,
+    )
+    .map_err(|e| format!("failed to sign service account JWT: {}", e))?;
+
+    debug!(
+        "FcmClient (v1): requesting OAuth2 token from {}",
+        cfg.token_uri
+    );
 
     let form_body = format!(
         "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion={}",
@@ -242,28 +286,41 @@ async fn fetch_access_token(
         .text()
         .await
         .unwrap_or_else(|_| "<unreadable body>".to_string());
+
     if !status.is_success() {
-        return Err(format!("token endpoint returned {}: {}", status, truncate_body(&body)));
+        error!(
+            "FcmClient (v1): OAuth2 token exchange failed status={} body={}",
+            status,
+            truncate_body(&body)
+        );
+        return Err(format!(
+            "token endpoint returned {}: {}",
+            status,
+            truncate_body(&body)
+        ));
     }
 
     let token: TokenResponse = serde_json::from_str(&body)
         .map_err(|e| format!("failed to parse token response: {}", e))?;
+
     let expires_in = token.expires_in.unwrap_or(3600).max(60) as u64;
+    // Cache with a 60-second safety margin before expiry.
     let ttl = expires_in.saturating_sub(60);
+
+    info!(
+        "FcmClient (v1): OAuth2 token acquired, expires_in={}s, cache_ttl={}s",
+        expires_in, ttl
+    );
+
     Ok(CachedToken {
         access_token: token.access_token,
         expires_at: Instant::now() + Duration::from_secs(ttl),
     })
 }
 
-fn truncate_body(body: &str) -> String {
-    const MAX: usize = 300;
-    if body.len() <= MAX {
-        body.to_string()
-    } else {
-        format!("{}...", &body[..MAX])
-    }
-}
+// ---------------------------------------------------------------------------
+// FcmClient — public API
+// ---------------------------------------------------------------------------
 
 pub struct FcmClient {
     mode: FcmMode,
@@ -278,14 +335,19 @@ impl FcmClient {
         }
     }
 
-    /// Returns true if FCM can be configured (HTTP v1 service account or legacy server key present).
+    /// Returns true only when FCM HTTP v1 service-account credentials are
+    /// configured. Legacy `FCM_SERVER_KEY` is no longer accepted.
     pub fn is_configured() -> bool {
-        if read_service_account_json().is_some() {
-            return true;
-        }
-        read_nonempty_env(&["FCM_SERVER_KEY", "FIREBASE_SERVER_KEY"]).is_some()
+        matches!(
+            load_fcm_mode(),
+            FcmMode::V1(_)
+        )
     }
 
+    /// Sends an FCM message to a device token or topic.
+    ///
+    /// Returns `true` only when the FCM HTTP v1 API reports success.
+    /// Returns `false` when unconfigured, on auth failure, or on send failure.
     pub async fn send_to_target(
         &self,
         to: &str,
@@ -295,17 +357,16 @@ impl FcmClient {
         action_url: Option<&str>,
     ) -> bool {
         match &self.mode {
-            FcmMode::V1(cfg) => self.send_v1(cfg, to, title, body, image_url, action_url).await,
-            FcmMode::Legacy(cfg) => {
-                self.send_legacy(cfg, to, title, body, image_url, action_url)
+            FcmMode::V1(cfg) => {
+                self.send_v1(cfg, to, title, body, image_url, action_url)
                     .await
             }
-            FcmMode::DryRun => {
-                info!(
-                    "FcmClient (dry-run, no FCM credentials configured): to={} title={}",
+            FcmMode::Unconfigured => {
+                warn!(
+                    "FcmClient: send attempted but FCM is unconfigured (no service account credentials); to={} title={}",
                     to, title
                 );
-                true
+                false
             }
         }
     }
@@ -315,16 +376,24 @@ impl FcmClient {
             let cache = token_cache().lock().unwrap_or_else(|e| e.into_inner());
             if let Some(t) = cache.as_ref() {
                 if t.expires_at > Instant::now() {
+                    debug!("FcmClient (v1): using cached OAuth2 access token");
                     return Ok(t.access_token.clone());
                 }
             }
         }
 
-        let fresh = fetch_access_token(&self.http, cfg).await?;
-        let token = fresh.access_token.clone();
-        let mut cache = token_cache().lock().unwrap_or_else(|e| e.into_inner());
-        *cache = Some(fresh);
-        Ok(token)
+        match fetch_access_token(&self.http, cfg).await {
+            Ok(fresh) => {
+                let token = fresh.access_token.clone();
+                let mut cache = token_cache().lock().unwrap_or_else(|e| e.into_inner());
+                *cache = Some(fresh);
+                Ok(token)
+            }
+            Err(e) => {
+                error!("FcmClient (v1): OAuth2 authentication failed: {}", e);
+                Err(e)
+            }
+        }
     }
 
     async fn send_v1(
@@ -338,10 +407,7 @@ impl FcmClient {
     ) -> bool {
         let access_token = match self.get_access_token(cfg).await {
             Ok(t) => t,
-            Err(e) => {
-                warn!("FcmClient (v1) auth error: {}", e);
-                return false;
-            }
+            Err(_) => return false,
         };
 
         let endpoint = format!(
@@ -349,40 +415,77 @@ impl FcmClient {
             cfg.project_id
         );
 
-        let mut message = json!({
-            "notification": {
-                "title": title,
-                "body": body
-            },
-            "android": {
-                "priority": "HIGH",
-                "notification": {
-                    "sound": "maxxpixels_notify",
-                    "channelId": "maxxpixels_alerts",
-                    "clickAction": "FLUTTER_NOTIFICATION_CLICK"
-                }
-            },
-            "data": {
-                "actionUrl": action_url.unwrap_or(""),
-                "click_action": "FLUTTER_NOTIFICATION_CLICK",
-                "sound": "maxxpixels_notify",
-                "channelId": "maxxpixels_alerts"
-            }
-        });
+        // Build FCM HTTP v1 message payload.
+        // Android notification config uses custom channel and sound.
+        // Data payload carries click action and deep-link for the mobile app.
+        let mut message = serde_json::Map::new();
 
+        let mut notification = serde_json::Map::new();
+        notification.insert("title".to_string(), json!(title));
+        notification.insert("body".to_string(), json!(body));
         if let Some(img) = image_url.filter(|s| !s.trim().is_empty()) {
-            message["notification"]["image"] = json!(img);
+            notification.insert("image".to_string(), json!(img));
         }
+        message.insert("notification".to_string(), Value::Object(notification));
 
-        if let Some(topic) = to.strip_prefix("/topics/") {
-            message["topic"] = json!(topic);
+        let mut android = serde_json::Map::new();
+        android.insert("priority".to_string(), json!("HIGH"));
+        let mut android_notification = serde_json::Map::new();
+        android_notification.insert(
+            "sound".to_string(),
+            json!("maxxpixels_notify"),
+        );
+        android_notification.insert(
+            "channelId".to_string(),
+            json!("maxxpixels_alerts"),
+        );
+        android_notification.insert(
+            "clickAction".to_string(),
+            json!("FLUTTER_NOTIFICATION_CLICK"),
+        );
+        android.insert(
+            "notification".to_string(),
+            Value::Object(android_notification),
+        );
+        message.insert("android".to_string(), Value::Object(android));
+
+        let mut data = serde_json::Map::new();
+        data.insert(
+            "actionUrl".to_string(),
+            json!(action_url.unwrap_or("")),
+        );
+        data.insert(
+            "click_action".to_string(),
+            json!("FLUTTER_NOTIFICATION_CLICK"),
+        );
+        data.insert("sound".to_string(), json!("maxxpixels_notify"));
+        data.insert("channelId".to_string(), json!("maxxpixels_alerts"));
+        message.insert("data".to_string(), Value::Object(data));
+
+        // Target: topic or device token.
+        let target_label = if let Some(topic) = to.strip_prefix("/topics/") {
+            message.insert("topic".to_string(), json!(topic));
+            format!("topic/{}", topic)
         } else if let Some(topic) = to.strip_prefix("topics/") {
-            message["topic"] = json!(topic);
+            message.insert("topic".to_string(), json!(topic));
+            format!("topic/{}", topic)
         } else {
-            message["token"] = json!(to);
-        }
+            // Truncate token for safe logging (never log full device token).
+            let safe_to = if to.len() > 8 {
+                format!("{}...{}", &to[..4], &to[to.len() - 4..])
+            } else {
+                "***".to_string()
+            };
+            message.insert("token".to_string(), json!(to));
+            format!("token/{}", safe_to)
+        };
 
-        let payload = json!({ "message": message });
+        let payload = json!({ "message": Value::Object(message) });
+
+        debug!(
+            "FcmClient (v1): sending push to {} project_id={}",
+            target_label, cfg.project_id
+        );
 
         let resp = self
             .http
@@ -393,80 +496,229 @@ impl FcmClient {
             .await;
 
         match resp {
-            Ok(r) if r.status().is_success() => true,
+            Ok(r) if r.status().is_success() => {
+                info!(
+                    "FcmClient (v1): push sent successfully to {}",
+                    target_label
+                );
+                true
+            }
             Ok(r) => {
                 let status = r.status();
                 let err_body = r
                     .text()
                     .await
                     .unwrap_or_else(|_| "<unreadable body>".to_string());
-                warn!(
-                    "FcmClient (v1) send failed with status {}: {}",
+                error!(
+                    "FcmClient (v1): send failed to {} status={} body={}",
+                    target_label,
                     status,
                     truncate_body(&err_body)
                 );
                 false
             }
             Err(e) => {
-                warn!("FcmClient (v1) request error: {}", e);
+                error!(
+                    "FcmClient (v1): send request error to {}: {}",
+                    target_label, e
+                );
                 false
             }
         }
     }
+}
 
-    async fn send_legacy(
-        &self,
-        cfg: &FcmLegacyConfig,
-        to: &str,
-        title: &str,
-        body: &str,
-        image_url: Option<&str>,
-        action_url: Option<&str>,
-    ) -> bool {
-        let payload = json!({
-            "to": to,
-            "priority": "high",
-            "notification": {
-                "title": title,
-                "body": body,
-                "image": image_url,
-                "sound": "maxxpixels_notify",
-                "android_channel_id": "maxxpixels_alerts"
-            },
-            "data": {
-                "actionUrl": action_url.unwrap_or(""),
-                "click_action": "FLUTTER_NOTIFICATION_CLICK",
-                "sound": "maxxpixels_notify",
-                "channelId": "maxxpixels_alerts"
-            }
-        });
+// ---------------------------------------------------------------------------
+// Unit tests — no production Firebase credentials required
+// ---------------------------------------------------------------------------
 
-        let resp = self
-            .http
-            .post(&cfg.endpoint)
-            .header("Authorization", format!("key={}", cfg.server_key))
-            .json(&payload)
-            .send()
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn valid_service_account_json() -> String {
+        json!({
+            "type": "service_account",
+            "project_id": "test-project-123",
+            "private_key_id": "keyid",
+            "private_key": "-----BEGIN PRIVATE KEY-----\\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC\\n-----END PRIVATE KEY-----\\n",
+            "client_email": "test-project-123@test-project-123.iam.gserviceaccount.com",
+            "token_uri": "https://oauth2.googleapis.com/token"
+        })
+        .to_string()
+    }
+
+    fn service_account_missing_project() -> String {
+        json!({
+            "type": "service_account",
+            "client_email": "test@test.iam.gserviceaccount.com",
+            "private_key": "fake-key",
+            "token_uri": "https://oauth2.googleapis.com/token"
+        })
+        .to_string()
+    }
+
+    fn service_account_missing_private_key() -> String {
+        json!({
+            "type": "service_account",
+            "project_id": "test-project",
+            "client_email": "test@test.iam.gserviceaccount.com",
+            "token_uri": "https://oauth2.googleapis.com/token"
+        })
+        .to_string()
+    }
+
+    fn service_account_missing_client_email() -> String {
+        json!({
+            "type": "service_account",
+            "project_id": "test-project",
+            "private_key": "fake-key",
+            "token_uri": "https://oauth2.googleapis.com/token"
+        })
+        .to_string()
+    }
+
+    fn invalid_json() -> String {
+        "{ not valid json".to_string()
+    }
+
+    #[test]
+    fn test_service_account_parses_valid_json() {
+        let sa: ServiceAccount = serde_json::from_str(&valid_service_account_json()).unwrap();
+        assert_eq!(sa.project_id.as_deref(), Some("test-project-123"));
+        assert_eq!(
+            sa.client_email,
+            "test-project-123@test-project-123.iam.gserviceaccount.com"
+        );
+        assert!(sa.private_key.contains("BEGIN PRIVATE KEY"));
+        assert_eq!(sa.token_uri, "https://oauth2.googleapis.com/token");
+    }
+
+    #[test]
+    fn test_service_account_missing_project_id() {
+        let result: Result<ServiceAccount, _> =
+            serde_json::from_str(&service_account_missing_project());
+        // JSON parses fine; project_id validation happens in load_fcm_mode
+        assert!(result.is_ok());
+        let sa = result.unwrap();
+        assert!(sa.project_id.is_none());
+    }
+
+    #[test]
+    fn test_service_account_missing_private_key_fails_to_parse() {
+        // private_key is a required (non-Option) field; missing it is a parse error.
+        let result: Result<ServiceAccount, _> =
+            serde_json::from_str(&service_account_missing_private_key());
+        assert!(result.is_err(), "missing private_key must be a parse error");
+    }
+
+    #[test]
+    fn test_service_account_missing_client_email() {
+        let result: Result<ServiceAccount, _> =
+            serde_json::from_str(&service_account_missing_client_email());
+        // client_email is required (non-Option) so this should fail to parse
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_json_fails_to_parse() {
+        let result: Result<ServiceAccount, _> = serde_json::from_str(&invalid_json());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_build_jwt_claims() {
+        let now = 1_700_000_000i64;
+        let claims = build_jwt_claims(
+            "test@project.iam.gserviceaccount.com",
+            "https://oauth2.googleapis.com/token",
+            now,
+        );
+        assert_eq!(claims.iss, "test@project.iam.gserviceaccount.com");
+        assert_eq!(claims.sub, "test@project.iam.gserviceaccount.com");
+        assert_eq!(claims.aud, "https://oauth2.googleapis.com/token");
+        assert_eq!(
+            claims.scope,
+            "https://www.googleapis.com/auth/firebase.messaging"
+        );
+        assert_eq!(claims.iat, now);
+        assert_eq!(claims.exp, now + 3600);
+    }
+
+    #[test]
+    fn test_truncate_body() {
+        let short = "short";
+        assert_eq!(truncate_body(short), "short");
+
+        let long = "a".repeat(500);
+        let truncated = truncate_body(&long);
+        assert_eq!(truncated.len(), 303); // 300 + "..."
+        assert!(truncated.ends_with("..."));
+    }
+
+    #[test]
+    fn test_is_configured_returns_false_without_credentials() {
+        // Ensure no FCM env vars are set during this test
+        std::env::remove_var("FCM_SERVICE_ACCOUNT_PATH");
+        std::env::remove_var("FCM_SERVICE_ACCOUNT_JSON");
+        std::env::remove_var("FIREBASE_SERVICE_ACCOUNT_PATH");
+        std::env::remove_var("FIREBASE_SERVICE_ACCOUNT_JSON");
+        std::env::remove_var("GOOGLE_CREDENTIALS_JSON");
+        std::env::remove_var("FCM_CREDENTIALS_JSON");
+        std::env::remove_var("GOOGLE_APPLICATION_CREDENTIALS");
+        // Reset the OnceLock cache is not possible, so we just verify
+        // that without env vars, load_fcm_mode returns Unconfigured.
+        // is_configured() calls load_fcm_mode() which reads env each time.
+        // Note: OnceLock for token cache doesn't affect mode loading.
+        assert!(!FcmClient::is_configured());
+    }
+
+    #[tokio::test]
+    async fn test_unconfigured_mode_returns_false_on_send() {
+        // Verify that Unconfigured mode leads to send_to_target returning false,
+        // not reporting successful delivery when credentials are missing.
+        let client = FcmClient {
+            mode: FcmMode::Unconfigured,
+            http: reqwest::Client::new(),
+        };
+        let result = client
+            .send_to_target("token123", "Test", "Body", None, None)
             .await;
+        assert!(
+            !result,
+            "Unconfigured FCM must not report successful delivery"
+        );
+    }
 
-        match resp {
-            Ok(r) if r.status().is_success() => true,
-            Ok(r) => {
-                let status = r.status();
-                let err_body = r
-                    .text()
-                    .await
-                    .unwrap_or_else(|_| "<unreadable body>".to_string());
-                warn!(
-                    "FcmClient (legacy) send failed with status {}: {}",
-                    status,
-                    truncate_body(&err_body)
-                );
-                false
-            }
-            Err(e) => {
-                warn!("FcmClient (legacy) request error: {}", e);
-                false
+    #[test]
+    fn test_unconfigured_mode_is_unconfigured() {
+        let client = FcmClient {
+            mode: FcmMode::Unconfigured,
+            http: reqwest::Client::new(),
+        };
+        match client.mode {
+            FcmMode::Unconfigured => {}
+            FcmMode::V1(_) => panic!("expected Unconfigured mode"),
+        }
+    }
+
+    #[test]
+    fn test_topic_normalization_for_v1_payload() {
+        // Verify that "/topics/all_users" and "topics/all_users" both produce topic field.
+        // This is tested indirectly through send_v1 payload construction; here we
+        // just verify the prefix-stripping logic is sound.
+        let cases = vec![
+            ("/topics/all_users", "all_users"),
+            ("topics/all_users", "all_users"),
+            ("all_users", "all_users"),
+        ];
+        for (input, expected_topic) in cases {
+            let topic = input.strip_prefix("/topics/").or_else(|| input.strip_prefix("topics/"));
+            // If no prefix, it's treated as a device token
+            match topic {
+                Some(t) => assert_eq!(t, expected_topic),
+                None => assert_eq!(input, expected_topic),
             }
         }
     }

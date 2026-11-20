@@ -107,6 +107,11 @@ services:
 
       # Notifications & Email (used by built-in notification_worker)
       FCM_SERVER_KEY: ${FCM_SERVER_KEY:-}
+      FCM_ENDPOINT: ${FCM_ENDPOINT:-}
+      # FCM HTTP v1 service account (preferred over legacy server key)
+      FCM_SERVICE_ACCOUNT_PATH: ${FCM_SERVICE_ACCOUNT_PATH:-}
+      FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_FROM: ${EMAIL_FROM:-}
 
@@ -142,6 +147,7 @@ services:
     volumes:
       - api_uploads:/app/uploads
       - db_backups:/app/backups
+      - /etc/maxxpixels/fcm-service-account.json:/etc/maxxpixels/fcm-service-account.json:ro
     networks:
       - maxx-net
 
