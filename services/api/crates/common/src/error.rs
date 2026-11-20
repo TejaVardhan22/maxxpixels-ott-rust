@@ -19,6 +19,9 @@ pub enum AppError {
     #[error("Validation Error: {0}")]
     Validation(String, Option<serde_json::Value>),
 
+    #[error("Unprocessable Entity: {0}")]
+    UnprocessableEntity(String),
+
     #[error("Unauthorized: {0}")]
     Unauthorized(String),
 
@@ -61,6 +64,12 @@ impl IntoResponse for AppError {
                 msg,
                 Some("VALIDATION_ERROR".to_string()),
                 errs,
+            ),
+            AppError::UnprocessableEntity(msg) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                msg,
+                Some("UNPROCESSABLE_ENTITY".to_string()),
+                None,
             ),
             AppError::Unauthorized(msg) => (
                 StatusCode::UNAUTHORIZED,

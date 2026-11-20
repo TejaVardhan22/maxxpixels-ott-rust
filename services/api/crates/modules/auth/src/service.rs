@@ -120,19 +120,19 @@ impl AuthService {
             .one(&self.db)
             .await
             .map_err(|e| AppError::Internal(format!("Database error during login: {}", e)))?
-            .ok_or_else(|| AppError::Unauthorized("Invalid credentials".to_string()))?;
+            .ok_or_else(|| AppError::UnprocessableEntity("Invalid credentials".to_string()))?;
 
         if user_model.status == "BLOCKED" || user_model.status == "SUSPENDED" {
-            return Err(AppError::Unauthorized("Account is blocked or suspended".to_string()));
+            return Err(AppError::UnprocessableEntity("Account is blocked or suspended".to_string()));
         }
 
         let hash = user_model
             .password_hash
             .clone()
-            .ok_or_else(|| AppError::Unauthorized("Invalid credentials".to_string()))?;
+            .ok_or_else(|| AppError::UnprocessableEntity("Invalid credentials".to_string()))?;
 
         if !SecurityUtils::verify_password_async(password.clone(), hash).await {
-            return Err(AppError::Unauthorized("Invalid credentials".to_string()));
+            return Err(AppError::UnprocessableEntity("Invalid credentials".to_string()));
         }
 
         // Fetch user roles
