@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate builds (dummy env only)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out private repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate split env examples
+        run: python3 scripts/combine_env.py --ott .env.ott.example --games .env.games.example --check
+
+      - name: Generate dummy combined env and validate Compose
+        run: |
+          python3 scripts/combine_env.py \
+            --ott .env.ott.example \
+            --games .env.games.example \
+            --out "$RUNNER_TEMP/maxxpixels-ci.env"
+          docker compose --env-file "$RUNNER_TEMP/maxxpixels-ci.env" config -q
+
+      - name: Check deploy script syntax
+        run: bash -n deploy.sh
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            services/api/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('services/api/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Rust API check
+        working-directory: services/api
+        run: cargo check --locked -p maxx-api
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            apps/admin/package-lock.json
+            apps/web/package-lock.json
+
+      - name: Admin install and build
+        working-directory: apps/admin
+        run: |
+          npm ci
+          npm run build -- --configuration production
+
+      - name: Web install and build
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_API_BASE_URL: /api/v1
+          NEXT_PUBLIC_APP_NAME: Maxxpixels
+        run: |
+          npm ci
+          npm run build

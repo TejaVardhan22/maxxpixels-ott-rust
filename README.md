@@ -118,6 +118,26 @@ make deploy
 | `make tools-up` | Also start the optional `media-streamer` service (`127.0.0.1:8085`) |
 | `make down` | Stop all containers |
 
+### GitHub Actions (private repository)
+
+The repo is private, and the workflows use the built-in `GITHUB_TOKEN` via `actions/checkout@v4`; no extra checkout token is needed.
+
+- `.github/workflows/ci.yml` runs on pushes, pull requests, and manually. It validates the dummy env examples, Compose config, deploy script syntax, Rust API, Angular admin, and Next.js web.
+- `.github/workflows/deploy.yml` runs manually from the Actions tab. To also deploy automatically on every push to `main`, set the repository variable `DEPLOY_ON_PUSH=true`.
+
+Required repository secrets for deployment:
+
+| Secret | Value |
+| --- | --- |
+| `VPS_HOST` | VPS IP or hostname |
+| `VPS_USER` | SSH user (for example `root` or `deploy`) |
+| `VPS_PATH` | Absolute path to the repo on the VPS |
+| `VPS_SSH_KEY` | Private SSH key content for that user |
+
+Optional repository variable: `VPS_PORT` (default `22`).
+
+The VPS checkout must already be able to pull this private repo (SSH deploy key or stored HTTPS credential) because `deploy.sh` runs `git pull --ff-only origin main`. Never put real credentials in `*.example` files or workflow files; CI uses dummy/placeholder env values only.
+
 ---
 
 ## 4. Host Nginx Reverse Proxy

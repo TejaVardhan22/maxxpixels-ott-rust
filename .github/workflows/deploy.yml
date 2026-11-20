@@ -1,0 +1,58 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy main to VPS
+    runs-on: ubuntu-latest
+    # Automatic deploys are opt-in. Set repository variable DEPLOY_ON_PUSH=true
+    # after the VPS secrets below are configured. workflow_dispatch always works.
+    if: github.event_name == 'workflow_dispatch' || vars.DEPLOY_ON_PUSH == 'true'
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_PATH: ${{ secrets.VPS_PATH }}
+      VPS_PORT: ${{ vars.VPS_PORT || '22' }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+    steps:
+      - name: Verify deployment secrets are configured
+        run: |
+          missing=0
+          for key in VPS_HOST VPS_USER VPS_PATH VPS_SSH_KEY; do
+            if [ -z "${!key:-}" ]; then
+              echo "Missing secret: $key" >&2
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Configure these repository secrets before deploying." >&2
+            exit 1
+          fi
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "$VPS_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+      - name: Pull and redeploy on VPS
+        run: |
+          ssh -i ~/.ssh/id_ed25519 \
+              -p "$VPS_PORT" \
+              -o BatchMode=yes \
+              -o StrictHostKeyChecking=yes \
+              "${VPS_USER}@${VPS_HOST}" \
+              "cd '$VPS_PATH' && ./deploy.sh"
