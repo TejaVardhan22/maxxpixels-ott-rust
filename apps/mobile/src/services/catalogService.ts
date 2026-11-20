@@ -305,20 +305,12 @@ export class CatalogService {
       const results = await ApiClient.getApi('tvod/products', {
         userToken: AuthService.authToken || undefined,
       });
-      if (Array.isArray(results) && results.length > 0) {
+      if (Array.isArray(results)) {
         return results.map((r: any) => this.mapContentToCatalogItem(r));
       }
     } catch (e) {
-      console.warn('tvod/products error, checking trending fallback:', e);
+      console.warn('tvod/products error:', e);
     }
-    try {
-      const results = await ApiClient.getApi('content/trending');
-      if (Array.isArray(results)) {
-        return results
-          .map((r: any) => this.mapContentToCatalogItem(r))
-          .filter((item) => item.isRent === 1 || String((item as any).monetization || '').toUpperCase() === 'TVOD');
-      }
-    } catch {}
     return [];
   }
 

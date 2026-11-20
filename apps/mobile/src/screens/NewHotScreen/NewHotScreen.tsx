@@ -64,18 +64,28 @@ const TAB_OPTIONS: HotTabOption[] = [
 
 const MONTH_NAMES = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
-const getReleaseDateDetails = (item: CatalogItem, index: number) => {
+type ReleaseDateDetails = {
+  month: string;
+  day: string;
+  releaseBadge: string;
+  fullText: string;
+} | null;
+
+const getReleaseDateDetails = (item: CatalogItem, _index: number): ReleaseDateDetails => {
+  // Only show release date info when the backend provides a real date — never fabricate dates.
   if (item.releaseDate) {
     const parsed = new Date(item.releaseDate);
     if (!isNaN(parsed.getTime())) {
       const m = MONTH_NAMES[parsed.getMonth()];
       const d = String(parsed.getDate()).padStart(2, '0');
       const year = parsed.getFullYear();
+      const now = new Date();
+      const isFuture = parsed > now;
       return {
         month: m,
         day: d,
-        releaseBadge: `Coming ${d} ${m}`,
-        fullText: `Arriving ${d} ${m} ${year}`,
+        releaseBadge: isFuture ? `Coming ${d} ${m}` : `Released ${d} ${m}`,
+        fullText: isFuture ? `Arriving ${d} ${m} ${year}` : `Released ${d} ${m} ${year}`,
       };
     }
 
@@ -84,38 +94,20 @@ const getReleaseDateDetails = (item: CatalogItem, index: number) => {
       const monthIdx = parseInt(isoMatch[2], 10) - 1;
       const m = MONTH_NAMES[Math.max(0, Math.min(11, monthIdx))];
       const d = String(parseInt(isoMatch[3], 10)).padStart(2, '0');
+      const now = new Date();
+      const itemDate = new Date(`${isoMatch[1]}-${String(isoMatch[2]).padStart(2, '0')}-${String(isoMatch[3]).padStart(2, '0')}`);
+      const isFuture = itemDate > now;
       return {
         month: m,
         day: d,
-        releaseBadge: `Coming ${d} ${m}`,
-        fullText: `Coming ${d} ${m} ${isoMatch[1]}`,
+        releaseBadge: isFuture ? `Coming ${d} ${m}` : `Released ${d} ${m}`,
+        fullText: isFuture ? `Coming ${d} ${m} ${isoMatch[1]}` : `Released ${d} ${m} ${isoMatch[1]}`,
       };
     }
   }
 
-  const numId = typeof item.id === 'number' && Number.isFinite(item.id) ? item.id : (String(item.id || '1').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) || 1);
-
-  if (item.releaseYear) {
-    const cleanYear = item.releaseYear.trim();
-    const curYear = new Date().getFullYear();
-    const day = String(((numId * 7 + index * 3) % 28) + 1).padStart(2, '0');
-    const month = MONTH_NAMES[(numId + index) % 12];
-    return {
-      month,
-      day,
-      releaseBadge: cleanYear === String(curYear) ? `Coming ${month}` : `Coming ${cleanYear}`,
-      fullText: `Arriving ${month} ${cleanYear}`,
-    };
-  }
-
-  const d = String(((numId * 5 + 7) % 27) + 1).padStart(2, '0');
-  const m = MONTH_NAMES[(numId + 2) % 12];
-  return {
-    month: m,
-    day: d,
-    releaseBadge: 'Coming Soon',
-    fullText: `Coming ${d} ${m}`,
-  };
+  // No real release date — return null so no fake "Coming Soon" badge is shown.
+  return null;
 };
 
 export const NewHotScreen: React.FC = () => {
@@ -272,9 +264,16 @@ export const NewHotScreen: React.FC = () => {
 
   // Filter content by active tab
   const getFilteredItems = (): CatalogItem[] => {
+    const now = new Date();
     switch (activeTab) {
       case 'coming_soon':
-        return allItems.filter((i) => i.isPremium === 1 || !i.videoUrl).slice(0, 15);
+        return allItems
+          .filter((i) => {
+            if (!i.releaseDate) return false;
+            const parsed = new Date(i.releaseDate);
+            return !isNaN(parsed.getTime()) && parsed > now;
+          })
+          .slice(0, 15);
       case 'trending':
         return trendingItems.length > 0 ? trendingItems : allItems.slice(0, 15);
       case 'top10':
@@ -399,6 +398,7 @@ export const NewHotScreen: React.FC = () => {
             const isTop10 = activeTab === 'top10';
             const rank = index + 1;
             const dateInfo = getReleaseDateDetails(item, index);
+            const hasReleaseDate = !!dateInfo;
 
             const metadataList = [
               item.categoryName,
@@ -416,12 +416,12 @@ export const NewHotScreen: React.FC = () => {
                       <Text style={styles.rankTopText}>TOP</Text>
                       <Text style={styles.rankNumberText}>{rank}</Text>
                     </View>
-                  ) : (
+                  ) : hasReleaseDate ? (
                     <View style={styles.dateBadge}>
-                      <Text style={styles.dateMonth}>{dateInfo.month}</Text>
-                      <Text style={styles.dateDay}>{dateInfo.day}</Text>
+                      <Text style={styles.dateMonth}>{dateInfo!.month}</Text>
+                      <Text style={styles.dateDay}>{dateInfo!.day}</Text>
                     </View>
-                  )}
+                  ) : null}
 
                   <View style={styles.metaWrap}>
                     <View style={styles.titleBadgeRow}>
@@ -475,11 +475,13 @@ export const NewHotScreen: React.FC = () => {
                   </View>
 
                   {/* Status Pill Badge */}
-                  <View style={styles.cardStatusBadge}>
-                    <Text style={styles.cardStatusText}>
-                      {isTop10 ? `#${rank} in India` : dateInfo.releaseBadge.toUpperCase()}
-                    </Text>
-                  </View>
+                  {hasReleaseDate ? (
+                    <View style={styles.cardStatusBadge}>
+                      <Text style={styles.cardStatusText}>
+                        {isTop10 ? `#${rank} in India` : dateInfo!.releaseBadge.toUpperCase()}
+                      </Text>
+                    </View>
+                  ) : null}
                 </TouchableOpacity>
 
                 {/* Hotstar JioHotstar Action Bar */}
