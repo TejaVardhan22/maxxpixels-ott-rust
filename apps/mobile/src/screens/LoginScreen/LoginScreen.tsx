@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
-  Linking,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -25,7 +25,6 @@ import {
   ShieldCheck,
   CheckSquare,
   Square,
-  ChevronDown,
 } from 'lucide-react-native';
 import { AppTheme } from '../../core/theme';
 import { AppConfig } from '../../core/config';
@@ -39,25 +38,27 @@ type ScreenMode = 'signin' | 'signup';
 export const LoginScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
-
   const route = useRoute<any>();
-  const [mode, setMode] = useState<ScreenMode>(route.params?.mode || 'signin');
+
+  // Start on sign-in by default; allow deep-link to open register
+  const [mode, setMode] = useState<ScreenMode>(route.params?.mode === 'signup' ? 'signup' : 'signin');
   const [countryCode, setCountryCode] = useState('+91');
   const [countryPicker, setCountryPicker] = useState(false);
   const [resendSeconds, setResendSeconds] = useState(0);
+
   useEffect(() => {
     if (resendSeconds <= 0) return;
-    const timer = setTimeout(() => setResendSeconds(value => value - 1), 1000);
+    const timer = setTimeout(() => setResendSeconds((v) => v - 1), 1000);
     return () => clearTimeout(timer);
   }, [resendSeconds]);
 
-  // Sign In Mobile OTP State
+  // ---------- Sign In State ----------
   const [mobileNumber, setMobileNumber] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otpLoading, setOtpLoading] = useState(false);
 
-  // Sign Up State
+  // ---------- Sign Up State ----------
   const [signupFirstName, setSignupFirstName] = useState('');
   const [signupLastName, setSignupLastName] = useState('');
   const [signupReferralCode, setSignupReferralCode] = useState('');
@@ -70,20 +71,26 @@ export const LoginScreen: React.FC = () => {
 
   const signupFullName = `${signupFirstName.trim()} ${signupLastName.trim()}`.trim();
 
+  // Load pending referral code from deep-link or storage
   useEffect(() => {
     let active = true;
     const loadReferralCode = async () => {
       try {
         const stored = await AsyncStorage.getItem('pending_referral_code');
-        const routed = route.params?.ref || route.params?.reference_code || route.params?.referral || route.params?.agentCode;
+        const routed =
+          route.params?.ref ||
+          route.params?.reference_code ||
+          route.params?.referral ||
+          route.params?.agentCode;
         const initial = (routed || stored || '').trim().toUpperCase();
         if (active && initial) setSignupReferralCode(initial);
       } catch {}
     };
     void loadReferralCode();
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [route.params]);
-
 
   const navigatePostAuth = async (userObj: any) => {
     let hasActiveSub = false;
@@ -111,10 +118,10 @@ export const LoginScreen: React.FC = () => {
     }
   };
 
-  // Sign In SMS OTP Handlers
+  // ---------- Sign In Handlers ----------
   const handleSendOtp = async () => {
     if (!isValidPhone(mobileNumber, countryCode)) {
-      Toast.warning('Please enter a valid Mobile phone number.', 'Validation Error');
+      Toast.warning('Please enter a valid mobile number.', 'Validation Error');
       return;
     }
 
@@ -123,7 +130,7 @@ export const LoginScreen: React.FC = () => {
       await AuthService.sendMobileOtp(`${countryCode}${mobileNumber}`, otpSent, false);
       setResendSeconds(30);
       setOtpSent(true);
-      Toast.success(`A verification code was sent to ${countryCode} ${mobileNumber}.`, 'Verification Code Sent');
+      Toast.success(`Verification code sent to ${countryCode} ${mobileNumber}.`, 'OTP Sent');
     } catch (e: any) {
       if (e?.message && /not registered|user_not_registered|404/i.test(e.message)) {
         Toast.warning('This mobile number is not registered. Please register to continue.', 'Registration Required');
@@ -174,17 +181,23 @@ export const LoginScreen: React.FC = () => {
     }
   };
 
-  // Sign Up Handlers (Password-less OTP Registration)
+  // ---------- Sign Up Handlers ----------
   const handleSendSignupOtp = async () => {
     if (!signupFirstName.trim() || !signupLastName.trim()) {
       Toast.warning('Please enter your first name and last name.', 'Check your details');
       return;
     }
     const validationError = validateRegistration({
-      name: signupFullName, email: signupEmail, phone: signupMobile, countryCode,
+      name: signupFullName,
+      email: signupEmail,
+      phone: signupMobile,
+      countryCode,
       consent: adultConfirmed,
     });
-    if (validationError) { Toast.warning(validationError, 'Check your details'); return; }
+    if (validationError) {
+      Toast.warning(validationError, 'Check your details');
+      return;
+    }
 
     setSignupLoading(true);
     try {
@@ -256,6 +269,15 @@ export const LoginScreen: React.FC = () => {
     }
   };
 
+  const switchMode = useCallback(() => {
+    setMode((prev) => (prev === 'signin' ? 'signup' : 'signin'));
+    setOtpCode('');
+    setSignupOtp('');
+    setCountryPicker(false);
+    setOtpSent(false);
+    setSignupOtpSent(false);
+  }, []);
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -286,11 +308,12 @@ export const LoginScreen: React.FC = () => {
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: insets.top + 50, paddingBottom: insets.bottom + 32 },
+          { paddingTop: insets.top + 40, paddingBottom: insets.bottom + 40 },
         ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Branding */}
         <View style={styles.brandingHeader}>
           <Image
             source={require('../../assets/images/logo.png')}
@@ -298,353 +321,376 @@ export const LoginScreen: React.FC = () => {
             resizeMode="contain"
           />
           <Text style={styles.appTitle}>MAXXPIXELS</Text>
-          <Text style={styles.subHeading}>
-            {mode === 'signin'
-              ? 'Unlimited movies, TV series & originals.'
-              : 'Your next great watch starts here.'}
-          </Text>
         </View>
 
-        {/* Main Mode Toggle: Sign In vs Sign Up */}
-        <View style={styles.modeContainer}>
-          <TouchableOpacity
-            activeOpacity={0.8}
-            disabled={otpLoading || signupLoading}
-            onPress={() => {
-              setMode('signin');
-              setOtpSent(false);
-            }}
-            style={[styles.modeButton, mode === 'signin' && styles.modeButtonActive]}
-          >
-            <LogIn size={15} color={mode === 'signin' ? '#FFFFFF' : '#64748B'} />
-            <Text style={[styles.modeButtonText, mode === 'signin' && styles.modeButtonTextActive]}>
-              Sign In (OTP)
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => {
-              setMode('signup');
-              setSignupOtpSent(false);
-            }}
-            style={[styles.modeButton, mode === 'signup' && styles.modeButtonActive]}
-          >
-            <UserPlus size={15} color={mode === 'signup' ? '#FFFFFF' : '#64748B'} />
-            <Text style={[styles.modeButtonText, mode === 'signup' && styles.modeButtonTextActive]}>
-              Register (OTP)
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* SIGN IN VIEW (OTP ONLY) */}
-        <View style={styles.intro}>
-          <Text style={styles.eyebrow}>{mode === 'signin' ? 'WELCOME BACK' : 'NEW MEMBER REGISTRATION'}</Text>
-          <Text accessibilityRole="header" style={styles.heading}>{mode === 'signin' ? 'Sign in to MaxxPixels' : 'Create MaxxPixels Account'}</Text>
-          <Text style={styles.description}>{mode === 'signin' ? 'Enter your mobile number to receive a 6-digit verification code.' : 'Fill in your details, then verify your mobile number to start streaming.'}</Text>
-        </View>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Select country code" disabled={otpSent || signupOtpSent || otpLoading || signupLoading} onPress={() => setCountryPicker(!countryPicker)} style={styles.countrySelector}>
-          <Text style={styles.countryCodeText}>{COUNTRY_CODES.find(country => country.code === countryCode)?.name} ({countryCode})</Text>
-          <ChevronDown size={16} color={AppTheme.textSecondary} />
-        </TouchableOpacity>
-        {countryPicker && COUNTRY_CODES.map(country => (
-          <TouchableOpacity key={country.code} accessibilityRole="button" onPress={() => { setCountryCode(country.code); setCountryPicker(false); }} style={styles.countryOption}>
-            <Text style={styles.countryCodeText}>{country.name} {country.code}</Text>
-          </TouchableOpacity>
-        ))}
+        {/* ================= SIGN IN VIEW ================= */}
         {mode === 'signin' ? (
-          <View style={styles.formContainer}>
-            <Text style={styles.inputLabel}>MOBILE NUMBER</Text>
-            <View style={styles.inputBox}>
-              <View style={styles.countryCodeBadge}>
-                <Text style={styles.countryCodeText}>{countryCode}</Text>
-              </View>
-              <TextInput
-                placeholder="Mobile phone number"
-                placeholderTextColor={AppTheme.textSecondary}
-                value={mobileNumber}
-                onChangeText={value => setMobileNumber(value.replace(/\D/g, ''))}
-                editable={!otpSent && !otpLoading}
-                accessibilityLabel="Mobile phone number"
-                keyboardType="phone-pad"
-                maxLength={15 - countryCode.length + 1}
-                style={styles.input}
-              />
-            </View>
+          <>
+            <View style={styles.signinCard}>
+              <Text style={styles.eyebrow}>Welcome back</Text>
+              <Text style={styles.heading}>Sign in to MaxxPixels</Text>
+              <Text style={styles.description}>
+                Enter your mobile number to receive a 6-digit verification code.
+              </Text>
 
-            {otpSent ? (
-              <View style={{ marginTop: 14 }}>
-                <View style={styles.otpHeaderRow}>
-                  <Text style={styles.inputLabel}>6-DIGIT VERIFICATION CODE</Text>
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={handleSendOtp}
-                    disabled={otpLoading || resendSeconds > 0}
-                  >
-                    <Text style={styles.resendText}>{resendSeconds > 0 ? `Resend in ${resendSeconds}s` : 'Resend code'}</Text>
-                  </TouchableOpacity>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Select country code"
+                disabled={otpSent || otpLoading}
+                onPress={() => setCountryPicker(!countryPicker)}
+                style={styles.countrySelector}
+              >
+                <Text style={styles.countryCodeText}>
+                  {COUNTRY_CODES.find((c) => c.code === countryCode)?.name} ({countryCode})
+                </Text>
+                <Phone size={16} color={AppTheme.textSecondary} />
+              </TouchableOpacity>
+
+              {countryPicker && (
+                <View style={styles.countryPickerOverlay}>
+                  {COUNTRY_CODES.map((country) => (
+                    <TouchableOpacity
+                      key={country.code}
+                      accessibilityRole="button"
+                      onPress={() => {
+                        setCountryCode(country.code);
+                        setCountryPicker(false);
+                      }}
+                      style={styles.countryOption}
+                    >
+                      <Text style={styles.countryCodeText}>
+                        {country.name} {country.code}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
+              )}
 
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>MOBILE NUMBER</Text>
                 <View style={styles.inputBox}>
-                  <KeyRound size={20} color="#64748B" style={styles.fieldIcon} />
+                  <View style={styles.countryCodeBadge}>
+                    <Text style={styles.countryCodeText}>{countryCode}</Text>
+                  </View>
                   <TextInput
-                    placeholder="Enter 6-digit OTP"
+                    placeholder="Mobile phone number"
                     placeholderTextColor={AppTheme.textSecondary}
-                    value={otpCode}
-                    onChangeText={handleOtpChange}
-                    autoComplete="sms-otp"
-                    textContentType="oneTimeCode"
-                    importantForAutofill="yes"
-                    autoFocus={true}
-                    accessibilityLabel="Verification code"
-                    keyboardType="number-pad"
-                    maxLength={6}
-                    style={[styles.input, { letterSpacing: 4, fontWeight: '900' }]}
+                    value={mobileNumber}
+                    onChangeText={(value) => setMobileNumber(value.replace(/\D/g, ''))}
+                    editable={!otpSent && !otpLoading}
+                    accessibilityLabel="Mobile phone number"
+                    keyboardType="phone-pad"
+                    maxLength={15 - countryCode.length + 1}
+                    style={styles.input}
                   />
                 </View>
 
+                {otpSent ? (
+                  <>
+                    <View style={styles.otpHeaderRow}>
+                      <Text style={styles.inputLabel}>6-DIGIT VERIFICATION CODE</Text>
+                      <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={handleSendOtp}
+                        disabled={otpLoading || resendSeconds > 0}
+                      >
+                        <Text style={styles.resendText}>
+                          {resendSeconds > 0 ? `Resend in ${resendSeconds}s` : 'Resend code'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.inputBox}>
+                      <KeyRound size={20} color="#64748B" style={styles.fieldIcon} />
+                      <TextInput
+                        placeholder="Enter 6-digit OTP"
+                        placeholderTextColor={AppTheme.textSecondary}
+                        value={otpCode}
+                        onChangeText={handleOtpChange}
+                        autoComplete="sms-otp"
+                        textContentType="oneTimeCode"
+                        importantForAutofill="yes"
+                        autoFocus={true}
+                        accessibilityLabel="Verification code"
+                        keyboardType="number-pad"
+                        maxLength={6}
+                        style={[styles.input, { letterSpacing: 4, fontWeight: '900' }]}
+                      />
+                    </View>
+
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => void handleVerifyOtp()}
+                      disabled={otpLoading}
+                      style={styles.actionButton}
+                    >
+                      {otpLoading ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <>
+                          <ShieldCheck size={18} color="#FFFFFF" />
+                          <Text style={styles.btnText}>Verify & Sign In</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={handleSendOtp}
+                    disabled={otpLoading}
+                    style={styles.actionButton}
+                  >
+                    {otpLoading ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Phone size={18} color="#FFFFFF" />
+                        <Text style={styles.btnText}>Send Verification Code</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Bottom link: Don't have an account? Register */}
+              <View style={styles.bottomLink}>
+                <Text style={styles.bottomLinkText}>Don't have an account?</Text>
                 <TouchableOpacity
-                  activeOpacity={0.85}
-                  onPress={() => void handleVerifyOtp()}
-                  disabled={otpLoading}
-                  style={styles.loginButton}
+                  activeOpacity={0.8}
+                  onPress={switchMode}
+                  style={styles.bottomLinkTouch}
                 >
-                  {otpLoading ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <>
-                      <ShieldCheck size={18} color="#FFFFFF" />
-                      <Text style={styles.loginBtnText}>Verify & Sign In</Text>
-                    </>
-                  )}
+                  <Text style={styles.bottomLinkBold}>Create account</Text>
                 </TouchableOpacity>
               </View>
-            ) : (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={handleSendOtp}
-                disabled={otpLoading}
-                style={styles.loginButton}
-              >
-                {otpLoading ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Phone size={18} color="#FFFFFF" />
-                    <Text style={styles.loginBtnText}>Send Verification Code</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            )}
-          </View>
+            </View>
+          </>
         ) : (
-          /* SIGN UP VIEW (FULL 6-FIELD PASSWORD-LESS REGISTRATION) */
-          <View style={styles.formContainer}>
-            {/* 1. First & Last Name */}
-            <Text style={styles.inputLabel}>FIRST NAME *</Text>
-            <View style={styles.inputBox}>
-              <UserIcon size={18} color="#64748B" style={styles.fieldIcon} />
-              <TextInput
-                placeholder="e.g. Alexander"
-                placeholderTextColor={AppTheme.textSecondary}
-                value={signupFirstName}
-                onChangeText={setSignupFirstName}
-                editable={!signupOtpSent && !signupLoading}
-                style={styles.input}
-              />
-            </View>
-
-            <Text style={[styles.inputLabel, { marginTop: 12 }]}>LAST NAME *</Text>
-            <View style={styles.inputBox}>
-              <UserIcon size={18} color="#64748B" style={styles.fieldIcon} />
-              <TextInput
-                placeholder="e.g. Pierce"
-                placeholderTextColor={AppTheme.textSecondary}
-                value={signupLastName}
-                onChangeText={setSignupLastName}
-                editable={!signupOtpSent && !signupLoading}
-                style={styles.input}
-              />
-            </View>
-
-            {/* 2. Email Address */}
-            <Text style={[styles.inputLabel, { marginTop: 12 }]}>EMAIL ADDRESS (OPTIONAL)</Text>
-            <View style={styles.inputBox}>
-              <Mail size={18} color="#64748B" style={styles.fieldIcon} />
-              <TextInput
-                placeholder="name@example.com (optional)"
-                placeholderTextColor={AppTheme.textSecondary}
-                value={signupEmail}
-                onChangeText={setSignupEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                editable={!signupOtpSent && !signupLoading}
-                style={styles.input}
-              />
-            </View>
-
-            {/* 3. Marketing Agent / Referral Code */}
-            <Text style={[styles.inputLabel, { marginTop: 12 }]}>REFERRAL CODE (OPTIONAL)</Text>
-            <View style={styles.inputBox}>
-              <KeyRound size={18} color="#64748B" style={styles.fieldIcon} />
-              <TextInput
-                placeholder="e.g. MKT-A1B2C3D4"
-                placeholderTextColor={AppTheme.textSecondary}
-                value={signupReferralCode}
-                onChangeText={(value) => setSignupReferralCode(value.trim().toUpperCase())}
-                autoCapitalize="characters"
-                autoCorrect={false}
-                editable={!signupOtpSent && !signupLoading}
-                style={styles.input}
-              />
-            </View>
-
-            {/* 4. Mobile Number */}
-            <Text style={[styles.inputLabel, { marginTop: 12 }]}>MOBILE PHONE NUMBER *</Text>
-            <View style={styles.inputBox}>
-              <View style={styles.countryCodeBadge}>
-                <Text style={styles.countryCodeText}>{countryCode}</Text>
-              </View>
-              <TextInput
-                placeholder="Mobile phone number"
-                placeholderTextColor={AppTheme.textSecondary}
-                value={signupMobile}
-                onChangeText={value => setSignupMobile(value.replace(/\D/g, ''))}
-                keyboardType="phone-pad"
-                maxLength={15 - countryCode.length + 1}
-                editable={!signupOtpSent && !signupLoading}
-                style={styles.input}
-              />
-            </View>
-
-            {/* 6. 18+ Age & Terms & Conditions Consent */}
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => setAdultConfirmed(!adultConfirmed)}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: adultConfirmed }}
-              style={styles.checkboxRow}
-              disabled={signupOtpSent || signupLoading}
-            >
-              {adultConfirmed ? (
-                <CheckSquare size={18} color={AppTheme.primary} />
-              ) : (
-                <Square size={18} color="#64748B" />
-              )}
-              <Text style={styles.checkboxLabel}>
-                I agree to the Terms of Use and Privacy Policy.
+          // ================= SIGN UP VIEW =================
+          <>
+            <View style={styles.signupCard}>
+              <Text style={styles.eyebrow}>Create account</Text>
+              <Text style={styles.heading}>Join MaxxPixels</Text>
+              <Text style={styles.description}>
+                Fill in your details, then verify your mobile number to start streaming.
               </Text>
-            </TouchableOpacity>
 
-            {signupOtpSent ? (
-              <View style={{ marginTop: 14 }}>
-                <View style={styles.otpHeaderRow}>
-                  <Text style={styles.inputLabel}>ENTER 6-DIGIT SMS CODE *</Text>
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={handleSendSignupOtp}
-                    disabled={signupLoading || resendSeconds > 0}
-                  >
-                    <Text style={styles.resendText}>{resendSeconds > 0 ? `Resend in ${resendSeconds}s` : 'Resend code'}</Text>
-                  </TouchableOpacity>
-                </View>
-
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>FIRST NAME *</Text>
                 <View style={styles.inputBox}>
-                  <KeyRound size={20} color="#64748B" style={styles.fieldIcon} />
+                  <UserIcon size={18} color="#64748B" style={styles.fieldIcon} />
                   <TextInput
-                    placeholder="Enter 6-digit code"
+                    placeholder="e.g. Rahul"
                     placeholderTextColor={AppTheme.textSecondary}
-                    value={signupOtp}
-                    onChangeText={handleSignupOtpChange}
-                    autoComplete="sms-otp"
-                    textContentType="oneTimeCode"
-                    importantForAutofill="yes"
-                    autoFocus={true}
-                    accessibilityLabel="Registration verification code"
-                    keyboardType="number-pad"
-                    maxLength={6}
-                    style={[styles.input, { letterSpacing: 4, fontWeight: '900' }]}
+                    value={signupFirstName}
+                    onChangeText={setSignupFirstName}
+                    editable={!signupOtpSent && !signupLoading}
+                    style={styles.input}
                   />
                 </View>
+              </View>
 
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>LAST NAME *</Text>
+                <View style={styles.inputBox}>
+                  <UserIcon size={18} color="#64748B" style={styles.fieldIcon} />
+                  <TextInput
+                    placeholder="e.g. Sharma"
+                    placeholderTextColor={AppTheme.textSecondary}
+                    value={signupLastName}
+                    onChangeText={setSignupLastName}
+                    editable={!signupOtpSent && !signupLoading}
+                    style={styles.input}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>EMAIL ADDRESS (OPTIONAL)</Text>
+                <View style={styles.inputBox}>
+                  <Mail size={18} color="#64748B" style={styles.fieldIcon} />
+                  <TextInput
+                    placeholder="name@example.com (optional)"
+                    placeholderTextColor={AppTheme.textSecondary}
+                    value={signupEmail}
+                    onChangeText={setSignupEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    editable={!signupOtpSent && !signupLoading}
+                    style={styles.input}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>MOBILE NUMBER *</Text>
+                <View style={styles.inputBox}>
+                  <View style={styles.countryCodeBadge}>
+                    <Text style={styles.countryCodeText}>{countryCode}</Text>
+                  </View>
+                  <TextInput
+                    placeholder="Mobile phone number"
+                    placeholderTextColor={AppTheme.textSecondary}
+                    value={signupMobile}
+                    onChangeText={(value) => setSignupMobile(value.replace(/\D/g, ''))}
+                    keyboardType="phone-pad"
+                    maxLength={15 - countryCode.length + 1}
+                    editable={!signupOtpSent && !signupLoading}
+                    style={styles.input}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>REFERRAL CODE (OPTIONAL)</Text>
+                <View style={styles.inputBox}>
+                  <KeyRound size={18} color="#64748B" style={styles.fieldIcon} />
+                  <TextInput
+                    placeholder="e.g. MKT-A1B2C3D4"
+                    placeholderTextColor={AppTheme.textSecondary}
+                    value={signupReferralCode}
+                    onChangeText={(value) => setSignupReferralCode(value.trim().toUpperCase())}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    editable={!signupOtpSent && !signupLoading}
+                    style={styles.input}
+                  />
+                </View>
+              </View>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setAdultConfirmed(!adultConfirmed)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: adultConfirmed }}
+                style={styles.checkboxRow}
+                disabled={signupOtpSent || signupLoading}
+              >
+                {adultConfirmed ? (
+                  <CheckSquare size={18} color={AppTheme.primary} />
+                ) : (
+                  <Square size={18} color="#64748B" />
+                )}
+                <Text style={styles.checkboxLabel}>
+                  I agree to the <Text style={styles.legalLink}>Terms of Use</Text> and{' '}
+                  <Text style={styles.legalLink}>Privacy Policy</Text>.
+                </Text>
+              </TouchableOpacity>
+
+              {signupOtpSent ? (
+                <>
+                  <View style={styles.otpHeaderRow}>
+                    <Text style={styles.inputLabel}>ENTER 6-DIGIT SMS CODE</Text>
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={handleSendSignupOtp}
+                      disabled={signupLoading || resendSeconds > 0}
+                    >
+                      <Text style={styles.resendText}>
+                        {resendSeconds > 0 ? `Resend in ${resendSeconds}s` : 'Resend code'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.inputBox}>
+                    <KeyRound size={20} color="#64748B" style={styles.fieldIcon} />
+                    <TextInput
+                      placeholder="Enter 6-digit code"
+                      placeholderTextColor={AppTheme.textSecondary}
+                      value={signupOtp}
+                      onChangeText={handleSignupOtpChange}
+                      autoComplete="sms-otp"
+                      textContentType="oneTimeCode"
+                      importantForAutofill="yes"
+                      autoFocus={true}
+                      accessibilityLabel="Registration verification code"
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      style={[styles.input, { letterSpacing: 4, fontWeight: '900' }]}
+                    />
+                  </View>
+
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => void handleVerifyAndRegister()}
+                    disabled={signupLoading}
+                    style={styles.actionButton}
+                  >
+                    {signupLoading ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <ShieldCheck size={18} color="#FFFFFF" />
+                        <Text style={styles.btnText}>Verify & Create Account</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </>
+              ) : (
                 <TouchableOpacity
                   activeOpacity={0.85}
-                  onPress={() => void handleVerifyAndRegister()}
+                  onPress={handleSendSignupOtp}
                   disabled={signupLoading}
-                  style={styles.loginButton}
+                  style={styles.actionButton}
                 >
                   {signupLoading ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
                     <>
-                      <ShieldCheck size={18} color="#FFFFFF" />
-                      <Text style={styles.loginBtnText}>Verify & Create Account</Text>
+                      <UserPlus size={18} color="#FFFFFF" />
+                      <Text style={styles.btnText}>Send Verification OTP</Text>
                     </>
                   )}
                 </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={handleSendSignupOtp}
-                disabled={signupLoading}
-                style={styles.loginButton}
-              >
-                {signupLoading ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <>
-                    <UserPlus size={18} color="#FFFFFF" />
-                    <Text style={styles.loginBtnText}>Send Verification OTP</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
+              )}
 
-        {(otpSent || signupOtpSent) && (
-          <TouchableOpacity accessibilityRole="button" disabled={otpLoading || signupLoading} onPress={() => { setOtpSent(false); setSignupOtpSent(false); setOtpCode(''); setSignupOtp(''); }} style={styles.editDetails}>
-            <Text style={styles.switchModeLink}>Change mobile number or details</Text>
-          </TouchableOpacity>
+              {/* Bottom link: Already have an account? Sign in */}
+              <View style={styles.bottomLink}>
+                <Text style={styles.bottomLinkText}>Already have an account?</Text>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={switchMode}
+                  style={styles.bottomLinkTouch}
+                >
+                  <Text style={styles.bottomLinkBold}>Sign in</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
         )}
-        <View style={styles.legalLinks}>
-          <Text accessibilityRole="link" onPress={() => Linking.openURL(AppConfig.termsUrl).catch(() => Toast.error('Unable to open Terms of Use.'))} style={styles.switchModeLink}>Terms of Use</Text>
-          <Text accessibilityRole="link" onPress={() => Linking.openURL(AppConfig.privacyUrl).catch(() => Toast.error('Unable to open Privacy Policy.'))} style={styles.switchModeLink}>Privacy Policy</Text>
-        </View>
-        <View style={styles.switchModeWrap}>
-          <Text style={styles.switchModeText}>
-            {mode === 'signin' ? "Don't have an account? " : 'Already registered? '}
-          </Text>
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={() => {
-              setMode(mode === 'signin' ? 'signup' : 'signin');
-              setOtpCode(''); setSignupOtp(''); setCountryPicker(false);
-              setOtpSent(false);
-              setSignupOtpSent(false);
-            }}
-          >
-            <Text style={styles.switchModeLink}>
-              {mode === 'signin' ? 'Register' : 'Sign In'}
-            </Text>
-          </TouchableOpacity>
-        </View>
       </ScrollView>
 
+      <View style={styles.legalLinks}>
+        <Text
+          accessibilityRole="link"
+          onPress={() =>
+            Linking.openURL(AppConfig.termsUrl).catch(() =>
+              Toast.error('Unable to open Terms of Use.'),
+            )
+          }
+          style={styles.legalLink}
+        >
+          Terms of Use
+        </Text>
+        <Text style={styles.legalSeparator}>&nbsp;</Text>
+        <Text
+          accessibilityRole="link"
+          onPress={() =>
+            Linking.openURL(AppConfig.privacyUrl).catch(() =>
+              Toast.error('Unable to open Privacy Policy.'),
+            )
+          }
+          style={styles.legalLink}
+        >
+          Privacy Policy
+        </Text>
+      </View>
     </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
-  intro: { marginBottom: 20 },
-  eyebrow: { color: AppTheme.primaryLight, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 8 },
-  heading: { color: AppTheme.textPrimary, fontSize: 28, fontWeight: '800', marginBottom: 8 },
-  description: { color: AppTheme.textSecondary, fontSize: 14, lineHeight: 21 },
-  countrySelector: { flexDirection: 'row', justifyContent: 'space-between', padding: 14, backgroundColor: AppTheme.surface, borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: AppTheme.border },
-  countryOption: { padding: 14, backgroundColor: AppTheme.surfaceElevated },
-  editDetails: { paddingVertical: 16, alignItems: 'center' },
-  legalLinks: { flexDirection: 'row', justifyContent: 'center', gap: 24, marginTop: 20 },
   container: {
     flex: 1,
     backgroundColor: AppTheme.background,
@@ -661,6 +707,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
+    top: 10,
   },
   skipBtn: {
     position: 'absolute',
@@ -672,6 +719,7 @@ const styles = StyleSheet.create({
     backgroundColor: AppTheme.surface,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
+    top: 10,
   },
   skipBtnText: {
     color: '#94A3B8',
@@ -686,61 +734,88 @@ const styles = StyleSheet.create({
   },
   brandingHeader: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
   },
   logo: {
     width: 68,
     height: 68,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   appTitle: {
     color: '#FFFFFF',
-    fontSize: 22,
+    fontSize: 26,
     fontWeight: '900',
-    letterSpacing: 2,
+    letterSpacing: 1,
   },
-  subHeading: {
-    color: '#94A3B8',
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  modeContainer: {
-    flexDirection: 'row',
-    backgroundColor: AppTheme.surface,
-    borderRadius: 14,
-    padding: 4,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  modeButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 10,
-    gap: 6,
-  },
-  modeButtonActive: {
-    backgroundColor: AppTheme.surfaceElevated,
-  },
-  modeButtonText: {
-    color: AppTheme.textSecondary,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  modeButtonTextActive: {
-    color: '#FFFFFF',
-  },
-  formContainer: {
+  // ---------- Sign In Card ----------
+  signinCard: {
     backgroundColor: AppTheme.surface,
     borderRadius: 20,
-    padding: 20,
+    padding: 24,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: 16,
+  },
+  // ---------- Sign Up Card ----------
+  signupCard: {
+    backgroundColor: AppTheme.surface,
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: 16,
+  },
+  eyebrow: {
+    color: AppTheme.primaryLight,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginBottom: 8,
+  },
+  heading: {
+    color: AppTheme.textPrimary,
+    fontSize: 26,
+    fontWeight: '900',
+    marginBottom: 8,
+  },
+  description: {
+    color: AppTheme.textSecondary,
+    fontSize: 14,
+    lineHeight: 21,
+    marginBottom: 20,
+  },
+  countrySelector: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    backgroundColor: AppTheme.background,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    marginBottom: 16,
+  },
+  countryPickerOverlay: {
+    position: 'absolute',
+    top: 70,
+    left: 0,
+    right: 0,
+    backgroundColor: AppTheme.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    paddingVertical: 10,
+    zIndex: 100,
+    maxHeight: 260,
+  },
+  countryOption: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: AppTheme.background,
+  },
+  inputGroup: {
+    marginBottom: 14,
   },
   inputLabel: {
     color: '#64748B',
@@ -784,14 +859,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginTop: 10,
   },
   resendText: {
     color: AppTheme.primary,
     fontSize: 11,
     fontWeight: '800',
   },
-  loginButton: {
-    marginTop: 18,
+  actionButton: {
+    marginTop: 16,
     backgroundColor: AppTheme.primary,
     paddingVertical: 14,
     borderRadius: 12,
@@ -800,7 +876,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  loginBtnText: {
+  btnText: {
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '900',
@@ -817,19 +893,36 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 15,
   },
-  switchModeWrap: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 20,
+  legalLink: {
+    color: AppTheme.primary,
+    fontSize: 11,
+    fontWeight: '700',
   },
-  switchModeText: {
-    color: '#64748B',
+  // ---------- Bottom mode switch ----------
+  bottomLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+  },
+  bottomLinkText: {
+    color: '#94A3B8',
     fontSize: 13,
   },
-  switchModeLink: {
+  bottomLinkTouch: {
+    marginLeft: 4,
+  },
+  bottomLinkBold: {
     color: AppTheme.primary,
     fontSize: 13,
     fontWeight: '800',
+  },
+  legalLinks: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    marginTop: 20,
+    paddingBottom: 20,
   },
 });
 
