@@ -58,6 +58,12 @@ export interface CoinPack {
 
 export interface CoinOrderResult {
   razorpayOrderId: string;
+  /** Legacy/alias response fields accepted by older games API versions. */
+  razorpay_order_id?: string;
+  id?: string;
+  key_id?: string;
+  key?: string;
+  razorpayKeyId?: string;
   packId?: string;
   coins?: number;
   amount?: number; // paise

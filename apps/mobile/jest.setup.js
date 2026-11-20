@@ -3,10 +3,6 @@ jest.mock('@react-native-firebase/app', () => ({
   getApp: jest.fn(),
   initializeApp: jest.fn(),
 }));
-jest.mock('@react-native-firebase/auth', () => ({
-  getAuth: jest.fn(() => ({ currentUser: null })),
-  signInWithPhoneNumber: jest.fn(),
-}));
 jest.mock('@react-native-firebase/messaging', () => ({
   getMessaging: jest.fn(() => ({
     onMessage: jest.fn(() => jest.fn()),

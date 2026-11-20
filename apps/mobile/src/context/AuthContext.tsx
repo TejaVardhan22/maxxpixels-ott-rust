@@ -9,7 +9,6 @@ interface AuthContextType {
   isLoggedIn: boolean;
   isLoadingSession: boolean;
   loginWithEmail: (email: string, pass: string) => Promise<User>;
-  loginWithFirebaseToken: (params: { idToken: string; phoneNumber?: string; email?: string; fullName?: string }) => Promise<User>;
   loginWithDemoUser: () => Promise<User>;
   register: (params: {
     fullName: string;
@@ -51,7 +50,6 @@ const AuthContext = createContext<AuthContextType>({
   isLoggedIn: false,
   isLoadingSession: true,
   loginWithEmail: async () => ({ id: 0, name: '' } as any),
-  loginWithFirebaseToken: async () => ({ id: 0, name: '' } as any),
   loginWithDemoUser: async () => ({ id: 0, name: '' } as any),
   register: async () => ({ id: 0, name: '' } as any),
   logout: async () => {},
@@ -82,7 +80,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const loginWithEmail = useCallback((email: string, pass: string) => AuthService.loginWithEmail(email, pass), []);
-  const loginWithFirebaseToken = useCallback((params: any) => AuthService.loginWithFirebaseToken(params), []);
   const loginWithDemoUser = useCallback(() => AuthService.loginWithDemoUser(), []);
   const register = useCallback((params: any) => AuthService.register(params), []);
   const logout = useCallback(() => AuthService.logout(), []);
@@ -98,7 +95,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isLoggedIn: !!(authToken && user),
       isLoadingSession,
       loginWithEmail,
-      loginWithFirebaseToken,
       loginWithDemoUser,
       register,
       logout,
@@ -112,7 +108,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       authToken,
       isLoadingSession,
       loginWithEmail,
-      loginWithFirebaseToken,
       loginWithDemoUser,
       register,
       logout,

@@ -362,23 +362,6 @@ class AuthServiceClass {
     return user;
   }
 
-  public async loginWithFirebaseToken(params: {
-    idToken: string;
-    phoneNumber?: string;
-    email?: string;
-    fullName?: string;
-  }): Promise<User> {
-    const deviceId = await this.getDeviceId();
-    const result = await ApiClient.postApi('auth/firebase-verify', {
-      ...params,
-      deviceId,
-      platform: Platform.OS.toUpperCase(),
-    });
-    const { user, accessToken, refreshToken } = this.parseAuthResponse(result);
-    await this.saveSession(user, accessToken, refreshToken);
-    return user;
-  }
-
   public async loginWithDemoUser(): Promise<User> {
     return this.loginWithEmail('subscriber@maxxpixels.com', 'SubscriberPass#2026');
   }
