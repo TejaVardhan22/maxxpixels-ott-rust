@@ -134,15 +134,18 @@ export default function LoginPage() {
     setSending(true);
     try {
       if (pendingUser?.id) {
-        const formData = new FormData();
-        formData.append('user_id', String(pendingUser.id));
-        formData.append('full_name', cleanName);
-        await fetch('/api/v1/update_profile', {
-          method: 'POST',
+        const token = pendingUser.accessToken || pendingUser.auth_token || pendingUser.token;
+        await fetch('/api/v1/profile', {
+          method: 'PUT',
           headers: {
-            Authorization: `Bearer ${pendingUser.accessToken || pendingUser.auth_token}`,
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
-          body: formData,
+          body: JSON.stringify({
+            userId: pendingUser.id,
+            fullName: cleanName,
+            full_name: cleanName,
+          }),
         }).catch(() => { });
       }
       const updatedUser = {

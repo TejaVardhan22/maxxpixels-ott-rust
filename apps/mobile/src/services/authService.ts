@@ -273,22 +273,15 @@ class AuthServiceClass {
     const endpoint = isResend ? 'auth/resend-otp' : 'auth/send-otp';
 
     // Backend send-otp may wait on MSG91 Flow + fallback (up to ~40s); allow enough time on real devices/networks.
-    const agentCode = referral?.agentCode || referral?.referenceCode;
+    const agentCode = (referral?.agentCode || referral?.referenceCode || '').trim().toUpperCase() || undefined;
     const response = await ApiClient.postApi(
       endpoint,
       {
         identifier: e164,
-        mobile_number: e164,
-        mobileNumber: e164,
         phone: e164,
-        phoneNumber: e164,
-        mobile: e164,
         mode: isRegister ? 'register' : 'login',
-        is_register: isRegister,
         isRegister,
-        referenceCode: referral?.referenceCode,
-        reference_code: referral?.referenceCode,
-        agentCode: agentCode ? String(agentCode).trim().toUpperCase() : undefined,
+        ...(agentCode ? { agentCode } : {}),
       },
       { timeoutMs: 60000 },
     );
@@ -318,31 +311,27 @@ class AuthServiceClass {
     const refCode = extra?.referenceCode || extra?.reference_code || extra?.agentCode || undefined;
 
     // Backend Redis OTP Verification
-    const result = await ApiClient.postApi('auth/verify-otp', {
+    const payload: Record<string, any> = {
       identifier: e164,
-      mobile_number: e164,
-      mobileNumber: e164,
       phone: e164,
-      phoneNumber: e164,
-      mobile: e164,
-      full_name: fullName ? fullName.trim() : undefined,
-      fullName: fullName ? fullName.trim() : undefined,
-      first_name: extra?.firstName?.trim() || undefined,
-      firstName: extra?.firstName?.trim() || undefined,
-      last_name: extra?.lastName?.trim() || undefined,
-      lastName: extra?.lastName?.trim() || undefined,
-      email: extra?.email ? extra.email.trim() : undefined,
-      reference_code: refCode,
-      referenceCode: refCode,
-      referral_code: refCode,
-      agentCode: refCode,
+      otp: otp.trim(),
       mode: extra?.isRegistration ? 'register' : 'login',
       isRegister: extra?.isRegistration === true,
-      otp: otp.trim(),
-      code: otp.trim(),
-      deviceId: deviceId,
+      deviceId,
       platform: Platform.OS.toUpperCase(),
-    });
+    };
+    const fn = (fullName || '').trim();
+    const first = (extra?.firstName || '').trim();
+    const last = (extra?.lastName || '').trim();
+    const email = (extra?.email || '').trim();
+    const ref = (refCode || '').trim().toUpperCase();
+    if (fn) payload.fullName = fn;
+    if (first) payload.firstName = first;
+    if (last) payload.lastName = last;
+    if (email) payload.email = email;
+    if (ref) payload.agentCode = ref;
+
+    const result = await ApiClient.postApi('auth/verify-otp', payload);
 
     const { user, accessToken, refreshToken } = this.parseAuthResponse(result);
     await this.saveSession(user, accessToken, refreshToken);

@@ -750,7 +750,12 @@ impl AuthService {
         }
 
         let is_register = matches!(req.mode.as_deref(), Some(m) if m.eq_ignore_ascii_case("register"))
-            || req.is_register.unwrap_or(false);
+            || match req.is_register.as_ref() {
+                Some(serde_json::Value::Bool(b)) => *b,
+                Some(serde_json::Value::String(s)) => matches!(s.trim(), "1" | "true" | "TRUE" | "True" | "yes" | "YES"),
+                Some(serde_json::Value::Number(n)) => n.as_i64() == Some(1) || n.as_u64() == Some(1),
+                _ => false,
+            };
         if is_register {
             if self.find_user_by_phone(&phone_plus).await?.is_some() {
                 return Err(AppError::Conflict("User already exists".to_string()));

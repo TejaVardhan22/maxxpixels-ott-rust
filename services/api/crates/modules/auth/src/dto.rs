@@ -72,8 +72,8 @@ pub struct SendOtpRequest {
     pub phone_number: Option<String>,
     pub identifier: Option<String>,
     pub mode: Option<String>,
-    #[serde(alias = "is_register")]
-    pub is_register: Option<bool>,
+    #[serde(alias = "is_register", alias = "isRegister")]
+    pub is_register: Option<serde_json::Value>,
     #[serde(
         alias = "agent_code",
         alias = "referenceCode",
