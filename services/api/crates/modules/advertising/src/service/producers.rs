@@ -37,8 +37,6 @@ use sea_orm::{
 use serde_json::{json, Value};
 
 use uuid::Uuid;
-use std::collections::BTreeMap;
-use maxx_module_notifications::NotificationService;
 
 
 
@@ -1446,41 +1444,6 @@ impl AdvertisingService {
                     role_id: Set(role_producer.id),
                 };
                 let _ = ur.insert(&state.db).await;
-            }
-        }
-
-        // Notify the producer by SMS without putting the password in the message.
-        if let Some(phone) = p.phone.clone() {
-            let template_id = std::env::var("MSG91_PRODUCER_TEMPLATE_ID")
-                .ok()
-                .filter(|v| !v.trim().is_empty())
-                .or_else(|| {
-                    std::env::var("MSG91_TRANSACTIONAL_TEMPLATE_ID")
-                        .ok()
-                        .filter(|v| !v.trim().is_empty())
-                })
-                .unwrap_or_default();
-            if !template_id.is_empty() {
-                let mut vars = BTreeMap::new();
-                vars.insert("VAR1".to_string(), p.company_name.clone());
-                vars.insert("VAR2".to_string(), email.clone());
-                vars.insert("VAR3".to_string(), "/producer/login".to_string());
-                let bg_state = state.clone();
-                let bg_phone = phone.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = NotificationService::send_templated_sms(
-                        &bg_state,
-                        &bg_phone,
-                        &template_id,
-                        &vars,
-                        Some("Producer portal credentials ready"),
-                        None,
-                    )
-                    .await
-                    {
-                        tracing::warn!("Producer credential SMS skipped: {}", e);
-                    }
-                });
             }
         }
 

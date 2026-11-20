@@ -205,58 +205,6 @@ pub async fn send_sms_handler(
     Ok(ApiResponse::ok_response(data))
 }
 
-pub async fn send_sms_template_handler(
-    State(state): State<AppState>,
-    claims: Claims,
-    Json(body): Json<Value>,
-) -> AppResult<Response> {
-    require_admin(&claims)?;
-    let mobile = body
-        .get("phone")
-        .or_else(|| body.get("mobile"))
-        .or_else(|| body.get("mobileNumber"))
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
-    let template_id = body
-        .get("templateId")
-        .or_else(|| body.get("template_id"))
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_string();
-    let template_id = if template_id.is_empty() {
-        std::env::var("MSG91_TRANSACTIONAL_TEMPLATE_ID").unwrap_or_default()
-    } else {
-        template_id
-    };
-    let mut vars = std::collections::BTreeMap::new();
-    if let Some(obj) = body
-        .get("variables")
-        .or_else(|| body.get("vars"))
-        .and_then(|v| v.as_object())
-    {
-        for (k, v) in obj {
-            let value = match v {
-                Value::String(s) => s.clone(),
-                Value::Number(n) => n.to_string(),
-                Value::Bool(b) => b.to_string(),
-                _ => v.to_string(),
-            };
-            vars.insert(k.clone(), value);
-        }
-    }
-    let title = body.get("title").and_then(|v| v.as_str());
-    let data = NotificationService::send_templated_sms(
-        &state,
-        mobile,
-        &template_id,
-        &vars,
-        title,
-        claims.email,
-    )
-    .await?;
-    Ok(ApiResponse::ok_response(data))
-}
-
 pub async fn send_whatsapp_handler(
     State(state): State<AppState>,
     claims: Claims,

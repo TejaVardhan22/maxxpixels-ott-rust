@@ -9,7 +9,6 @@ license.workspace = true
 maxx-common = { workspace = true }
 maxx-core = { workspace = true }
 maxx-module-subscriptions = { workspace = true }
-maxx-module-notifications = { workspace = true }
 maxx-integration-razorpay = { workspace = true }
 tokio = { workspace = true }
 axum = { workspace = true }

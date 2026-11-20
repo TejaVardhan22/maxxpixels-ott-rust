@@ -9,7 +9,6 @@ license.workspace = true
 maxx-common = { workspace = true }
 maxx-core = { workspace = true }
 maxx-integration-email = { workspace = true }
-maxx-integration-msg91 = { workspace = true }
 tokio = { workspace = true }
 axum = { workspace = true }
 sea-orm = { workspace = true }
