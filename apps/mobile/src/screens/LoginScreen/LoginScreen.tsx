@@ -40,8 +40,8 @@ export const LoginScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
 
-  // Start on sign-in by default; allow deep-link to open register
-  const [mode, setMode] = useState<ScreenMode>(route.params?.mode === 'signup' ? 'signup' : 'signin');
+  // Start on register by default; allow deep-link to open sign-in
+  const [mode, setMode] = useState<ScreenMode>(route.params?.mode === 'signin' ? 'signin' : 'signup');
   const [countryCode, setCountryCode] = useState('+91');
   const [countryPicker, setCountryPicker] = useState(false);
   const [resendSeconds, setResendSeconds] = useState(0);
