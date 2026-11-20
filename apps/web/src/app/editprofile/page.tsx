@@ -16,9 +16,6 @@ export default function EditProfilePage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [dateOfBirth, setDateOfBirth] = useState('');
-  const [profession, setProfession] = useState('Employee');
-  const [pincode, setPincode] = useState('');
   const [image, setImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState('');
   const [message, setMessage] = useState('');
@@ -28,10 +25,7 @@ export default function EditProfilePage() {
     setName(user?.full_name ?? '');
     setEmail(user?.email ?? '');
     setPhone(user?.mobile_number ?? '');
-    setDateOfBirth(user?.date_of_birth || user?.dateOfBirth || user?.dob || '');
-    setProfession(user?.profession || 'Employee');
-    setPincode(user?.pincode || (user as any)?.pin_code || '');
-  }, [user?.full_name, user?.email, user?.mobile_number, user?.date_of_birth, user?.dateOfBirth, user?.dob, user?.profession, user?.pincode, (user as any)?.pin_code]);
+  }, [user?.full_name, user?.email, user?.mobile_number]);
 
   useEffect(() => {
     if (!image) {
@@ -76,15 +70,9 @@ export default function EditProfilePage() {
     setError('');
 
     const cleanEmail = email.trim().toLowerCase();
-    const cleanPin = pincode.trim();
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       setError('Please enter a valid email address.');
-      return;
-    }
-
-    if (cleanPin && !/^\d{6}$/.test(cleanPin)) {
-      setError('Please enter a valid 6-digit postal pincode.');
       return;
     }
 
@@ -94,10 +82,6 @@ export default function EditProfilePage() {
       payload.append('full_name', name.trim());
       payload.append('email', cleanEmail);
       payload.append('mobile_number', phone.trim());
-      payload.append('date_of_birth', dateOfBirth.trim());
-      payload.append('profession', profession.trim());
-      payload.append('pincode', cleanPin);
-      payload.append('pin_code', cleanPin);
       if (image) {
         payload.append('image_type', '1');
         payload.append('image', image);
@@ -110,9 +94,6 @@ export default function EditProfilePage() {
         ...(updated ?? {}),
         full_name: name.trim(),
         email: cleanEmail,
-        date_of_birth: dateOfBirth.trim(),
-        profession: profession.trim(),
-        pincode: cleanPin,
         auth_token: user.auth_token,
       });
       setImage(null);
@@ -180,44 +161,6 @@ export default function EditProfilePage() {
               title="Mobile phone number cannot be modified once registered"
             />
             <p className="mt-1 text-xs text-muted-text">Mobile phone number cannot be changed once registered.</p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="mb-1 block text-sm text-desc-text">Date of Birth</label>
-              <input
-                type="date"
-                value={dateOfBirth}
-                onChange={(e) => setDateOfBirth(e.target.value)}
-                className="ott-input [color-scheme:dark]"
-                required
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm text-desc-text">Profession</label>
-              <select
-                value={profession}
-                onChange={(e) => setProfession(e.target.value)}
-                className="ott-input"
-                required
-              >
-                {['Student', 'Employee', 'Self-employed', 'Business owner', 'Homemaker', 'Retired', 'Other'].map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm text-desc-text">Area Pincode</label>
-              <input
-                type="text"
-                inputMode="numeric"
-                maxLength={6}
-                value={pincode}
-                onChange={(e) => setPincode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="6-digit Pincode"
-                className="ott-input font-bold tracking-wider"
-                required
-              />
-            </div>
           </div>
           {error && <p className="text-sm text-accent">{error}</p>}
           {message && <p className="text-sm text-emerald-400">{message}</p>}

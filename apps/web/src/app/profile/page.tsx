@@ -14,9 +14,6 @@ export default function ProfilePage() {
   const missingList: string[] = [];
   if (!profile?.full_name || profile?.full_name === 'Guest User' || profile?.full_name === 'Subscriber') missingList.push('Full Legal Name');
   if (!profile?.email) missingList.push('Email Address');
-  if (!profile?.date_of_birth && !profile?.dateOfBirth && !profile?.dob) missingList.push('Date of Birth');
-  if (!profile?.profession) missingList.push('Profession');
-  if (!profile?.pincode && !(profile as any)?.pin_code) missingList.push('Area Pincode');
 
   const isProfileIncomplete = missingList.length > 0;
 

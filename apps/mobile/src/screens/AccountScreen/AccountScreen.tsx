@@ -58,9 +58,6 @@ export const AccountScreen: React.FC = () => {
 
   const [fullName, setFullName] = useState(user?.fullName || user?.userName || '');
   const [email, setEmail] = useState(user?.email || '');
-  const [dateOfBirth, setDateOfBirth] = useState(user?.dateOfBirth || user?.dob || '');
-  const [profession, setProfession] = useState(user?.profession || 'Employee');
-  const [pincode, setPincode] = useState(user?.pincode || '');
   const [selectedAvatar, setSelectedAvatar] = useState(user?.image || '');
   const [selectedFile, setSelectedFile] = useState<{ uri: string; name?: string; type?: string; base64?: string } | null>(null);
   const [customAvatarUrl, setCustomAvatarUrl] = useState('');
@@ -91,9 +88,6 @@ export const AccountScreen: React.FC = () => {
     if (user) {
       if (user.fullName || user.userName) setFullName(user.fullName || user.userName || '');
       if (user.email) setEmail(user.email);
-      if (user.dateOfBirth || user.dob) setDateOfBirth(user.dateOfBirth || user.dob || '');
-      if (user.profession) setProfession(user.profession);
-      if (user.pincode) setPincode(user.pincode);
       if (user.image && !selectedFile) setSelectedAvatar(user.image);
     }
   }, [user]);
@@ -164,36 +158,11 @@ export const AccountScreen: React.FC = () => {
       return;
     }
 
-    if (dateOfBirth.trim()) {
-      const birthDate = new Date(dateOfBirth.trim());
-      if (isNaN(birthDate.getTime())) {
-        Toast.warning('Invalid date of birth format. Use YYYY-MM-DD.', 'Validation Error');
-        return;
-      }
-      const today = new Date();
-      let age = today.getFullYear() - birthDate.getFullYear();
-      const m = today.getMonth() - birthDate.getMonth();
-      if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
-      if (age < 18) {
-        Toast.warning('You must be at least 18 years old to complete your profile.', 'Validation Error');
-        return;
-      }
-    }
-
-    const cleanPin = pincode.trim();
-    if (cleanPin && !/^\d{6}$/.test(cleanPin)) {
-      Toast.warning('Pincode must be a 6-digit postal code (e.g. 500081).', 'Validation Error');
-      return;
-    }
-
     setSaving(true);
     try {
       const updatedUser = await updateProfile({
         fullName: fullName.trim(),
         email: cleanEmail,
-        dateOfBirth: dateOfBirth.trim(),
-        profession: profession.trim(),
-        pincode: cleanPin,
         image: selectedAvatar || user?.image,
         imageBase64: selectedFile?.base64,
         imageFile: selectedFile || undefined,
@@ -293,45 +262,7 @@ export const AccountScreen: React.FC = () => {
           />
         </View>
 
-        {/* 3. Date of Birth Input (YYYY-MM-DD) */}
-        <Text style={[styles.inputLabel, { marginTop: 18 }]}>DATE OF BIRTH (YYYY-MM-DD)</Text>
-        <View style={styles.inputBox}>
-          <TextInput
-            placeholder="1998-05-15"
-            placeholderTextColor="#475569"
-            value={dateOfBirth}
-            onChangeText={setDateOfBirth}
-            style={styles.input}
-          />
-        </View>
-
-        {/* 4. Profession / Occupation */}
-        <Text style={[styles.inputLabel, { marginTop: 18 }]}>PROFESSION / OCCUPATION</Text>
-        <View style={styles.inputBox}>
-          <TextInput
-            placeholder="e.g. Employee, Student, Business Owner"
-            placeholderTextColor="#475569"
-            value={profession}
-            onChangeText={setProfession}
-            style={styles.input}
-          />
-        </View>
-
-        {/* 5. Area Pincode (6 Digits) */}
-        <Text style={[styles.inputLabel, { marginTop: 18 }]}>AREA PINCODE (6 DIGITS)</Text>
-        <View style={styles.inputBox}>
-          <TextInput
-            placeholder="500081"
-            placeholderTextColor="#475569"
-            value={pincode}
-            onChangeText={(t) => setPincode(t.replace(/\D/g, '').slice(0, 6))}
-            keyboardType="number-pad"
-            maxLength={6}
-            style={styles.input}
-          />
-        </View>
-
-        {/* 6. Mobile Number (Strictly Read-Only) */}
+        {/* 3. Mobile Number (Strictly Read-Only) */}
         <Text style={[styles.inputLabel, { marginTop: 18 }]}>MOBILE NUMBER (READ ONLY)</Text>
         <View style={[styles.inputBox, styles.disabledBox]}>
           <Phone size={18} color="#475569" style={styles.iconPrefix} />

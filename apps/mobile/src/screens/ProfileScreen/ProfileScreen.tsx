@@ -129,9 +129,6 @@ export const ProfileScreen: React.FC = () => {
   const missingList = [
     !user?.fullName && 'Full Name',
     !user?.email && 'Email Address',
-    !(user?.dateOfBirth || user?.dob) && 'Date of Birth (18+)',
-    !user?.profession && 'Profession',
-    !user?.pincode && '6-Digit Pincode',
   ].filter(Boolean) as string[];
 
   const isProfileIncomplete = missingList.length > 0;

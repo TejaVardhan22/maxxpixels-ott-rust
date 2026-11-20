@@ -14,3 +14,7 @@ archive/backups/*.sql
 archive/games-service-go/games-service-go
 
 services/media-streamer/credentials.json
+
+# Firebase client config (contains API keys; do not commit)
+google-services.json
+apps/mobile/android/app/google-services.json
