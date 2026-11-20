@@ -350,8 +350,11 @@ class AuthServiceClass {
   }
 
   public async loginWithEmail(email: string, pass: string): Promise<User> {
+    const identifier = email.trim();
     const result = await ApiClient.postApi('auth/login', {
-      identifier: email.trim(),
+      identifier,
+      email: identifier,
+      username: identifier,
       password: pass.trim(),
     });
     const { user, accessToken, refreshToken } = this.parseAuthResponse(result);
@@ -364,20 +367,50 @@ class AuthServiceClass {
   }
 
   public async register(params: {
-    fullName: string;
-    email: string;
-    mobileNumber: string;
-    password: string;
-    dob?: string;
-    pincode?: string;
-    profession?: string;
-    emailOtpToken?: string;
-    adultConfirmed?: number;
+    fullName?: string;
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    mobileNumber?: string;
+    phone?: string;
+    password?: string;
+    agentCode?: string;
+    referenceCode?: string;
   }): Promise<User> {
     const deviceId = await this.getDeviceId();
+    const fullName =
+      params.fullName?.trim() ||
+      [params.firstName, params.lastName].filter(Boolean).join(' ').trim() ||
+      undefined;
+    const rawPhone = (params.mobileNumber || params.phone || '').trim();
+    const phone = rawPhone
+      ? rawPhone.startsWith('+')
+        ? rawPhone
+        : `+91${rawPhone.replace(/\D/g, '')}`
+      : undefined;
+    const agentCode = (params.agentCode || params.referenceCode || '').trim().toUpperCase() || undefined;
+
     const result = await ApiClient.postApi('auth/register', {
-      ...params,
+      email: params.email?.trim() || undefined,
+      phone,
+      mobile: phone,
+      mobileNumber: phone,
+      mobile_number: phone,
+      phoneNumber: phone,
+      phone_number: phone,
+      fullName,
+      full_name: fullName,
+      firstName: params.firstName?.trim() || undefined,
+      first_name: params.firstName?.trim() || undefined,
+      lastName: params.lastName?.trim() || undefined,
+      last_name: params.lastName?.trim() || undefined,
+      password: params.password,
+      agentCode,
+      agent_code: agentCode,
+      referenceCode: agentCode,
+      reference_code: agentCode,
       deviceId,
+      device_id: deviceId,
       platform: Platform.OS.toUpperCase(),
     });
     const { user, accessToken, refreshToken } = this.parseAuthResponse(result);
@@ -430,7 +463,7 @@ class AuthServiceClass {
         payload.avatarUrl = avatar;
       }
 
-      const response = await ApiClient.putApi('auth/profile', payload);
+      const response = await ApiClient.putApi('profile', payload);
 
       if (response) {
         const profileObj = Array.isArray(response)

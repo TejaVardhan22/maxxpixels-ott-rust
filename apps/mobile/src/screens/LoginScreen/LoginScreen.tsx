@@ -120,12 +120,12 @@ export const LoginScreen: React.FC = () => {
 
     setOtpLoading(true);
     try {
-      await AuthService.sendMobileOtp(`${countryCode}${mobileNumber}`, otpSent);
+      await AuthService.sendMobileOtp(`${countryCode}${mobileNumber}`, otpSent, false);
       setResendSeconds(30);
       setOtpSent(true);
       Toast.success(`A verification code was sent to ${countryCode} ${mobileNumber}.`, 'Verification Code Sent');
     } catch (e: any) {
-      if (e?.message && /not registered/i.test(e.message)) {
+      if (e?.message && /not registered|user_not_registered|404/i.test(e.message)) {
         Toast.warning('This mobile number is not registered. Please register to continue.', 'Registration Required');
         setSignupMobile(mobileNumber);
         setMode('signup');
@@ -146,10 +146,20 @@ export const LoginScreen: React.FC = () => {
 
     setOtpLoading(true);
     try {
-      const loggedInUser = await AuthService.loginWithMobileOtp(`${countryCode}${mobileNumber}`, code);
+      const loggedInUser = await AuthService.loginWithMobileOtp(`${countryCode}${mobileNumber}`, code, undefined, {
+        isRegistration: false,
+      });
       Toast.success('Signed in successfully to MaxxPixels.', 'Welcome!');
       await navigatePostAuth(loggedInUser);
     } catch (e: any) {
+      if (e?.message && /not registered|register first|user_not_registered/i.test(e.message)) {
+        Toast.warning('This mobile number is not registered. Please register to continue.', 'Registration Required');
+        setSignupMobile(mobileNumber);
+        setMode('signup');
+        setOtpSent(false);
+        setOtpCode('');
+        return;
+      }
       Toast.error(e.message || 'Invalid verification code. Please try again.', 'Verification Failed');
     } finally {
       setOtpLoading(false);
