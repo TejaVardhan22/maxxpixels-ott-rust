@@ -97,8 +97,11 @@ export default function LoginPage() {
         throw new Error(res?.message || 'Verification failed.');
       }
 
-      const hasValidName = userPayload.fullName && userPayload.fullName !== 'Subscriber' && !['male', 'female'].includes(userPayload.fullName.toLowerCase());
-      if (userPayload.needsNamePrompt || !hasValidName) {
+      // Only new registrations need name completion; existing users log in immediately.
+      const isNewRegistration = userPayload.isNewUser === true;
+      const needsNamePrompt = isNewRegistration && (!userPayload.fullName || userPayload.fullName === 'Subscriber' || ['male', 'female'].includes((userPayload.fullName || '').toLowerCase()));
+
+      if (needsNamePrompt) {
         setPendingUser(userPayload);
         setStep('name');
         return;
