@@ -66,8 +66,9 @@ impl Msg91Client {
                 .unwrap_or_default()
                 .trim()
                 .to_string(),
+            // Matches the verified cURL test's `--max-time 20`.
             http: reqwest::Client::builder()
-                .timeout(Duration::from_secs(15))
+                .timeout(Duration::from_secs(20))
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
         }
@@ -172,6 +173,9 @@ impl Msg91Client {
             .await
     }
 
+    /// Exact verified cURL/NestJS payload shape:
+    /// `template_id`, `flow_id`, `sender`, `short_url`, `mobiles`,
+    /// `otp`/`OTP`/`var1`/`VAR1`/`code`, and `recipients[{mobiles, ...vars}]`.
     async fn send_flow(
         &self,
         formatted_mobile: &str,
