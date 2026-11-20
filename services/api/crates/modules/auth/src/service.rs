@@ -628,12 +628,32 @@ impl AuthService {
             .send()
             .await
             .map_err(|e| AppError::BadRequest(format!("Failed to send OTP: {e}")))?;
-        if resp.status().is_success() {
-            Ok("msg91".to_string())
-        } else {
-            let status = resp.status();
-            Err(AppError::BadRequest(format!("Failed to send OTP via MSG91 ({status})")))
+        let status = resp.status();
+        let response_body = resp.text().await.unwrap_or_default();
+
+        if !status.is_success() {
+            return Err(AppError::BadRequest(format!("Failed to send OTP via MSG91 ({status})")));
         }
+
+        // MSG91 can return HTTP 200 with `type: "error"`. Treat that as a real
+        // failure so the client never reports an OTP as sent when SMS was rejected.
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&response_body) {
+            let kind = parsed.get("type").and_then(|v| v.as_str()).unwrap_or_default();
+            if kind.eq_ignore_ascii_case("error") {
+                let detail = parsed
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .filter(|m| !m.is_empty())
+                    .unwrap_or("MSG91 rejected the OTP request");
+                warn!("MSG91 OTP request rejected: {}", detail);
+                return Err(AppError::BadRequest(format!("Failed to send OTP: {}", detail)));
+            }
+            if let Some(request_id) = parsed.get("request_id").and_then(|v| v.as_str()) {
+                info!("MSG91 OTP accepted request {}", request_id);
+            }
+        }
+
+        Ok("msg91".to_string())
     }
 
     pub async fn send_otp(&self, req: SendOtpRequest) -> Result<serde_json::Value, AppError> {

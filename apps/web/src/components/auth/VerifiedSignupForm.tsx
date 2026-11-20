@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRegistrationOtp, postJson } from '@ott/shared';
 import type { LoginUserResult } from '@ott/shared';
-import { sendPhoneOtp, confirmOtp, translateFirebaseError } from '@/lib/firebase';
 import { ShieldCheck, Send, RotateCcw } from 'lucide-react';
 
 type Step = 'details' | 'otp';
@@ -92,14 +91,10 @@ export default function VerifiedSignupForm({ submitLabel = 'Verify & Create Acco
     if (validationError) return setError(validationError);
     setError('');
     try {
-      if (process.env.NEXT_PUBLIC_FIREBASE_API_KEY) {
-        await sendPhoneOtp(phone, 'recaptcha-container');
-      } else {
-        await requestOtp.mutateAsync({ phone, agentCode: form.agentCode });
-      }
+      await requestOtp.mutateAsync({ phone, agentCode: form.agentCode });
       setStep('otp');
     } catch (err: any) {
-      const msg = err?.message || translateFirebaseError(err);
+      const msg = err?.message || 'Unable to send OTP. Please try again.';
       if (/already registered|user_already_exists|already exists|409/i.test(msg)) {
         setError('User already exists');
       } else {
@@ -113,15 +108,11 @@ export default function VerifiedSignupForm({ submitLabel = 'Verify & Create Acco
     setError('');
     setVerifying(true);
     try {
-      let idToken = '';
-      if (process.env.NEXT_PUBLIC_FIREBASE_API_KEY) {
-        idToken = await confirmOtp(otpCode);
-      }
-
-      const response = await postJson<any>('verify_sms_otp', {
+      const response = await postJson<any>('auth/verify-otp', {
         identifier: phone,
         mobile_number: phone,
-        phoneNumber: phone,
+        mobileNumber: phone,
+        phone,
         mode: 'register',
         isRegister: true,
         agentCode: form.agentCode.trim().toUpperCase() || undefined,
@@ -131,7 +122,7 @@ export default function VerifiedSignupForm({ submitLabel = 'Verify & Create Acco
         name: fullName,
         email: form.email.trim() || undefined,
         otp: otpCode,
-        idToken,
+        code: otpCode,
       });
 
       const userPayload = response?.data || response?.result?.[0] || response?.user || response;
@@ -149,8 +140,6 @@ export default function VerifiedSignupForm({ submitLabel = 'Verify & Create Acco
 
   return (
     <div className="space-y-4 text-left">
-      <div id="recaptcha-container" style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} />
-
       {step === 'details' && (
         <>
           <div className="grid grid-cols-2 gap-3">

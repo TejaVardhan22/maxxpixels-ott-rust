@@ -3,8 +3,6 @@ import { Platform } from 'react-native';
 import { User, parseUser } from '../types';
 import { ApiClient } from './apiClient';
 import { GraphQLService } from './graphqlService';
-import { getAuth, signInWithPhoneNumber } from '@react-native-firebase/auth';
-import type { ConfirmationResult } from '@react-native-firebase/auth';
 import { setupPushNotifications } from './pushNotificationService';
 
 const SESSION_KEY = 'ott-mobile-session';
@@ -54,7 +52,6 @@ class AuthServiceClass {
   private initPromise: Promise<void> | null = null;
   private refreshPromise: Promise<boolean> | null = null;
   private sessionVersion = 0;
-  private _phoneConfirmation: ConfirmationResult | null = null;
 
   constructor() {
     ApiClient.setAuthTokenGetter(() => this._authToken || undefined);
@@ -275,36 +272,24 @@ class AuthServiceClass {
     const e164 = cleanMobile.startsWith('+') ? cleanMobile : `+91${cleanMobile.replace(/\D/g, '')}`;
     const endpoint = isResend ? 'auth/resend-otp' : 'auth/send-otp';
 
-    try {
-      const response = await ApiClient.postApi(endpoint, {
-        identifier: e164,
-        mobile_number: e164,
-        mobileNumber: e164,
-        phone: e164,
-        phoneNumber: e164,
-        mobile: e164,
-        mode: isRegister ? 'register' : 'login',
-        is_register: isRegister ? 1 : 0,
-        isRegister,
-        referenceCode: referral?.referenceCode,
-        reference_code: referral?.referenceCode,
-        agentCode: referral?.agentCode || referral?.referenceCode,
-      });
-      const msg = typeof response === 'string' ? response : (response?.data || response?.message || `Verification OTP sent to ${e164} via MSG91 SMS.`);
-      return { success: true, message: msg };
-    } catch (backendErr: any) {
-      const errMsg = backendErr?.message || '';
-      if (/not registered|already registered|user already exists|USER_NOT_REGISTERED|USER_ALREADY_EXISTS/i.test(errMsg)) {
-        throw backendErr;
-      }
-      try {
-        const confirmation = await signInWithPhoneNumber(getAuth(), e164);
-        this._phoneConfirmation = confirmation;
-        return { success: true, message: `OTP sent to ${e164} via Firebase SMS.` };
-      } catch (fErr: any) {
-        throw new Error(backendErr?.message || fErr?.message || 'Failed to send SMS OTP. Please check your network and phone number.');
-      }
-    }
+    const response = await ApiClient.postApi(endpoint, {
+      identifier: e164,
+      mobile_number: e164,
+      mobileNumber: e164,
+      phone: e164,
+      phoneNumber: e164,
+      mobile: e164,
+      mode: isRegister ? 'register' : 'login',
+      is_register: isRegister ? 1 : 0,
+      isRegister,
+      referenceCode: referral?.referenceCode,
+      reference_code: referral?.referenceCode,
+      agentCode: referral?.agentCode || referral?.referenceCode,
+    });
+    const msg = typeof response === 'string'
+      ? response
+      : (response?.data || response?.message || `Verification OTP sent to ${e164} via SMS.`);
+    return { success: true, message: msg };
   }
 
   public async loginWithMobileOtp(
@@ -328,44 +313,6 @@ class AuthServiceClass {
     const cleanMobile = mobile.trim();
     const e164 = cleanMobile.startsWith('+') ? cleanMobile : `+91${cleanMobile.replace(/\D/g, '')}`;
     const refCode = extra?.referenceCode || extra?.reference_code || extra?.agentCode || undefined;
-
-    if (this._phoneConfirmation) {
-      try {
-        const credential = await this._phoneConfirmation.confirm(otp.trim());
-        if (credential?.user) {
-          const firebaseIdToken = await credential.user.getIdToken();
-          this._phoneConfirmation = null;
-
-          const result = await ApiClient.postApi('auth/firebase-verify', {
-            idToken: firebaseIdToken,
-            phoneNumber: e164,
-            fullName: fullName ? fullName.trim() : undefined,
-            firstName: extra?.firstName?.trim() || undefined,
-            lastName: extra?.lastName?.trim() || undefined,
-            email: extra?.email ? extra.email.trim() : undefined,
-            dateOfBirth: extra?.dob ? extra.dob.trim() : undefined,
-            profession: extra?.profession ? extra.profession.trim() : undefined,
-            pincode: extra?.pincode ? extra.pincode.trim() : undefined,
-            pin_code: extra?.pincode ? extra.pincode.trim() : undefined,
-            reference_code: refCode,
-            referenceCode: refCode,
-            referral_code: refCode,
-            agentCode: refCode,
-            mode: extra?.isRegistration ? 'register' : 'login',
-            isRegister: extra?.isRegistration === true,
-            deviceId: deviceId,
-            platform: Platform.OS.toUpperCase(),
-          });
-
-          const { user, accessToken, refreshToken } = this.parseAuthResponse(result);
-          await this.saveSession(user, accessToken, refreshToken);
-          return user;
-        }
-      } catch (firebaseErr: any) {
-        console.warn('[FCM Auth] Firebase code confirm notice:', firebaseErr?.message);
-        this._phoneConfirmation = null;
-      }
-    }
 
     // Backend Redis OTP Verification
     const result = await ApiClient.postApi('auth/verify-otp', {
