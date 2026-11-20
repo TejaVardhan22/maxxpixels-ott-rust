@@ -272,20 +272,25 @@ class AuthServiceClass {
     const e164 = cleanMobile.startsWith('+') ? cleanMobile : `+91${cleanMobile.replace(/\D/g, '')}`;
     const endpoint = isResend ? 'auth/resend-otp' : 'auth/send-otp';
 
-    const response = await ApiClient.postApi(endpoint, {
-      identifier: e164,
-      mobile_number: e164,
-      mobileNumber: e164,
-      phone: e164,
-      phoneNumber: e164,
-      mobile: e164,
-      mode: isRegister ? 'register' : 'login',
-      is_register: isRegister ? 1 : 0,
-      isRegister,
-      referenceCode: referral?.referenceCode,
-      reference_code: referral?.referenceCode,
-      agentCode: referral?.agentCode || referral?.referenceCode,
-    });
+    // Backend send-otp may wait on MSG91 Flow + fallback (up to ~40s); allow enough time on real devices/networks.
+    const response = await ApiClient.postApi(
+      endpoint,
+      {
+        identifier: e164,
+        mobile_number: e164,
+        mobileNumber: e164,
+        phone: e164,
+        phoneNumber: e164,
+        mobile: e164,
+        mode: isRegister ? 'register' : 'login',
+        is_register: isRegister ? 1 : 0,
+        isRegister,
+        referenceCode: referral?.referenceCode,
+        reference_code: referral?.referenceCode,
+        agentCode: referral?.agentCode || referral?.referenceCode,
+      },
+      { timeoutMs: 60000 },
+    );
     const msg = typeof response === 'string'
       ? response
       : (response?.data || response?.message || `Verification OTP sent to ${e164} via SMS.`);
