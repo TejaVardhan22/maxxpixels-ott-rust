@@ -5,9 +5,9 @@ use crate::{
     handlers::{
         admin_get_movie_handler, admin_list_movies_handler, browse_catalog_handler,
         browse_movies_handler, browse_series_handler, get_by_language_handler,
-        get_categories_handler, get_content_detail_handler, get_content_types_handler,
-        get_featured_handler, get_genres_handler, get_languages_handler, get_metadata_handler,
-        get_non_kannada_handler, get_shorts_handler, get_trending_handler,
+        get_categories_handler, get_content_by_category_handler, get_content_detail_handler,
+        get_content_types_handler, get_featured_handler, get_genres_handler, get_languages_handler,
+        get_metadata_handler, get_non_kannada_handler, get_shorts_handler, get_trending_handler,
     },
     service::CatalogueService,
 };
@@ -50,6 +50,15 @@ pub fn taxonomy_routes(service: Arc<CatalogueService>) -> Router {
         .route("/api/v1/categories", get(get_categories_handler))
         .route("/api/categories", get(get_categories_handler))
         .route("/api/v1/admin/categories", get(get_categories_handler))
+        .route("/api/v1/categories/:id_or_slug/content", get(get_content_by_category_handler))
+        .route("/api/v1/categories/:id_or_slug", get(get_content_by_category_handler))
+        .route("/api/v1/categories/:id_or_slug/movies", get(get_content_by_category_handler))
+        .route("/api/categories/:id_or_slug/content", get(get_content_by_category_handler))
+        .route("/api/categories/:id_or_slug", get(get_content_by_category_handler))
+        .route("/api/categories/:id_or_slug/movies", get(get_content_by_category_handler))
+        .route("/categories/:id_or_slug/content", get(get_content_by_category_handler))
+        .route("/categories/:id_or_slug", get(get_content_by_category_handler))
+        .route("/categories/:id_or_slug/movies", get(get_content_by_category_handler))
         .route("/api/v1/genres", get(get_genres_handler))
         .route("/api/genres", get(get_genres_handler))
         .route("/api/v1/content-types", get(get_content_types_handler))

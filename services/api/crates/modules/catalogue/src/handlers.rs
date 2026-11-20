@@ -177,6 +177,18 @@ pub async fn get_content_detail_handler(
     ))
 }
 
+pub async fn get_content_by_category_handler(
+    State(service): State<Arc<CatalogueService>>,
+    Path(id_or_slug): Path<String>,
+    Query(query): Query<CatalogBrowseQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let res = service.browse_by_category(&id_or_slug, query).await?;
+    Ok((
+        StatusCode::OK,
+        Json(ApiResponse::success(res, "Category content retrieved successfully", 200)),
+    ))
+}
+
 pub async fn admin_list_movies_handler(
     claims: Claims,
     State(service): State<Arc<CatalogueService>>,

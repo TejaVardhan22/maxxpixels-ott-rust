@@ -273,6 +273,7 @@ class AuthServiceClass {
     const endpoint = isResend ? 'auth/resend-otp' : 'auth/send-otp';
 
     // Backend send-otp may wait on MSG91 Flow + fallback (up to ~40s); allow enough time on real devices/networks.
+    const agentCode = referral?.agentCode || referral?.referenceCode;
     const response = await ApiClient.postApi(
       endpoint,
       {
@@ -283,11 +284,11 @@ class AuthServiceClass {
         phoneNumber: e164,
         mobile: e164,
         mode: isRegister ? 'register' : 'login',
-        is_register: isRegister ? 1 : 0,
+        is_register: isRegister,
         isRegister,
         referenceCode: referral?.referenceCode,
         reference_code: referral?.referenceCode,
-        agentCode: referral?.agentCode || referral?.referenceCode,
+        agentCode: agentCode ? String(agentCode).trim().toUpperCase() : undefined,
       },
       { timeoutMs: 60000 },
     );

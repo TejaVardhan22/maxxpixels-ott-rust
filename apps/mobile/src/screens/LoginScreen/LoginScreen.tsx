@@ -497,11 +497,11 @@ export const LoginScreen: React.FC = () => {
             </View>
 
             {/* 2. Email Address */}
-            <Text style={[styles.inputLabel, { marginTop: 12 }]}>EMAIL ADDRESS *</Text>
+            <Text style={[styles.inputLabel, { marginTop: 12 }]}>EMAIL ADDRESS (OPTIONAL)</Text>
             <View style={styles.inputBox}>
               <Mail size={18} color="#64748B" style={styles.fieldIcon} />
               <TextInput
-                placeholder="name@example.com"
+                placeholder="name@example.com (optional)"
                 placeholderTextColor={AppTheme.textSecondary}
                 value={signupEmail}
                 onChangeText={setSignupEmail}
@@ -547,7 +547,7 @@ export const LoginScreen: React.FC = () => {
             </View>
 
             {/* 4. Date of Birth */}
-            <Text style={[styles.inputLabel, { marginTop: 12 }]}>DATE OF BIRTH (CALENDAR) *</Text>
+            <Text style={[styles.inputLabel, { marginTop: 12 }]}>DATE OF BIRTH (OPTIONAL)</Text>
             <TouchableOpacity
               activeOpacity={0.8}
               disabled={signupOtpSent || signupLoading}
@@ -572,7 +572,7 @@ export const LoginScreen: React.FC = () => {
             </TouchableOpacity>
 
             {/* 5. Profession Selector */}
-            <Text style={[styles.inputLabel, { marginTop: 12 }]}>PROFESSION *</Text>
+            <Text style={[styles.inputLabel, { marginTop: 12 }]}>PROFESSION (OPTIONAL)</Text>
             <TouchableOpacity
               activeOpacity={0.8}
               disabled={signupOtpSent || signupLoading}
@@ -581,7 +581,7 @@ export const LoginScreen: React.FC = () => {
             >
               <Briefcase size={18} color="#64748B" style={styles.fieldIcon} />
               <Text style={[styles.input, { paddingVertical: 14, color: signupProfession ? '#FFFFFF' : AppTheme.textSecondary }]}>
-                {signupProfession || 'Tap to select Profession *'}
+                {signupProfession || 'Tap to select Profession'}
               </Text>
               <ChevronDown size={16} color="#64748B" style={{ marginRight: 12 }} />
             </TouchableOpacity>
@@ -616,7 +616,7 @@ export const LoginScreen: React.FC = () => {
 
             {signupProfession === 'Other' && (
               <View style={{ marginTop: 10 }}>
-                <Text style={styles.inputLabel}>SPECIFY PROFESSION *</Text>
+                <Text style={styles.inputLabel}>SPECIFY PROFESSION (OPTIONAL)</Text>
                 <View style={styles.inputBox}>
                   <TextInput
                     placeholder="Enter your profession"
@@ -631,7 +631,7 @@ export const LoginScreen: React.FC = () => {
             )}
 
             {/* PINCODE / POSTAL CODE */}
-            <Text style={[styles.inputLabel, { marginTop: 12 }]}>PINCODE / POSTAL CODE *</Text>
+            <Text style={[styles.inputLabel, { marginTop: 12 }]}>PINCODE / POSTAL CODE (OPTIONAL)</Text>
             <View style={styles.inputBox}>
               <MapPin size={18} color="#64748B" style={styles.fieldIcon} />
               <TextInput
@@ -661,7 +661,7 @@ export const LoginScreen: React.FC = () => {
                 <Square size={18} color="#64748B" />
               )}
               <Text style={styles.checkboxLabel}>
-                I confirm that I am 18 years of age or older and accept the Terms of Use & Privacy Policy.
+                I agree to the Terms of Use and Privacy Policy.
               </Text>
             </TouchableOpacity>
 

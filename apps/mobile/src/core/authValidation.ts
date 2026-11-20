@@ -22,19 +22,26 @@ export function validateRegistration(form: {
   if (/^[\d\s+\-()]+$/.test(cleanName)) {
     return 'Full name cannot be a phone number or digits.';
   }
-  if (!form.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) return 'Please enter a valid email address.';
+  if (form.email && form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+    return 'Please enter a valid email address or leave it blank.';
+  }
   if (!isValidPhone(form.phone, form.countryCode)) return 'Please enter a valid mobile number.';
-  if (!form.dateOfBirth || !form.dateOfBirth.trim()) return 'Please select your Date of Birth.';
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(form.dateOfBirth.trim());
-  if (!match) return 'Enter your date of birth as YYYY-MM-DD.';
-  const [, y, m, d] = match.map(Number);
-  const birth = new Date(y, m - 1, d);
-  if (birth.getFullYear() !== y || birth.getMonth() !== m - 1 || birth.getDate() !== d) return 'Please enter a valid date of birth.';
-  let age = today.getFullYear() - y;
-  if (today.getMonth() < m - 1 || (today.getMonth() === m - 1 && today.getDate() < d)) age--;
-  if (age < 18) return 'You must be at least 18 years old to register.';
-  if (!form.profession || form.profession.trim().length < 2) return 'Please select or enter your profession.';
-  if (!form.pincode || !/^\d{6}$/.test(form.pincode.trim())) return 'Please enter a valid 6-digit area pincode.';
+  if (form.dateOfBirth && form.dateOfBirth.trim()) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(form.dateOfBirth.trim());
+    if (!match) return 'Enter your date of birth as YYYY-MM-DD.';
+    const [, y, m, d] = match.map(Number);
+    const birth = new Date(y, m - 1, d);
+    if (birth.getFullYear() !== y || birth.getMonth() !== m - 1 || birth.getDate() !== d) return 'Please enter a valid date of birth.';
+    let age = today.getFullYear() - y;
+    if (today.getMonth() < m - 1 || (today.getMonth() === m - 1 && today.getDate() < d)) age--;
+    if (age < 18) return 'You must be at least 18 years old to register.';
+  }
+  if (form.profession && form.profession.trim() && form.profession.trim().length < 2) {
+    return 'Please select or enter your profession.';
+  }
+  if (form.pincode && form.pincode.trim() && !/^\d{6}$/.test(form.pincode.trim())) {
+    return 'Please enter a valid 6-digit area pincode.';
+  }
   if (!form.consent) return 'Please accept the Terms of Use and Privacy Policy.';
   return undefined;
 }

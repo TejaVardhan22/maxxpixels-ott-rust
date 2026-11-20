@@ -279,6 +279,30 @@ impl CatalogueService {
         })
     }
 
+    pub async fn browse_by_category(
+        &self,
+        id_or_slug: &str,
+        mut query: CatalogBrowseQuery,
+    ) -> Result<PageResponse<ContentDto>, AppError> {
+        let key = id_or_slug.trim();
+        let cat = if let Ok(id) = key.parse::<i64>() {
+            category::Entity::find_by_id(id)
+                .one(&self.db)
+                .await
+                .map_err(|e| AppError::Database(e.to_string()))?
+        } else {
+            category::Entity::find()
+                .filter(category::Column::Slug.eq(key))
+                .one(&self.db)
+                .await
+                .map_err(|e| AppError::Database(e.to_string()))?
+        }
+        .ok_or_else(|| AppError::NotFound(format!("Category '{}' not found", id_or_slug)))?;
+
+        query.category_id = Some(cat.id);
+        self.browse_catalog(query, false).await
+    }
+
     async fn hydrate_content_list(
         &self,
         contents: Vec<content::Model>,
