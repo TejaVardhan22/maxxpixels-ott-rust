@@ -459,3 +459,10 @@ pub async fn serve_banner_handler(
 ) -> Response {
     serve_upload_handler(State(state), Path(("banners".to_string(), file_name))).await
 }
+
+pub async fn serve_branding_handler(
+    State(state): State<AppState>,
+    Path(file_name): Path<String>,
+) -> Response {
+    serve_upload_handler(State(state), Path(("branding".to_string(), file_name))).await
+}

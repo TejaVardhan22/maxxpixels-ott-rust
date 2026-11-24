@@ -12,8 +12,8 @@ use crate::handlers::{
     delete_season_handler, delete_series_handler, direct_upload_token_handler, get_series_handler,
     list_episodes_by_season_handler, list_episodes_handler,
     list_live_channels_handler, list_live_events_handler, list_seasons_handler,
-    list_series_handler, serve_banner_handler, serve_flat_upload_handler, serve_poster_handler,
-    serve_upload_handler,
+    list_series_handler, serve_banner_handler, serve_branding_handler, serve_flat_upload_handler,
+    serve_poster_handler, serve_upload_handler,
     update_movie_handler, update_movie_status_handler, update_series_handler,
     upload_media_handler, upload_video_handler, presigned_url_get_handler, presigned_url_post_handler,
 };
@@ -117,6 +117,8 @@ pub fn content_routes() -> Router<AppState> {
         .route("/api/v1/posters/:file_name", get(serve_poster_handler))
         .route("/banners/:file_name", get(serve_banner_handler))
         .route("/api/v1/banners/:file_name", get(serve_banner_handler))
+        .route("/branding/:file_name", get(serve_branding_handler))
+        .route("/api/v1/branding/:file_name", get(serve_branding_handler))
 }
 
 pub fn admin_movies_write_routes() -> Router<AppState> {
