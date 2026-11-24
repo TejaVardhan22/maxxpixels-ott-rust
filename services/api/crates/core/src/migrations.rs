@@ -67,6 +67,11 @@ pub const MIGRATIONS: &[MigrationDef] = &[
         name: "user_referrals",
         sql: include_str!("../../../migrations/0008_user_referrals.sql"),
     },
+    MigrationDef {
+        version: "0009",
+        name: "payments_nullable_legacy_columns",
+        sql: include_str!("../../../migrations/0009_payments_nullable_legacy_columns.sql"),
+    },
 ];
 
 pub struct MigrationRunner;
