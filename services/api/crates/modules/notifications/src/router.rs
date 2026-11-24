@@ -23,6 +23,7 @@ pub fn notification_routes() -> Router<AppState> {
         .route("/register-token", post(register_device_token_handler));
 
     let user_router = Router::new()
+        .route("/", get(get_my_notifications_handler))
         .route("/my", get(get_my_notifications_handler))
         .route("/unread-count", get(unread_count_handler))
         .route("/read-all", post(mark_all_read_handler))
