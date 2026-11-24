@@ -77,6 +77,7 @@ fun LoginScreen(
 
     var loading by remember { mutableStateOf(false) }
     var errorMsg by remember { mutableStateOf("") }
+    var notRegistered by remember { mutableStateOf(false) }
     var resendCooldown by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(resendCooldown) {
@@ -93,6 +94,7 @@ fun LoginScreen(
             return
         }
         errorMsg = ""
+        notRegistered = false
         loading = true
         scope.launch {
             when (val res = repository.sendPhoneOtp(
@@ -106,9 +108,11 @@ fun LoginScreen(
                 }
                 is ApiResult.Error -> {
                     if (res.message.contains("not registered", ignoreCase = true) ||
-                        res.message.contains("register", ignoreCase = true)
+                        res.message.contains("not found", ignoreCase = true) ||
+                        res.message.contains("sign up", ignoreCase = true)
                     ) {
-                        onNavigateSignUp(digits)
+                        notRegistered = true
+                        errorMsg = "No MaxxPixels account found for +91 $digits. Please sign up first."
                     } else {
                         errorMsg = res.message
                     }
@@ -229,6 +233,13 @@ fun LoginScreen(
                             if (errorMsg.isNotBlank()) {
                                 Spacer(Modifier.height(12.dp))
                                 AuthErrorBox(errorMsg)
+                                if (notRegistered) {
+                                    Spacer(Modifier.height(10.dp))
+                                    AuthOrangeButton(
+                                        text = "Create Account Now",
+                                        onClick = { onNavigateSignUp(phone.filter(Char::isDigit)) }
+                                    )
+                                }
                             }
 
                             Spacer(Modifier.height(18.dp))
@@ -280,6 +291,13 @@ fun LoginScreen(
                             if (errorMsg.isNotBlank()) {
                                 Spacer(Modifier.height(12.dp))
                                 AuthErrorBox(errorMsg)
+                                if (notRegistered) {
+                                    Spacer(Modifier.height(10.dp))
+                                    AuthOrangeButton(
+                                        text = "Create Account Now",
+                                        onClick = { onNavigateSignUp(phone.filter(Char::isDigit)) }
+                                    )
+                                }
                             }
 
                             Spacer(Modifier.height(16.dp))

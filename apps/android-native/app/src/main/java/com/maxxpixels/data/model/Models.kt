@@ -424,6 +424,19 @@ object JsonParsers {
             else -> 0f
         }
 
+        val ctRaw = str(contentObj, "contentType", "content_type", "type").ifBlank { "MOVIE" }.uppercase()
+        val inferredTypeId = int(contentObj, "type_id", "typeId").let { explicit ->
+            if (explicit > 0) explicit else when {
+                ctRaw.contains("SERIES") || ctRaw.contains("SHOW") -> 6
+                ctRaw.contains("SHORT") -> 3
+                ctRaw.contains("MICRO") || ctRaw.contains("REEL") -> 4
+                ctRaw.contains("SONG") || ctRaw.contains("MUSIC") || ctRaw.contains("ALBUM") -> 2
+                ctRaw.contains("PODCAST") -> 5
+                ctRaw.contains("AI") -> 7
+                else -> 1
+            }
+        }
+
         return CatalogItem(
             id = id,
             title = str(contentObj, "title", "name").ifBlank { str(obj, "title", "name").ifBlank { "Untitled" } },
@@ -432,9 +445,9 @@ object JsonParsers {
                 .ifBlank { str(obj, "description", "subtitle") },
             posterUrl = MediaUrlNormalizer.normalize(rawPoster),
             landscapeUrl = MediaUrlNormalizer.normalize(rawLandscape),
-            contentType = str(contentObj, "contentType", "content_type", "type").ifBlank { "MOVIE" }.uppercase(),
-            videoType = int(contentObj, "video_type", "videoType").let { if (it > 0) it else 1 },
-            typeId = int(contentObj, "type_id", "typeId").let { if (it > 0) it else 1 },
+            contentType = ctRaw,
+            videoType = int(contentObj, "video_type", "videoType").let { if (it > 0) it else inferredTypeId },
+            typeId = inferredTypeId,
             language = str(contentObj, "originalLanguage", "language", "language_name").ifBlank { "Kannada" },
             releaseYear = str(contentObj, "releaseYear", "release_year").take(4),
             durationLabel = durationLabel,

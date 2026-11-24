@@ -137,9 +137,9 @@ object ApiClientFactory {
         }
 
         val okHttp = OkHttpClient.Builder()
-            .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(45, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(25, TimeUnit.SECONDS)
+            .readTimeout(65, TimeUnit.SECONDS)
+            .writeTimeout(35, TimeUnit.SECONDS)
             .addInterceptor(authInterceptor)
             .addInterceptor(retryInterceptor)
             .addInterceptor(logging)

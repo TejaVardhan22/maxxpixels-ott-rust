@@ -773,6 +773,20 @@ impl AuthService {
                     validate_agent_code(&self.db, code).await?;
                 }
             }
+        } else {
+            match self.find_user_by_phone(&phone_plus).await? {
+                None => {
+                    return Err(AppError::NotFound(
+                        "This mobile number is not registered. Please sign up to create an account.".to_string(),
+                    ));
+                }
+                Some(u) if u.status == "BLOCKED" || u.status == "SUSPENDED" => {
+                    return Err(AppError::Forbidden(
+                        "Your account is blocked or suspended. Please contact support.".to_string(),
+                    ));
+                }
+                Some(_) => {}
+            }
         }
 
         let otp: String = { let mut rng = rand::thread_rng(); format!("{:06}", rng.gen_range(0..1_000_000u32)) };

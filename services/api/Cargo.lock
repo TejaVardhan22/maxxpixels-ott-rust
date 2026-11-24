@@ -2064,6 +2064,7 @@ dependencies = [
  "http-body-util",
  "maxx-common",
  "maxx-core",
+ "maxx-integration-bunny",
  "sea-orm",
  "serde",
  "serde_json",

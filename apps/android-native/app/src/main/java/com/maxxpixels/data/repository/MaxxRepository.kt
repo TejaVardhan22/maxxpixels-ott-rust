@@ -58,18 +58,29 @@ class MaxxRepository(
         return ApiResult.Error(e.message ?: "Something went wrong.")
     }
 
+    private fun checkEnvelopeError(res: kotlinx.serialization.json.JsonElement): String? {
+        val root = res as? JsonObject ?: return null
+        val successVal = root["success"]
+        val isExplicitFalse = successVal != null && !JsonParsers.bool(root, "success")
+        val statusCode = JsonParsers.int(root, "status")
+        if (isExplicitFalse || statusCode >= 400) {
+            return JsonParsers.str(root, "message", "error").ifBlank { "Request failed ($statusCode)." }
+        }
+        return null
+    }
+
     // ── Branding & Settings ─────────────────────────────────────────────────
     suspend fun syncBranding(): BrandIdentity {
         return try {
             val res = api.getSettings()
             val obj = JsonParsers.unwrapObject(res)
             if (obj != null) {
-                val name = JsonParsers.str(obj, "app_name", "appName", "platform_name").ifBlank { "MaxxPixels" }
-                val shortName = JsonParsers.str(obj, "app_short_name", "appShortName").ifBlank { name }
+                val name = JsonParsers.str(obj, "APP_NAME", "app_name", "appName", "platform_name").ifBlank { "MaxxPixels" }
+                val shortName = JsonParsers.str(obj, "APP_SHORT_NAME", "app_short_name", "appShortName").ifBlank { name }
                 val logo = MediaUrlNormalizer.normalize(
-                    JsonParsers.str(obj, "dark_logo_url", "darkLogoUrl", "logo_url", "logoUrl", "app_logo")
+                    JsonParsers.str(obj, "APP_LOGO_URL", "dark_logo_url", "darkLogoUrl", "logo_url", "logoUrl", "app_logo")
                 )
-                val desc = JsonParsers.str(obj, "seo_description", "app_description")
+                val desc = JsonParsers.str(obj, "APP_TAGLINE", "seo_description", "app_description")
                     .ifBlank { "Stream Movies, Short Films & Web Series" }
                 val brand = BrandIdentity(name, shortName, logo, desc)
                 sessionManager.saveBrand(brand)
@@ -99,6 +110,7 @@ class MaxxRepository(
                 if (!agentCode.isNullOrBlank()) put("agentCode", agentCode.trim().uppercase())
             }
             val res = if (isResend) api.resendOtp(body) else api.sendOtp(body)
+            checkEnvelopeError(res)?.let { return ApiResult.Error(it) }
             val obj = JsonParsers.unwrapObject(res)
             ApiResult.Success(JsonParsers.str(obj, "message").ifBlank { "OTP sent to $clean" })
         } catch (e: Throwable) {
@@ -141,6 +153,7 @@ class MaxxRepository(
                 if (!agentCode.isNullOrBlank()) put("agentCode", agentCode.trim().uppercase())
             }
             val res = api.verifyOtp(body)
+            checkEnvelopeError(res)?.let { return ApiResult.Error(it) }
             val obj = JsonParsers.unwrapObject(res) ?: return ApiResult.Error("Invalid verification response.")
             val user = JsonParsers.parseUser(obj)
             if (!user.isLoggedIn) return ApiResult.Error("Could not establish session. Please try again.")
@@ -199,14 +212,26 @@ class MaxxRepository(
             val bannerRes = runCatching {
                 api.getBanners("MOBILE", typeId.takeIf { it > 0 }, language)
             }.getOrNull()
-            val sectionRes = api.getSections(typeId.takeIf { it > 0 }, language)
+            val sectionRes = runCatching {
+                api.getSections(typeId.takeIf { it > 0 }, language)
+            }.getOrNull()
             val typesRes = runCatching { api.getContentTypes() }.getOrNull()
             val cwRes = if (sessionManager.getAuthToken() != null) {
                 runCatching { api.getContinueWatching() }.getOrNull()
             } else null
 
+            // Mirror React Native useHomeCatalog: also fetch language pool & trending so Home is populated even when cms/sections is empty
+            val langPoolRes = runCatching {
+                if (language == "non-kannada" || language == "all-indian") {
+                    api.getNonKannadaContent()
+                } else {
+                    api.getContentByLanguage(language?.ifBlank { "kannada" } ?: "kannada")
+                }
+            }.getOrNull()
+            val trendingRes = runCatching { api.getTrending() }.getOrNull()
+
             val banners = JsonParsers.unwrapArray(bannerRes).map(JsonParsers::parseCatalogItem)
-            val sections = JsonParsers.unwrapArray(sectionRes).mapIndexedNotNull { idx, secObj ->
+            val cmsSections = JsonParsers.unwrapArray(sectionRes).mapIndexedNotNull { idx, secObj ->
                 val rawItems = (secObj["items"] as? JsonArray ?: secObj["data"] as? JsonArray)
                     ?.mapNotNull { it as? JsonObject }
                     ?.map(JsonParsers::parseCatalogItem)
@@ -221,6 +246,36 @@ class MaxxRepository(
                     isLandscape = layout.contains("landscape") || layout.contains("horizontal"),
                     items = rawItems
                 )
+            }
+
+            val langItems = JsonParsers.unwrapArray(langPoolRes).map(JsonParsers::parseCatalogItem)
+            val trendingItems = JsonParsers.unwrapArray(trendingRes).map(JsonParsers::parseCatalogItem)
+            val combinedPool = (langItems + trendingItems).distinctBy { it.id }
+                .filter { item -> typeId == 0 || item.typeId == typeId || item.videoType == typeId }
+
+            val fallbackSections = if (cmsSections.isNotEmpty()) {
+                cmsSections
+            } else {
+                buildList {
+                    if (trendingItems.isNotEmpty() && typeId == 0) {
+                        add(HomeSection(101L, "Trending Now", false, trendingItems.take(15)))
+                    }
+                    val movies = combinedPool.filter { it.typeId == 1 || it.contentType == "MOVIE" }
+                    if (movies.isNotEmpty()) add(HomeSection(102L, "Movies", false, movies))
+                    val series = combinedPool.filter { it.typeId == 6 || it.contentType.contains("SERIES") }
+                    if (series.isNotEmpty()) add(HomeSection(103L, "Web Series", false, series))
+                    val shorts = combinedPool.filter { it.typeId == 3 || it.contentType.contains("SHORT") }
+                    if (shorts.isNotEmpty()) add(HomeSection(104L, "Short Films", false, shorts))
+                    val micro = combinedPool.filter { it.typeId == 4 || it.contentType.contains("MICRO") }
+                    if (micro.isNotEmpty()) add(HomeSection(105L, "Micro-Drama", false, micro))
+                    val songs = combinedPool.filter { it.typeId == 2 || it.contentType.contains("SONG") || it.contentType.contains("MUSIC") }
+                    if (songs.isNotEmpty()) add(HomeSection(106L, "Songs & Music", false, songs))
+                    val podcasts = combinedPool.filter { it.typeId == 5 || it.contentType.contains("PODCAST") }
+                    if (podcasts.isNotEmpty()) add(HomeSection(107L, "Podcasts", false, podcasts))
+                    if (isEmpty() && combinedPool.isNotEmpty()) {
+                        add(HomeSection(108L, "Latest Releases", false, combinedPool))
+                    }
+                }
             }
 
             val types = JsonParsers.unwrapArray(typesRes).mapNotNull { t ->
@@ -243,13 +298,13 @@ class MaxxRepository(
             }
 
             val cw = JsonParsers.unwrapArray(cwRes).map(JsonParsers::parseCatalogItem)
-            val effectiveBanners = banners.ifEmpty { sections.firstOrNull()?.items?.take(6).orEmpty() }
+            val effectiveBanners = banners.ifEmpty { fallbackSections.firstOrNull()?.items?.take(6).orEmpty() }
 
-            if (typeId == 0 && language == null && sections.isNotEmpty()) {
-                sessionManager.saveCachedHome(effectiveBanners, sections)
+            if (typeId == 0 && (language == null || language == "kannada") && fallbackSections.isNotEmpty()) {
+                sessionManager.saveCachedHome(effectiveBanners, fallbackSections)
             }
 
-            ApiResult.Success(HomeData(effectiveBanners, sections, types, cw, fromCache = false))
+            ApiResult.Success(HomeData(effectiveBanners, fallbackSections, types, cw, fromCache = false))
         } catch (e: Throwable) {
             // Serve Room/EncryptedPrefs cached snapshot on API disconnect
             val cachedBanners = sessionManager.loadCachedBanners()
