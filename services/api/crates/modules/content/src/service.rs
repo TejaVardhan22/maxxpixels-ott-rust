@@ -112,6 +112,182 @@ impl ContentService {
         None
     }
 
+    fn normalize_language_code(raw: &str) -> String {
+        let lower = raw.trim().to_lowercase();
+        match lower.as_str() {
+            "kannada" | "kan" => "kn".to_string(),
+            "hindi" | "hin" => "hi".to_string(),
+            "telugu" | "tel" => "te".to_string(),
+            "tamil" | "tam" => "ta".to_string(),
+            "malayalam" | "mal" => "ml".to_string(),
+            "marathi" | "mar" => "mr".to_string(),
+            "bengali" | "ben" => "bn".to_string(),
+            "punjabi" | "pan" => "pa".to_string(),
+            "gujarati" | "guj" => "gu".to_string(),
+            "english" | "eng" => "en".to_string(),
+            _ => lower,
+        }
+    }
+
+    fn parse_release_year(v: &Value) -> Option<i32> {
+        if let Some(y) = Self::opt_i32(v, &["releaseYear", "release_year"]) {
+            if (1900..=2100).contains(&y) {
+                return Some(y);
+            }
+        }
+        if let Some(rd) = Self::opt_str(v, &["releaseDate", "release_date"]) {
+            if rd.len() >= 4 {
+                if let Ok(y) = rd[..4].parse::<i32>() {
+                    if (1900..=2100).contains(&y) {
+                        return Some(y);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn extract_str_list(v: &Value, keys: &[&str]) -> Option<Vec<String>> {
+        for k in keys {
+            if let Some(val) = v.get(*k) {
+                if let Some(arr) = val.as_array() {
+                    let out: Vec<String> = arr
+                        .iter()
+                        .filter_map(|item| {
+                            if let Some(s) = item.as_str() {
+                                let t = s.trim();
+                                if !t.is_empty() {
+                                    return Some(t.to_string());
+                                }
+                            } else if let Some(n) = item.as_i64() {
+                                return Some(n.to_string());
+                            } else if let Some(obj) = item.as_object() {
+                                if let Some(s) = obj
+                                    .get("name")
+                                    .or_else(|| obj.get("slug"))
+                                    .and_then(|x| x.as_str())
+                                {
+                                    let t = s.trim();
+                                    if !t.is_empty() {
+                                        return Some(t.to_string());
+                                    }
+                                }
+                            }
+                            None
+                        })
+                        .collect();
+                    return Some(out);
+                }
+            }
+        }
+        None
+    }
+
+    fn resolve_primary_stream_url(&self, payload: &Value, bunny_guid: Option<&str>) -> Option<String> {
+        if let Some(url) = Self::opt_str(
+            payload,
+            &[
+                "masterPlaylistUrl",
+                "master_playlist_url",
+                "hlsUrl",
+                "hls_url",
+                "streamUrl",
+                "stream_url",
+                "videoUrl",
+                "video_url",
+                "video4kUrl",
+                "video2kUrl",
+                "video1080Url",
+                "video720Url",
+                "video480Url",
+                "video320Url",
+                "videoAssetId",
+                "video_asset_id",
+            ],
+        ) {
+            return Some(url);
+        }
+        if let Some(guid) = bunny_guid {
+            let g = guid.trim();
+            if !g.is_empty() && !self.bunny_stream.cdn_hostname.is_empty() {
+                return Some(format!(
+                    "https://{}/{}/playlist.m3u8",
+                    self.bunny_stream.cdn_hostname.trim_end_matches('/'),
+                    g
+                ));
+            }
+        }
+        None
+    }
+
+    async fn sync_categories_and_genres(&self, content_id: i64, payload: &Value) {
+        if let Some(cat_names) = Self::extract_str_list(payload, &["categories", "category"]) {
+            let _ = self
+                .db
+                .execute(Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    "DELETE FROM content_categories WHERE content_id = $1",
+                    [content_id.into()],
+                ))
+                .await;
+
+            for raw in cat_names {
+                if let Ok(cat_id) = raw.parse::<i64>() {
+                    let _ = self
+                        .db
+                        .execute(Statement::from_sql_and_values(
+                            DatabaseBackend::Postgres,
+                            "INSERT INTO content_categories (content_id, category_id) SELECT $1, id FROM categories WHERE id = $2 ON CONFLICT DO NOTHING",
+                            [content_id.into(), cat_id.into()],
+                        ))
+                        .await;
+                } else {
+                    let _ = self
+                        .db
+                        .execute(Statement::from_sql_and_values(
+                            DatabaseBackend::Postgres,
+                            "INSERT INTO content_categories (content_id, category_id) SELECT $1, id FROM categories WHERE LOWER(name) = LOWER($2) OR LOWER(COALESCE(slug, '')) = LOWER($2) LIMIT 1 ON CONFLICT DO NOTHING",
+                            [content_id.into(), raw.into()],
+                        ))
+                        .await;
+                }
+            }
+        }
+
+        if let Some(genre_names) = Self::extract_str_list(payload, &["genres"]) {
+            let _ = self
+                .db
+                .execute(Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    "DELETE FROM content_genres WHERE content_id = $1",
+                    [content_id.into()],
+                ))
+                .await;
+
+            for raw in genre_names {
+                if let Ok(gid) = raw.parse::<i64>() {
+                    let _ = self
+                        .db
+                        .execute(Statement::from_sql_and_values(
+                            DatabaseBackend::Postgres,
+                            "INSERT INTO content_genres (content_id, genre_id) SELECT $1, id FROM genres WHERE id = $2 ON CONFLICT DO NOTHING",
+                            [content_id.into(), gid.into()],
+                        ))
+                        .await;
+                } else {
+                    let _ = self
+                        .db
+                        .execute(Statement::from_sql_and_values(
+                            DatabaseBackend::Postgres,
+                            "INSERT INTO content_genres (content_id, genre_id) SELECT $1, id FROM genres WHERE LOWER(name) = LOWER($2) OR LOWER(COALESCE(slug, '')) = LOWER($2) LIMIT 1 ON CONFLICT DO NOTHING",
+                            [content_id.into(), raw.into()],
+                        ))
+                        .await;
+                }
+            }
+        }
+    }
+
     fn validate_content_payload(payload: &Value, is_create: bool) -> AppResult<()> {
         let mut v = ValidationBag::new();
         let title = Self::opt_str(payload, &["title"]);
@@ -180,13 +356,13 @@ impl ContentService {
             monetization: Set(Some(monetization_norm.clone())),
             rent_price: Set(Self::opt_decimal(&payload, &["rentPrice", "rent_price"])),
             validity_hours: Set(Self::opt_i32(&payload, &["validityHours", "validity_hours"])),
-            release_year: Set(Self::opt_i32(&payload, &["releaseYear", "release_year"])),
-            age_rating: Set(Self::opt_str(&payload, &["ageRating", "age_rating"])),
+            release_year: Set(Self::parse_release_year(&payload)),
+            age_rating: Set(Self::opt_str(&payload, &["ageRating", "age_rating", "maturityRating", "maturity_rating"])),
             poster_url: Set(Self::opt_str(&payload, &["posterUrl", "poster_url"])),
-            backdrop_url: Set(Self::opt_str(&payload, &["backdropUrl", "backdrop_url"])),
-            landscape_image_url: Set(Self::opt_str(&payload, &["landscapeImageUrl", "landscape_image_url"])),
+            backdrop_url: Set(Self::opt_str(&payload, &["backdropUrl", "backdrop_url", "bannerUrl", "bannerImageUrl", "banner_image_url"])),
+            landscape_image_url: Set(Self::opt_str(&payload, &["landscapeImageUrl", "landscape_image_url", "bannerUrl", "bannerImageUrl"])),
             logo_image_url: Set(Self::opt_str(&payload, &["logoImageUrl", "logo_image_url"])),
-            banner_image_url: Set(Self::opt_str(&payload, &["bannerImageUrl", "banner_image_url"])),
+            banner_image_url: Set(Self::opt_str(&payload, &["bannerImageUrl", "banner_image_url", "bannerUrl"])),
             trailer_url: Set(Self::opt_str(&payload, &["trailerUrl", "trailer_url"])),
             subtitles_json: Set(Self::opt_json_array_str(&payload, &["subtitles", "subtitleTracks", "subtitlesJson"])),
             audio_tracks_json: Set(Self::opt_json_array_str(&payload, &["audioTracks", "audio_tracks", "audioTracksJson"])),
@@ -202,7 +378,20 @@ impl ContentService {
                 .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())),
             duration_seconds: Set(Self::opt_i32(&payload, &["durationSeconds", "duration_seconds"])
                 .or_else(|| Self::opt_i32(&payload, &["durationMinutes", "duration_minutes"]).map(|m| m * 60))),
-            original_language_code: Set(Self::opt_str(&payload, &["originalLanguageCode", "language", "languageCode"])),
+            original_language_code: Set(
+                Self::opt_str(
+                    &payload,
+                    &[
+                        "originalLanguageCode",
+                        "original_language_code",
+                        "originalLanguage",
+                        "original_language",
+                        "language",
+                        "languageCode",
+                    ],
+                )
+                .map(|l| Self::normalize_language_code(&l)),
+            ),
             is_premium: Set(Some(derived_is_premium)),
             is_featured: Set(Self::opt_bool(&payload, &["isFeatured", "is_featured"])),
             is_trending: Set(Self::opt_bool(&payload, &["isTrending", "is_trending"])),
@@ -210,33 +399,55 @@ impl ContentService {
             view_count: Set(Some(0)),
             created_at: Set(now),
             updated_at: Set(now),
-            published_at: Set(if status == "PUBLISHED" { Some(now) } else { None }),
+            published_at: Set(if status.eq_ignore_ascii_case("PUBLISHED") { Some(now) } else { None }),
             ..Default::default()
         };
 
         let saved_content = new_content.insert(&self.db).await?;
+        let bunny_guid = Self::opt_str(
+            &payload,
+            &["bunnyVideoGuid", "bunny_video_guid", "bunnyVideoId", "bunny_video_id"],
+        );
+        let resolved_stream = self.resolve_primary_stream_url(&payload, bunny_guid.as_deref());
+        let dur_mins = Self::opt_i32(&payload, &["durationMinutes", "duration_minutes"]);
+        let dur_secs = Self::opt_i32(&payload, &["durationSeconds", "duration_seconds"])
+            .or_else(|| dur_mins.map(|m| m * 60));
+
         let new_movie = movie::ActiveModel {
             id: Set(saved_content.id),
             content_id: Set(Some(saved_content.id)),
-            video_asset_id: Set(Self::opt_str(&payload, &["videoAssetId", "video_asset_id"])),
-            video_url: Set(Self::opt_str(&payload, &["videoUrl", "video_url"])),
-            bunny_video_guid: Set(Self::opt_str(&payload, &["bunnyVideoGuid", "bunny_video_guid"])),
-            duration_minutes: Set(Self::opt_i32(&payload, &["durationMinutes", "duration_minutes"])),
-            duration_seconds: Set(Self::opt_i32(&payload, &["durationSeconds", "duration_seconds"])),
+            video_asset_id: Set(
+                Self::opt_str(&payload, &["videoAssetId", "video_asset_id"])
+                    .or_else(|| resolved_stream.clone()),
+            ),
+            video_url: Set(
+                Self::opt_str(&payload, &["videoUrl", "video_url"])
+                    .or_else(|| resolved_stream.clone()),
+            ),
+            bunny_video_guid: Set(bunny_guid),
+            duration_minutes: Set(dur_mins),
+            duration_seconds: Set(dur_secs),
             director: Set(Self::opt_str(&payload, &["director"])),
             writers: Set(Self::opt_str(&payload, &["writers"])),
-            production_house: Set(Self::opt_str(&payload, &["productionHouse", "production_house"])),
+            production_house: Set(Self::opt_str(&payload, &["productionHouse", "production_house", "producer"])),
             country_of_origin: Set(Self::opt_str(&payload, &["countryOfOrigin", "country_of_origin"])),
             is_tvod_available: Set(Some(
                 Self::opt_bool(&payload, &["isTvodAvailable", "is_tvod_available"])
                     .unwrap_or(monetization_norm == "TVOD"),
             )),
             drm_enabled: Set(Self::opt_bool(&payload, &["drmEnabled", "drm_enabled"])),
-            stream_url: Set(Self::opt_str(&payload, &["streamUrl", "stream_url"])),
-            hls_url: Set(Self::opt_str(&payload, &["hlsUrl", "hls_url"])),
+            stream_url: Set(
+                Self::opt_str(&payload, &["streamUrl", "stream_url"])
+                    .or_else(|| resolved_stream.clone()),
+            ),
+            hls_url: Set(
+                Self::opt_str(&payload, &["hlsUrl", "hls_url", "masterPlaylistUrl", "master_playlist_url"])
+                    .or(resolved_stream),
+            ),
             dash_url: Set(Self::opt_str(&payload, &["dashUrl", "dash_url"])),
         };
         let saved_movie = new_movie.insert(&self.db).await?;
+        self.sync_categories_and_genres(saved_content.id, &payload).await;
         Ok(json!({ "content": saved_content, "movie": saved_movie, "id": saved_content.id }))
     }
 
@@ -246,6 +457,7 @@ impl ContentService {
             .one(&self.db)
             .await?
             .ok_or_else(|| AppError::NotFound("Movie not found".into()))?;
+        let existing_published_at = existing_content.published_at;
         let mut active_c: content::ActiveModel = existing_content.into();
 
         if let Some(v) = Self::opt_str(&payload, &["title"]) {
@@ -260,7 +472,11 @@ impl ContentService {
             active_c.description = Set(Some(v));
         }
         if let Some(v) = Self::opt_str(&payload, &["status"]) {
-            active_c.status = Set(v);
+            let norm = v.to_uppercase();
+            if norm == "PUBLISHED" && existing_published_at.is_none() {
+                active_c.published_at = Set(Some(Utc::now().fixed_offset()));
+            }
+            active_c.status = Set(norm);
         }
         if let Some(m) = Self::opt_str(&payload, &["monetization", "accessType", "access_type"]) {
             let norm = m.to_uppercase();
@@ -329,8 +545,29 @@ impl ContentService {
         if let Some(v) = Self::opt_json_array_str(&payload, &["cast", "castMembers", "castJson"]) {
             active_c.cast_json = Set(Some(v));
         }
-        if let Some(v) = Self::opt_i32(&payload, &["releaseYear", "release_year"]) {
+        if let Some(v) = Self::parse_release_year(&payload) {
             active_c.release_year = Set(Some(v));
+        }
+        if let Some(v) = Self::opt_str(&payload, &["ageRating", "age_rating", "maturityRating", "maturity_rating"]) {
+            active_c.age_rating = Set(Some(v));
+        }
+        if let Some(v) = Self::opt_str(
+            &payload,
+            &[
+                "originalLanguageCode",
+                "original_language_code",
+                "originalLanguage",
+                "original_language",
+                "language",
+                "languageCode",
+            ],
+        ) {
+            active_c.original_language_code = Set(Some(Self::normalize_language_code(&v)));
+        }
+        if let Some(secs) = Self::opt_i32(&payload, &["durationSeconds", "duration_seconds"])
+            .or_else(|| Self::opt_i32(&payload, &["durationMinutes", "duration_minutes"]).map(|m| m * 60))
+        {
+            active_c.duration_seconds = Set(Some(secs));
         }
         if let Some(v) = Self::opt_bool(&payload, &["isPremium", "is_premium"]) {
             active_c.is_premium = Set(Some(v));
@@ -338,32 +575,84 @@ impl ContentService {
         if let Some(v) = Self::opt_bool(&payload, &["isFeatured", "is_featured"]) {
             active_c.is_featured = Set(Some(v));
         }
+        if let Some(v) = Self::opt_bool(&payload, &["isTrending", "is_trending"]) {
+            active_c.is_trending = Set(Some(v));
+        }
+        if let Some(v) = Self::opt_bool(&payload, &["isOriginal", "is_original"]) {
+            active_c.is_original = Set(Some(v));
+        }
         active_c.updated_at = Set(Utc::now().fixed_offset());
         let saved_c = active_c.update(&self.db).await?;
 
-        if let Some(existing_m) = movie::Entity::find_by_id(id).one(&self.db).await? {
+        let bunny_guid = Self::opt_str(
+            &payload,
+            &["bunnyVideoGuid", "bunny_video_guid", "bunnyVideoId", "bunny_video_id"],
+        );
+        let resolved_stream = self.resolve_primary_stream_url(&payload, bunny_guid.as_deref());
+        let dur_mins = Self::opt_i32(&payload, &["durationMinutes", "duration_minutes"]);
+        let dur_secs = Self::opt_i32(&payload, &["durationSeconds", "duration_seconds"])
+            .or_else(|| dur_mins.map(|m| m * 60));
+
+        if let Some(existing_m) = movie::Entity::find()
+            .filter(movie::Column::Id.eq(id).or(movie::Column::ContentId.eq(id)))
+            .one(&self.db)
+            .await?
+        {
             let mut active_m: movie::ActiveModel = existing_m.into();
+            if let Some(ref v) = resolved_stream {
+                active_m.hls_url = Set(Some(v.clone()));
+                active_m.stream_url = Set(Some(v.clone()));
+                active_m.video_url = Set(Some(v.clone()));
+                active_m.video_asset_id = Set(Some(v.clone()));
+            }
             if let Some(v) = Self::opt_str(&payload, &["videoUrl", "video_url"]) {
                 active_m.video_url = Set(Some(v));
             }
-            if let Some(v) = Self::opt_str(&payload, &["bunnyVideoGuid", "bunny_video_guid"]) {
+            if let Some(v) = bunny_guid {
                 active_m.bunny_video_guid = Set(Some(v));
             }
             if let Some(v) = Self::opt_str(&payload, &["streamUrl", "stream_url"]) {
                 active_m.stream_url = Set(Some(v));
             }
-            if let Some(v) = Self::opt_str(&payload, &["hlsUrl", "hls_url"]) {
+            if let Some(v) = Self::opt_str(&payload, &["hlsUrl", "hls_url", "masterPlaylistUrl", "master_playlist_url"]) {
                 active_m.hls_url = Set(Some(v));
             }
             if let Some(v) = Self::opt_str(&payload, &["director"]) {
                 active_m.director = Set(Some(v));
             }
-            if let Some(v) = Self::opt_i32(&payload, &["durationMinutes", "duration_minutes"]) {
+            if let Some(v) = Self::opt_str(&payload, &["productionHouse", "production_house", "producer"]) {
+                active_m.production_house = Set(Some(v));
+            }
+            if let Some(v) = dur_mins {
                 active_m.duration_minutes = Set(Some(v));
             }
+            if let Some(v) = dur_secs {
+                active_m.duration_seconds = Set(Some(v));
+            }
             let _ = active_m.update(&self.db).await?;
+        } else if resolved_stream.is_some() || bunny_guid.is_some() || dur_mins.is_some() {
+            let new_movie = movie::ActiveModel {
+                id: Set(id),
+                content_id: Set(Some(id)),
+                video_asset_id: Set(resolved_stream.clone()),
+                video_url: Set(resolved_stream.clone()),
+                bunny_video_guid: Set(bunny_guid),
+                duration_minutes: Set(dur_mins),
+                duration_seconds: Set(dur_secs),
+                director: Set(Self::opt_str(&payload, &["director"])),
+                writers: Set(Self::opt_str(&payload, &["writers"])),
+                production_house: Set(Self::opt_str(&payload, &["productionHouse", "production_house", "producer"])),
+                country_of_origin: Set(Self::opt_str(&payload, &["countryOfOrigin", "country_of_origin"])),
+                is_tvod_available: Set(Some(false)),
+                drm_enabled: Set(Self::opt_bool(&payload, &["drmEnabled", "drm_enabled"])),
+                stream_url: Set(resolved_stream.clone()),
+                hls_url: Set(resolved_stream),
+                dash_url: Set(Self::opt_str(&payload, &["dashUrl", "dash_url"])),
+            };
+            let _ = new_movie.insert(&self.db).await?;
         }
 
+        self.sync_categories_and_genres(saved_c.id, &payload).await;
         Ok(json!({ "id": saved_c.id, "content": saved_c }))
     }
 

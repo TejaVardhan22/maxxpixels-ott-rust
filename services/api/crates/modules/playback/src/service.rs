@@ -191,6 +191,12 @@ impl PlaybackService {
             }
         }
 
+        let bunny_video_id = mv
+            .as_ref()
+            .and_then(|m| m.bunny_video_guid.clone())
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_default();
+
         let stream_url = if is_trailer {
             c.trailer_url.clone().unwrap_or_default()
         } else {
@@ -198,18 +204,31 @@ impl PlaybackService {
                 .and_then(|m| {
                     m.hls_url
                         .clone()
-                        .or_else(|| m.stream_url.clone())
-                        .or_else(|| m.video_url.clone())
-                        .or_else(|| m.video_asset_id.clone())
+                        .filter(|s| !s.trim().is_empty())
+                        .or_else(|| m.stream_url.clone().filter(|s| !s.trim().is_empty()))
+                        .or_else(|| m.video_url.clone().filter(|s| !s.trim().is_empty()))
+                        .or_else(|| m.video_asset_id.clone().filter(|s| !s.trim().is_empty()))
                 })
-                .or_else(|| c.trailer_url.clone())
+                .or_else(|| {
+                    if !bunny_video_id.is_empty() {
+                        let cdn = std::env::var("BUNNY_STREAM_CDN_HOSTNAME")
+                            .unwrap_or_default()
+                            .trim()
+                            .trim_end_matches('/')
+                            .to_string();
+                        if !cdn.is_empty() {
+                            let host = cdn
+                                .strip_prefix("https://")
+                                .or_else(|| cdn.strip_prefix("http://"))
+                                .unwrap_or(&cdn);
+                            return Some(format!("https://{}/{}/playlist.m3u8", host, bunny_video_id));
+                        }
+                    }
+                    None
+                })
+                .or_else(|| c.trailer_url.clone().filter(|s| !s.trim().is_empty()))
                 .unwrap_or_default()
         };
-
-        let bunny_video_id = mv
-            .as_ref()
-            .and_then(|m| m.bunny_video_guid.clone())
-            .unwrap_or_default();
 
         let duration_seconds = c
             .duration_seconds
