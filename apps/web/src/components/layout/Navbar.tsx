@@ -358,13 +358,13 @@ function NavbarContent() {
             : 'bg-gradient-to-b from-black/95 via-black/75 to-transparent',
         )}
       >
-        <div className="mx-auto flex h-[58px] max-w-[1680px] items-center justify-between gap-2 px-3 sm:h-[66px] sm:gap-4 sm:px-6 lg:h-[72px] lg:px-12">
-          {/* LEFT: MOBILE MENU DRAWER TRIGGER + BRAND LOGO + DESKTOP NAVIGATION */}
+        <div className="mx-auto flex h-[54px] max-w-[1680px] items-center justify-between gap-2 px-3.5 sm:h-[66px] sm:gap-4 sm:px-6 lg:h-[72px] lg:px-12">
+          {/* LEFT: TABLET MENU DRAWER TRIGGER + BRAND LOGO + DESKTOP NAVIGATION */}
           <div className="flex min-w-0 items-center gap-2.5 sm:gap-4 lg:gap-8 xl:gap-9">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/[0.07] text-white/90 backdrop-blur-md transition hover:bg-white/15 active:scale-95 lg:hidden"
+              className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/[0.07] text-white/90 backdrop-blur-md transition hover:bg-white/15 active:scale-95 sm:flex lg:hidden"
               aria-label="Open navigation menu"
             >
               <Menu size={18} />
@@ -372,14 +372,14 @@ function NavbarContent() {
 
             <Link
               href={buildBrowseUrl(activeLang)}
-              className="flex h-8 min-w-[84px] flex-shrink-0 items-center gap-2 transition-transform duration-200 hover:scale-[1.02] focus:outline-none sm:h-11 sm:min-w-[124px]"
+              className="flex h-9 min-w-[96px] flex-shrink-0 items-center gap-2 transition-transform duration-200 hover:scale-[1.02] focus:outline-none sm:h-11 sm:min-w-[124px]"
               aria-label={brand.name}
             >
               {brand.logoUrl && !logoError ? (
                 <img
                   src={brand.logoUrl}
                   alt={brand.name}
-                  className="h-8 max-w-[128px] object-contain drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)] sm:h-11 sm:max-w-[200px]"
+                  className="h-9 max-w-[144px] object-contain drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)] sm:h-11 sm:max-w-[200px]"
                   onError={() => setLogoError(true)}
                 />
               ) : (
@@ -514,18 +514,9 @@ function NavbarContent() {
             </nav>
           </div>
 
-          {/* RIGHT: SEARCH + LANGUAGE SELECTOR (DEFAULT KANNADA) + SUBSCRIBE + PROFILE */}
-          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2.5">
-            {/* Mobile Direct Search Button (<640px) */}
-            <Link
-              href="/search"
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.07] text-white/90 transition hover:bg-white/15 sm:hidden"
-              aria-label="Search"
-            >
-              <Search size={16} />
-            </Link>
-
-            {/* Expandable Search (sm+) */}
+          {/* RIGHT: SEARCH (sm+) + LANGUAGE SELECTOR + SUBSCRIBE (sm+) + BELL + PROFILE */}
+          <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
+            {/* Expandable Search (sm+; mobile uses bottom nav Search tab to avoid top bar clutter) */}
             <div ref={searchWrapRef} className="relative hidden sm:flex items-center">
               {searchOpen ? (
                 <div className="relative">
@@ -706,21 +697,18 @@ function NavbarContent() {
               </AnimatePresence>
             </div>
 
-            {/* Signature Theme Orange Subscribe Pill */}
+            {/* Signature Theme Orange Subscribe Pill (sm+; mobile uses bottom nav VIP tab) */}
             <Link
               href={userPageHref(user, 'subscription')}
               className={clsx(
-                'inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-[11px] font-bold tracking-wide transition-all duration-200 sm:h-9 sm:gap-1.5 sm:px-4 sm:text-xs',
+                'hidden h-9 items-center gap-1.5 rounded-full px-4 text-xs font-bold tracking-wide transition-all duration-200 sm:inline-flex',
                 mounted && isVip
                   ? 'border border-[#FF6D2E]/50 bg-[#FF6D2E]/15 text-[#FF8C5A] backdrop-blur-md hover:bg-[#FF6D2E]/25'
                   : 'bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] text-white shadow-[0_4px_18px_rgba(255,109,46,0.45)] hover:scale-[1.03] hover:brightness-110 active:scale-[0.98]',
               )}
             >
               <Crown size={12} fill="currentColor" />
-              <span className="hidden sm:inline">
-                {mounted && isVip ? 'VIP Active' : 'Subscribe'}
-              </span>
-              <span className="sm:hidden">VIP</span>
+              <span>{mounted && isVip ? 'VIP Active' : 'Subscribe'}</span>
             </Link>
 
             {/* Netflix-Style Notifications Bell Popover */}
@@ -948,7 +936,7 @@ function NavbarContent() {
         {/* MOBILE & TABLET NETFLIX-STYLE FROSTED CATEGORY PILL CHIPS (<1024px) */}
         <div className="lg:hidden">
           <nav
-            className="mx-auto flex max-w-[1680px] items-center gap-2 overflow-x-auto px-3 pb-2.5 pt-0.5 scrollbar-hide sm:px-6"
+            className="mx-auto flex max-w-[1680px] items-center gap-1.5 overflow-x-auto px-3.5 pb-2 pt-0.5 scrollbar-hide sm:gap-2 sm:px-6"
             aria-label="Mobile Category Pills"
           >
             {(() => {
@@ -960,10 +948,10 @@ function NavbarContent() {
                   prefetch={true}
                   onClick={() => setOptimisticHref(homeUrl)}
                   className={clsx(
-                    'relative shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-bold tracking-wide transition-all duration-200 active:scale-95',
+                    'relative shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-[11.5px] font-bold tracking-wide transition-all duration-200 active:scale-95 sm:px-3.5 sm:py-1.5 sm:text-xs',
                     homeActive
                       ? 'bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] text-white shadow-[0_4px_14px_rgba(255,109,46,0.45)]'
-                      : 'border border-white/[0.12] bg-[#141414]/85 text-white/80 backdrop-blur-md hover:border-white/25 hover:text-white',
+                      : 'border border-white/[0.1] bg-[#141414]/85 text-white/75 backdrop-blur-md hover:border-white/25 hover:text-white',
                   )}
                 >
                   All
@@ -985,10 +973,10 @@ function NavbarContent() {
                   prefetch={true}
                   onClick={() => setOptimisticHref(itemUrl)}
                   className={clsx(
-                    'relative shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-bold tracking-wide transition-all duration-200 active:scale-95',
+                    'relative shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-[11.5px] font-bold tracking-wide transition-all duration-200 active:scale-95 sm:px-3.5 sm:py-1.5 sm:text-xs',
                     active
                       ? 'bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] text-white shadow-[0_4px_14px_rgba(255,109,46,0.45)]'
-                      : 'border border-white/[0.12] bg-[#141414]/85 text-white/80 backdrop-blur-md hover:border-white/25 hover:text-white',
+                      : 'border border-white/[0.1] bg-[#141414]/85 text-white/75 backdrop-blur-md hover:border-white/25 hover:text-white',
                   )}
                 >
                   {label}

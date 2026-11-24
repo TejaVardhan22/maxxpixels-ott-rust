@@ -76,11 +76,11 @@ export default function ContentRail({
       {/* Editorial Rail Header */}
       <div className="mb-2 flex items-center justify-between px-4 sm:px-6 lg:px-12">
         <div className="flex min-w-0 flex-1 items-center gap-3.5">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <span className="h-5 w-1 shrink-0 rounded-full bg-gradient-to-b from-[#FF6D2E] to-[#FF5500] shadow-[0_0_10px_rgba(255,109,46,0.6)]" />
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="h-4 w-1 shrink-0 rounded-full bg-gradient-to-b from-[#FF6D2E] to-[#FF5500] shadow-[0_0_10px_rgba(255,109,46,0.6)] sm:h-5" />
             <h2
               id={`rail-${title.replace(/\s+/g, '-').toLowerCase()}`}
-              className="truncate text-lg font-extrabold tracking-tight text-white sm:text-xl lg:text-[22px]"
+              className="truncate text-[16px] font-extrabold tracking-tight text-white sm:text-xl lg:text-[22px]"
             >
               {title}
             </h2>
@@ -108,9 +108,10 @@ export default function ContentRail({
         {seeAllHref && (
           <Link
             href={seeAllHref}
-            className="group/more ml-3 inline-flex flex-shrink-0 items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-white/80 backdrop-blur-sm transition-all duration-200 hover:border-[#FF6D2E]/60 hover:bg-[#FF6D2E]/15 hover:text-[#FF8A54]"
+            className="group/more ml-2 inline-flex flex-shrink-0 items-center gap-0.5 text-xs font-semibold text-white/65 transition-all duration-200 hover:text-[#FF8A54] sm:ml-3 sm:gap-1 sm:rounded-full sm:border sm:border-white/10 sm:bg-white/[0.04] sm:px-3 sm:py-1 sm:text-white/80 sm:backdrop-blur-sm sm:hover:border-[#FF6D2E]/60 sm:hover:bg-[#FF6D2E]/15"
           >
-            <span>Explore All</span>
+            <span className="sm:hidden">See all</span>
+            <span className="hidden sm:inline">Explore All</span>
             <ChevronRight
               size={14}
               strokeWidth={2.5}

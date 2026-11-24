@@ -186,7 +186,7 @@ export default function HeroBanner({ banners }: HeroBannerProps) {
 
   return (
     <section
-      className="relative w-full bg-gradient-to-b from-[#161616] via-[#0A0A0A] to-[#0A0A0A] px-3 pb-3 pt-[104px] sm:px-6 sm:pt-[112px] lg:px-12 lg:pt-[82px]"
+      className="relative w-full bg-gradient-to-b from-[#161616] via-[#0A0A0A] to-[#0A0A0A] px-3.5 pb-2 pt-[92px] sm:px-6 sm:pb-3 sm:pt-[112px] lg:px-12 lg:pt-[82px]"
       aria-label="Featured titles"
     >
       {/* Framed Rounded Cinema Billboard Container */}
@@ -254,7 +254,17 @@ export default function HeroBanner({ banners }: HeroBannerProps) {
               );
             const isPremium = Number(banner.is_premium) === 1;
             const logo = resolveImageUrl(readableValue(banner.logo_image || rawBanner.logoImageUrl));
-            const language = readableValue(banner.language);
+            const rawLang = readableValue(banner.language);
+            const LANG_NAMES: Record<string, string> = {
+              kn: 'Kannada',
+              te: 'Telugu',
+              ta: 'Tamil',
+              hi: 'Hindi',
+              ml: 'Malayalam',
+              en: 'English',
+              mr: 'Marathi',
+            };
+            const language = LANG_NAMES[rawLang.toLowerCase()] || rawLang;
             const resourceId = extractNumericId(
               banner.video_id,
               banner.content_id,
@@ -379,19 +389,19 @@ export default function HeroBanner({ banners }: HeroBannerProps) {
                         </p>
                       )}
 
-                      {/* Netflix-Style Pill CTAs (Play + More Info + Watchlist) */}
-                      <div className="mt-3 flex flex-wrap items-center gap-2 sm:mt-5 sm:gap-3">
+                      {/* Netflix-Style Pill CTAs (Balanced full-width on mobile, compact on sm+) */}
+                      <div className="mt-3 flex w-full items-center gap-2 sm:mt-5 sm:w-auto sm:flex-wrap sm:gap-3">
                         <Link
                           href={detailsHref}
-                          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] px-5 text-xs font-bold text-white shadow-[0_8px_24px_rgba(255,109,46,0.45)] transition-all duration-200 hover:scale-[1.03] hover:brightness-110 active:scale-[0.98] sm:h-11 sm:gap-2 sm:px-7 sm:text-sm"
+                          className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-full bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] px-4 text-xs font-bold text-white shadow-[0_8px_24px_rgba(255,109,46,0.45)] transition-all duration-200 hover:scale-[1.03] hover:brightness-110 active:scale-[0.98] sm:h-11 sm:flex-none sm:gap-2 sm:px-7 sm:text-sm"
                         >
                           <Play className="h-3.5 w-3.5 fill-white text-white sm:h-4 sm:w-4" />
-                          <span>{isPortalBanner ? 'Explore' : 'Play'}</span>
+                          <span>{isPortalBanner ? 'Watch Now' : 'Play'}</span>
                         </Link>
 
                         <Link
                           href={detailsHref}
-                          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full bg-white/15 px-4 text-xs font-semibold text-white backdrop-blur-md transition-all duration-200 hover:bg-white/25 sm:h-11 sm:bg-white/20 sm:px-6 sm:text-sm"
+                          className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-full bg-white/12 px-4 text-xs font-semibold text-white backdrop-blur-md transition-all duration-200 hover:bg-white/25 sm:h-11 sm:flex-none sm:bg-white/20 sm:px-6 sm:text-sm"
                         >
                           <Info className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                           <span>More Info</span>
