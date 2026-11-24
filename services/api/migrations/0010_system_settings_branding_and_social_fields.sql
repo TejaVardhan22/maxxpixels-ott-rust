@@ -12,6 +12,9 @@ ALTER TABLE system_settings
     ADD COLUMN IF NOT EXISTS updated_by VARCHAR(255),
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
+ALTER TABLE system_settings ALTER COLUMN setting_value TYPE TEXT;
+ALTER TABLE system_settings ALTER COLUMN category DROP NOT NULL;
+
 INSERT INTO system_settings (setting_key, setting_value, category, setting_group, description, is_secret, is_public, updated_at)
 VALUES
     ('FACEBOOK_URL', 'https://www.facebook.com/maxxpixels', 'BRANDING', 'BRANDING', 'Facebook Page URL shown in website footer', FALSE, TRUE, NOW()),

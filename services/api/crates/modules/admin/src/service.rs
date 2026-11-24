@@ -396,9 +396,14 @@ impl AdminService {
         // Load all existing settings in 1 query (eliminates N*2 round trips)
         let existing_rows = system_setting::Entity::find().all(&state.db).await?;
         let mut by_key: HashMap<String, system_setting::Model> =
-            HashMap::with_capacity(existing_rows.len());
+            HashMap::with_capacity(existing_rows.len() * 2);
         for row in existing_rows {
-            by_key.insert(row.setting_key.clone(), row);
+            let exact = row.setting_key.clone();
+            let lower = exact.to_lowercase();
+            let upper = camel_to_screaming_snake(&exact);
+            by_key.insert(exact, row.clone());
+            by_key.entry(lower).or_insert_with(|| row.clone());
+            by_key.entry(upper).or_insert(row);
         }
 
         let now: chrono::DateTime<chrono::FixedOffset> = Utc::now().into();
@@ -407,6 +412,7 @@ impl AdminService {
         let mut diff_lines: Vec<String> = Vec::new();
         let mut before_snapshot = Map::new();
         let mut after_snapshot = Map::new();
+        let mut processed_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         for (k, v) in obj {
             if k == "items" || v.is_null() {
@@ -425,13 +431,26 @@ impl AdminService {
             let snake_key = if k.chars().any(|c| c.is_lowercase()) && !k.contains('_') {
                 camel_to_screaming_snake(k)
             } else {
-                k.clone()
+                k.to_uppercase()
             };
+            let lower_snake = snake_key.to_lowercase();
 
             let existing_opt = by_key
                 .get(k)
                 .or_else(|| by_key.get(&snake_key))
+                .or_else(|| by_key.get(&lower_snake))
+                .or_else(|| by_key.get(&k.to_lowercase()))
                 .cloned();
+
+            let canonical_target = existing_opt
+                .as_ref()
+                .map(|e| e.setting_key.clone())
+                .unwrap_or_else(|| snake_key.clone());
+
+            // Avoid duplicate updates/inserts for alias keys in the same payload
+            if !processed_keys.insert(canonical_target.to_lowercase()) {
+                continue;
+            }
 
             let secret = existing_opt
                 .as_ref()
@@ -450,9 +469,14 @@ impl AdminService {
                     .setting_group
                     .clone()
                     .unwrap_or_else(|| infer_setting_group(&canonical_key).to_string());
+                let category = existing
+                    .category
+                    .clone()
+                    .unwrap_or_else(|| group.clone());
 
                 let mut am: system_setting::ActiveModel = existing.into();
                 am.setting_value = Set(Some(val_str.clone()));
+                am.category = Set(Some(category));
                 am.setting_group = Set(Some(group));
                 am.is_secret = Set(Some(secret));
                 am.is_public = Set(Some(!secret));
@@ -473,10 +497,11 @@ impl AdminService {
                 if val_str.is_empty() {
                     continue;
                 }
-                let group = infer_setting_group(k).to_string();
+                let group = infer_setting_group(&snake_key).to_string();
                 let am = system_setting::ActiveModel {
-                    setting_key: Set(k.clone()),
+                    setting_key: Set(snake_key.clone()),
                     setting_value: Set(Some(val_str.clone())),
+                    category: Set(Some(group.clone())),
                     setting_group: Set(Some(group)),
                     is_secret: Set(Some(secret)),
                     is_public: Set(Some(!secret)),
@@ -487,11 +512,11 @@ impl AdminService {
                 am.insert(&txn).await?;
 
                 if secret {
-                    diff_lines.push(format!("{}: [SET]", k));
+                    diff_lines.push(format!("{}: [SET]", snake_key));
                 } else {
-                    diff_lines.push(format!("{}: '' -> '{}'", k, val_str));
-                    before_snapshot.insert(k.clone(), json!(""));
-                    after_snapshot.insert(k.clone(), json!(val_str));
+                    diff_lines.push(format!("{}: '' -> '{}'", snake_key, val_str));
+                    before_snapshot.insert(snake_key.clone(), json!(""));
+                    after_snapshot.insert(snake_key, json!(val_str));
                 }
                 updated_count += 1;
             }
