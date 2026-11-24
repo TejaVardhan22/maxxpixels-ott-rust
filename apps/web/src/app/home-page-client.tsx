@@ -127,23 +127,22 @@ function extractLanguageString(item: any): string {
     0
   );
   if (!lang && lId > 0) {
-    if (lId === 2) return 'kannada';
-    if (lId === 1) return 'tamil';
-    if (lId === 3) return 'malayalam';
+    if (lId === 6 || lId === 1) return 'kannada';
+    if (lId === 7 || lId === 2) return 'tamil';
+    if (lId === 12 || lId === 3) return 'malayalam';
     if (lId === 4) return 'hindi';
-    if (lId === 5) return 'english';
-    if (lId === 6) return 'telugu';
-    if (lId === 7) return 'bhojpuri';
-    if (lId === 8) return 'marathi';
-    if (lId === 9) return 'gujarati';
-    if (lId === 10) return 'bengali';
-    if (lId === 11) return 'punjabi';
+    if (lId === 10 || lId === 5) return 'english';
+    if (lId === 11) return 'telugu';
+    if (lId === 13 || lId === 8) return 'marathi';
+    if (lId === 15 || lId === 9) return 'gujarati';
+    if (lId === 16) return 'bengali';
+    if (lId === 14) return 'punjabi';
   }
   return String(lang || '').toLowerCase().trim();
 }
 
-const NON_KANNADA_LANG_IDS = new Set([1, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
-const KANNADA_LANG_IDS = new Set([2]);
+const NON_KANNADA_LANG_IDS = new Set([2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+const KANNADA_LANG_IDS = new Set([1, 6]);
 
 const NON_KANNADA_CODES = new Set([
   'te', 'ta', 'hi', 'ml', 'bn', 'mr', 'pa', 'gu', 'or', 'as', 'en', 'all_indian', 'all-indian'
@@ -398,13 +397,13 @@ export function HomePageClient({
     const itemCode = String(item.originalLanguageCode || item.original_language_code || '').toLowerCase().trim();
     const lId = Number(item.languageId || item.language_id || 0);
 
-    if (itemLang.includes(target) || itemCode === target) return true;
-    if (target === 'telugu' && (itemCode === 'te' || itemLang.includes('telugu') || itemLang.includes('te') || lId === 6)) return true;
-    if (target === 'tamil' && (itemCode === 'ta' || itemLang.includes('tamil') || itemLang.includes('ta') || lId === 1)) return true;
-    if (target === 'hindi' && (itemCode === 'hi' || itemLang.includes('hindi') || itemLang.includes('hi') || lId === 4)) return true;
-    if (target === 'malayalam' && (itemCode === 'ml' || itemLang.includes('malayalam') || itemLang.includes('ml') || lId === 3)) return true;
-    if (target === 'kannada' && (itemCode === 'kn' || itemLang.includes('kannada') || itemLang.includes('kn') || lId === 2)) return true;
-    if (target === 'english' && (itemCode === 'en' || itemLang.includes('english') || itemLang.includes('en') || lId === 5)) return true;
+    if (itemLang === target || itemLang.includes(target) || itemCode === target) return true;
+    if (target === 'telugu' && (itemCode === 'te' || itemLang.includes('telugu') || itemLang === 'te' || lId === 11)) return true;
+    if (target === 'tamil' && (itemCode === 'ta' || itemLang.includes('tamil') || itemLang === 'ta' || lId === 7 || lId === 2)) return true;
+    if (target === 'hindi' && (itemCode === 'hi' || itemLang.includes('hindi') || itemLang === 'hi' || lId === 4)) return true;
+    if (target === 'malayalam' && (itemCode === 'ml' || itemLang.includes('malayalam') || itemLang === 'ml' || lId === 12)) return true;
+    if (target === 'kannada' && (itemCode === 'kn' || itemLang.includes('kannada') || itemLang === 'kn' || lId === 6 || lId === 1)) return true;
+    if (target === 'english' && (itemCode === 'en' || itemLang.includes('english') || itemLang === 'en' || lId === 10)) return true;
     return false;
   };
 
@@ -436,20 +435,21 @@ export function HomePageClient({
       const itemCode = String(item.originalLanguageCode || item.original_language_code || '').toLowerCase().trim();
       const lId = Number(item.languageId || item.language_id || 0);
       const langMatch =
+        itemLang === target ||
         itemLang.includes(target) ||
         itemCode === target ||
-        (target === 'telugu' && (itemCode === 'te' || itemLang.includes('telugu') || itemLang.includes('te') || lId === 6)) ||
-        (target === 'tamil' && (itemCode === 'ta' || itemLang.includes('tamil') || itemLang.includes('ta') || lId === 1)) ||
-        (target === 'hindi' && (itemCode === 'hi' || itemLang.includes('hindi') || itemLang.includes('hi') || lId === 4)) ||
-        (target === 'malayalam' && (itemCode === 'ml' || itemLang.includes('malayalam') || itemLang.includes('ml') || lId === 3)) ||
-        (target === 'kannada' && (itemCode === 'kn' || itemLang.includes('kannada') || itemLang.includes('kn') || lId === 2)) ||
-        (target === 'english' && (itemCode === 'en' || itemLang.includes('english') || itemLang.includes('en') || lId === 5)) ||
-        (target === 'marathi' && (itemCode === 'mr' || itemLang.includes('marathi') || itemLang.includes('mr') || lId === 8)) ||
-        (target === 'bengali' && (itemCode === 'bn' || itemLang.includes('bengali') || itemLang.includes('bn') || lId === 10)) ||
-        (target === 'punjabi' && (itemCode === 'pa' || itemLang.includes('punjabi') || itemLang.includes('pa') || lId === 11)) ||
-        (target === 'gujarati' && (itemCode === 'gu' || itemLang.includes('gujarati') || itemLang.includes('gu') || lId === 9)) ||
-        (target === 'bhojpuri' && (itemCode === 'bho' || itemLang.includes('bhojpuri') || itemLang.includes('bho') || lId === 7)) ||
-        (target === 'odia' && (itemCode === 'or' || itemLang.includes('odia') || itemLang.includes('or')));
+        (target === 'telugu' && (itemCode === 'te' || itemLang.includes('telugu') || itemLang === 'te' || lId === 11)) ||
+        (target === 'tamil' && (itemCode === 'ta' || itemLang.includes('tamil') || itemLang === 'ta' || lId === 7 || lId === 2)) ||
+        (target === 'hindi' && (itemCode === 'hi' || itemLang.includes('hindi') || itemLang === 'hi' || lId === 4)) ||
+        (target === 'malayalam' && (itemCode === 'ml' || itemLang.includes('malayalam') || itemLang === 'ml' || lId === 12)) ||
+        (target === 'kannada' && (itemCode === 'kn' || itemLang.includes('kannada') || itemLang === 'kn' || lId === 6 || lId === 1)) ||
+        (target === 'english' && (itemCode === 'en' || itemLang.includes('english') || itemLang === 'en' || lId === 10)) ||
+        (target === 'marathi' && (itemCode === 'mr' || itemLang.includes('marathi') || itemLang === 'mr' || lId === 13)) ||
+        (target === 'bengali' && (itemCode === 'bn' || itemLang.includes('bengali') || itemLang === 'bn' || lId === 16)) ||
+        (target === 'punjabi' && (itemCode === 'pa' || itemLang.includes('punjabi') || itemLang === 'pa' || lId === 14)) ||
+        (target === 'gujarati' && (itemCode === 'gu' || itemLang.includes('gujarati') || itemLang === 'gu' || lId === 15)) ||
+        (target === 'bhojpuri' && (itemCode === 'bho' || itemLang.includes('bhojpuri') || itemLang === 'bho')) ||
+        (target === 'odia' && (itemCode === 'or' || itemLang.includes('odia') || itemLang === 'or'));
 
       if (!langMatch || isAiContentItem(item)) return false;
       const effectiveType = langSpecificTypeId > 0 ? langSpecificTypeId : typeId;

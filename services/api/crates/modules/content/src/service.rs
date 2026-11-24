@@ -129,6 +129,33 @@ impl ContentService {
         }
     }
 
+    fn parse_release_date(v: &Value) -> Option<chrono::NaiveDate> {
+        if let Some(rd) = Self::opt_str(v, &["releaseDate", "release_date"]) {
+            let date_part = rd.split('T').next().unwrap_or(&rd).trim();
+            if let Ok(d) = chrono::NaiveDate::parse_from_str(date_part, "%Y-%m-%d") {
+                return Some(d);
+            }
+        }
+        None
+    }
+
+    async fn next_movie_row_id(&self, preferred_id: i64) -> i64 {
+        if let Ok(Some(row)) = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT CASE WHEN EXISTS (SELECT 1 FROM movies WHERE id = $1) THEN (SELECT COALESCE(MAX(id), 0) + 1 FROM movies) ELSE $1 END AS next_id",
+                [preferred_id.into()],
+            ))
+            .await
+        {
+            if let Ok(nid) = row.try_get::<i64>("", "next_id") {
+                return nid;
+            }
+        }
+        preferred_id
+    }
+
     fn parse_release_year(v: &Value) -> Option<i32> {
         if let Some(y) = Self::opt_i32(v, &["releaseYear", "release_year"]) {
             if (1900..=2100).contains(&y) {
@@ -357,7 +384,9 @@ impl ContentService {
             rent_price: Set(Self::opt_decimal(&payload, &["rentPrice", "rent_price"])),
             validity_hours: Set(Self::opt_i32(&payload, &["validityHours", "validity_hours"])),
             release_year: Set(Self::parse_release_year(&payload)),
+            release_date: Set(Self::parse_release_date(&payload)),
             age_rating: Set(Self::opt_str(&payload, &["ageRating", "age_rating", "maturityRating", "maturity_rating"])),
+            production_name: Set(Self::opt_str(&payload, &["productionHouse", "production_house", "producer"])),
             poster_url: Set(Self::opt_str(&payload, &["posterUrl", "poster_url"])),
             backdrop_url: Set(Self::opt_str(&payload, &["backdropUrl", "backdrop_url", "bannerUrl", "bannerImageUrl", "banner_image_url"])),
             landscape_image_url: Set(Self::opt_str(&payload, &["landscapeImageUrl", "landscape_image_url", "bannerUrl", "bannerImageUrl"])),
@@ -413,8 +442,9 @@ impl ContentService {
         let dur_secs = Self::opt_i32(&payload, &["durationSeconds", "duration_seconds"])
             .or_else(|| dur_mins.map(|m| m * 60));
 
+        let movie_row_id = self.next_movie_row_id(saved_content.id).await;
         let new_movie = movie::ActiveModel {
-            id: Set(saved_content.id),
+            id: Set(movie_row_id),
             content_id: Set(Some(saved_content.id)),
             video_asset_id: Set(
                 Self::opt_str(&payload, &["videoAssetId", "video_asset_id"])
@@ -548,6 +578,12 @@ impl ContentService {
         if let Some(v) = Self::parse_release_year(&payload) {
             active_c.release_year = Set(Some(v));
         }
+        if let Some(d) = Self::parse_release_date(&payload) {
+            active_c.release_date = Set(Some(d));
+        }
+        if let Some(v) = Self::opt_str(&payload, &["productionHouse", "production_house", "producer"]) {
+            active_c.production_name = Set(Some(v));
+        }
         if let Some(v) = Self::opt_str(&payload, &["ageRating", "age_rating", "maturityRating", "maturity_rating"]) {
             active_c.age_rating = Set(Some(v));
         }
@@ -593,12 +629,19 @@ impl ContentService {
         let dur_secs = Self::opt_i32(&payload, &["durationSeconds", "duration_seconds"])
             .or_else(|| dur_mins.map(|m| m * 60));
 
-        if let Some(existing_m) = movie::Entity::find()
-            .filter(movie::Column::Id.eq(id).or(movie::Column::ContentId.eq(id)))
-            .one(&self.db)
-            .await?
-        {
+        let candidates = movie::Entity::find()
+            .filter(movie::Column::ContentId.eq(id).or(movie::Column::Id.eq(id)))
+            .all(&self.db)
+            .await?;
+        let target_movie = candidates
+            .iter()
+            .find(|m| m.content_id == Some(id))
+            .cloned()
+            .or_else(|| candidates.into_iter().find(|m| m.content_id.is_none() && m.id == id));
+
+        if let Some(existing_m) = target_movie {
             let mut active_m: movie::ActiveModel = existing_m.into();
+            active_m.content_id = Set(Some(id));
             if let Some(ref v) = resolved_stream {
                 active_m.hls_url = Set(Some(v.clone()));
                 active_m.stream_url = Set(Some(v.clone()));
@@ -630,9 +673,10 @@ impl ContentService {
                 active_m.duration_seconds = Set(Some(v));
             }
             let _ = active_m.update(&self.db).await?;
-        } else if resolved_stream.is_some() || bunny_guid.is_some() || dur_mins.is_some() {
+        } else {
+            let movie_row_id = self.next_movie_row_id(id).await;
             let new_movie = movie::ActiveModel {
-                id: Set(id),
+                id: Set(movie_row_id),
                 content_id: Set(Some(id)),
                 video_asset_id: Set(resolved_stream.clone()),
                 video_url: Set(resolved_stream.clone()),

@@ -52,10 +52,20 @@ impl PlaybackService {
             .map_err(|e| AppError::Database(e.to_string()))?
             .ok_or_else(|| AppError::NotFound(format!("Content {} not found", content_id)))?;
 
-        let mv = movie::Entity::find_by_id(c.id)
-            .one(&self.db)
+        let candidates = movie::Entity::find()
+            .filter(
+                movie::Column::ContentId
+                    .eq(c.id)
+                    .or(movie::Column::Id.eq(c.id)),
+            )
+            .all(&self.db)
             .await
             .map_err(|e| AppError::Database(e.to_string()))?;
+        let mv = candidates
+            .iter()
+            .find(|m| m.content_id == Some(c.id))
+            .cloned()
+            .or_else(|| candidates.into_iter().find(|m| m.content_id.is_none() && m.id == c.id));
 
         let is_trailer = req.resolved_is_trailer();
         let mode = c

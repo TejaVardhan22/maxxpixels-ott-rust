@@ -423,14 +423,45 @@ impl CatalogueService {
 
         let ids: Vec<i64> = contents.iter().map(|c| c.id).collect();
 
-        // Batch load movies
+        // Batch load movies by content_id first (authoritative FK), falling back to legacy id==content.id only when content_id is NULL.
+        // Never map a movies row onto m.id if m.content_id points to a different content row!
         let movie_rows = movie::Entity::find()
-            .filter(movie::Column::Id.is_in(ids.clone()))
+            .filter(
+                movie::Column::ContentId
+                    .is_in(ids.clone())
+                    .or(movie::Column::Id.is_in(ids.clone())),
+            )
             .all(&self.db)
             .await
             .map_err(|e| AppError::Database(e.to_string()))?;
-        let movie_map: HashMap<i64, movie::Model> =
-            movie_rows.into_iter().map(|m| (m.id, m)).collect();
+        let mut movie_map: HashMap<i64, movie::Model> = HashMap::new();
+        for m in &movie_rows {
+            if m.content_id.is_none() {
+                movie_map.entry(m.id).or_insert_with(|| m.clone());
+            }
+        }
+        for m in movie_rows {
+            if let Some(cid) = m.content_id {
+                movie_map.insert(cid, m);
+            }
+        }
+
+        // Load languages table so languageId matches actual DB rows (e.g. kn=6, ta=7, hi=4, te=11)
+        let all_langs = language::Entity::find()
+            .all(&self.db)
+            .await
+            .unwrap_or_default();
+        let mut lang_by_code: HashMap<String, (i64, String)> = HashMap::new();
+        for l in all_langs {
+            let code_key = l.code.trim().to_lowercase();
+            let name_key = l.name.trim().to_lowercase();
+            if !code_key.is_empty() {
+                lang_by_code.insert(code_key, (l.id, l.name.clone()));
+            }
+            if !name_key.is_empty() {
+                lang_by_code.insert(name_key, (l.id, l.name));
+            }
+        }
 
         // Batch load categories
         let cc_rows = content_category::Entity::find()
@@ -485,7 +516,7 @@ impl CatalogueService {
             let mv = movie_map.get(&c.id);
             let cats = content_cats.remove(&c.id).unwrap_or_default();
             let gns = content_genres.remove(&c.id).unwrap_or_default();
-            result.push(self.to_content_dto(c, mv, cats, gns));
+            result.push(self.to_content_dto(c, mv, cats, gns, &lang_by_code));
         }
 
         Ok(result)
@@ -532,6 +563,7 @@ impl CatalogueService {
         mv: Option<&movie::Model>,
         categories: Vec<CategoryDto>,
         genres: Vec<GenreDto>,
+        lang_by_code: &HashMap<String, (i64, String)>,
     ) -> ContentDto {
         let ctype = c
             .content_type
@@ -563,14 +595,38 @@ impl CatalogueService {
             .is_premium
             .unwrap_or_else(|| access_type == "PREMIUM" || access_type == "SVOD");
 
+        let bunny_video_id = mv
+            .and_then(|m| m.bunny_video_guid.clone())
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_default();
+
         let video_url = mv
             .and_then(|m| {
-                m.video_url
+                m.hls_url
                     .clone()
-                    .or_else(|| m.stream_url.clone())
-                    .or_else(|| m.video_asset_id.clone())
+                    .filter(|s| !s.trim().is_empty())
+                    .or_else(|| m.stream_url.clone().filter(|s| !s.trim().is_empty()))
+                    .or_else(|| m.video_url.clone().filter(|s| !s.trim().is_empty()))
+                    .or_else(|| m.video_asset_id.clone().filter(|s| !s.trim().is_empty()))
             })
-            .or_else(|| c.trailer_url.clone())
+            .or_else(|| {
+                if !bunny_video_id.is_empty() {
+                    let cdn = std::env::var("BUNNY_STREAM_CDN_HOSTNAME")
+                        .unwrap_or_default()
+                        .trim()
+                        .trim_end_matches('/')
+                        .to_string();
+                    if !cdn.is_empty() {
+                        let host = cdn
+                            .strip_prefix("https://")
+                            .or_else(|| cdn.strip_prefix("http://"))
+                            .unwrap_or(&cdn);
+                        return Some(format!("https://{}/{}/playlist.m3u8", host, bunny_video_id));
+                    }
+                }
+                None
+            })
+            .or_else(|| c.trailer_url.clone().filter(|s| !s.trim().is_empty()))
             .unwrap_or_default();
 
         let duration_seconds = c
@@ -584,17 +640,28 @@ impl CatalogueService {
         let raw_lang = c
             .original_language_code
             .clone()
+            .filter(|s| !s.trim().is_empty())
             .unwrap_or_else(|| "kn".to_string())
+            .trim()
             .to_lowercase();
-        let (lang_id, lang_code, lang_name) = match raw_lang.as_str() {
-            "kn" | "kannada" | "kan" => (1, "kn".to_string(), "Kannada".to_string()),
-            "ta" | "tamil" | "tam" => (2, "ta".to_string(), "Tamil".to_string()),
-            "hi" | "hindi" | "hin" => (3, "hi".to_string(), "Hindi".to_string()),
+        let (default_id, lang_code, default_name) = match raw_lang.as_str() {
+            "kn" | "kannada" | "kan" => (6, "kn".to_string(), "Kannada".to_string()),
+            "ta" | "tamil" | "tam" => (7, "ta".to_string(), "Tamil".to_string()),
+            "hi" | "hindi" | "hin" => (4, "hi".to_string(), "Hindi".to_string()),
             "en" | "english" | "eng" => (10, "en".to_string(), "English".to_string()),
             "te" | "telugu" | "tel" => (11, "te".to_string(), "Telugu".to_string()),
             "ml" | "malayalam" | "mal" => (12, "ml".to_string(), "Malayalam".to_string()),
-            _ => (1, raw_lang.clone(), raw_lang),
+            "mr" | "marathi" | "mar" => (13, "mr".to_string(), "Marathi".to_string()),
+            "bn" | "bengali" | "ben" => (16, "bn".to_string(), "Bengali".to_string()),
+            "pa" | "punjabi" | "pan" => (14, "pa".to_string(), "Punjabi".to_string()),
+            "gu" | "gujarati" | "guj" => (15, "gu".to_string(), "Gujarati".to_string()),
+            _ => (6, raw_lang.clone(), raw_lang.clone()),
         };
+        let (lang_id, lang_name) = lang_by_code
+            .get(&lang_code)
+            .or_else(|| lang_by_code.get(&raw_lang))
+            .cloned()
+            .unwrap_or((default_id, default_name));
 
         let poster_url = self.ensure_absolute_url(c.poster_url.as_deref());
         fn non_empty(opt: Option<&str>) -> Option<&str> {
@@ -628,11 +695,10 @@ impl CatalogueService {
 
         let producer = mv
             .and_then(|m| m.production_house.clone())
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| c.production_name.clone().filter(|s| !s.trim().is_empty()))
             .unwrap_or_default();
         let director = mv.and_then(|m| m.director.clone()).unwrap_or_default();
-        let bunny_video_id = mv
-            .and_then(|m| m.bunny_video_guid.clone())
-            .unwrap_or_default();
 
         let category_names: Vec<String> = categories.iter().map(|cat| cat.name.clone()).collect();
 

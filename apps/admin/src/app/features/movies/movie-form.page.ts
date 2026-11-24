@@ -2264,15 +2264,88 @@ export class MovieFormPage implements OnInit {
     }
   }
 
+  private normalizeMainTypeCode(raw?: string | null): string {
+    const clean = (raw || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '_');
+    switch (clean) {
+      case 'MOVIES':
+      case 'FILM':
+        return 'MOVIE';
+      case 'ALBUMS':
+      case 'SONGS':
+      case 'SONG':
+      case 'MUSIC':
+      case 'MUSIC___ALBUMS':
+        return 'ALBUM';
+      case 'SHORT_FILMS':
+      case 'SHORTS':
+      case 'SHORT':
+        return 'SHORT_FILM';
+      case 'MICRO_DRAMA':
+      case 'MICRO_DRAMAS':
+      case 'MICRODRAMAS':
+        return 'MICRODRAMA';
+      case 'PODCASTS':
+        return 'PODCAST';
+      case 'WEB_SERIES':
+      case 'SHOWS':
+      case 'SHOW':
+      case 'TV_SHOW':
+        return 'SERIES';
+      case 'STAGE_DRAMAS':
+      case 'STAGEDRAMA':
+        return 'STAGE_DRAMA';
+      case 'DOCUMENTARIES':
+        return 'DOCUMENTARY';
+      default:
+        return clean || 'MOVIE';
+    }
+  }
+
+  private normalizeMaturityRating(raw?: string | null): string {
+    const s = (raw || '').trim().toUpperCase();
+    if (!s) return 'UA_13+';
+    if (s === 'U') return 'U';
+    if (s.includes('7')) return 'UA_7+';
+    if (s.includes('16')) return 'UA_16+';
+    if (s === 'PG-13') return 'PG-13';
+    if (s === 'TV-MA') return 'TV-MA';
+    if (s === 'A' || s.includes('18')) return 'A';
+    if (s.includes('13') || s.startsWith('U/A') || s.startsWith('UA')) return 'UA_13+';
+    return 'UA_13+';
+  }
+
+  private formatSecondsToHms(totalSecs?: number | null, fallbackMins?: number | null): string {
+    let secs = typeof totalSecs === 'number' && totalSecs > 0
+      ? Math.round(totalSecs)
+      : (typeof fallbackMins === 'number' && fallbackMins > 0 ? Math.round(fallbackMins * 60) : 0);
+    if (secs <= 0) return '';
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(h)}:${pad(m)}:${pad(s)}`;
+  }
+
   loadProducers(): void {
     this.http.get<any>(`${environment.apiBaseUrl}/admin/producers`).subscribe({
       next: (res) => {
         if (res.success && Array.isArray(res.data) && res.data.length > 0) {
-          const list: string[] = res.data.map((p: any) => p.studioName || p.companyName || p.fullName || p.name).filter(Boolean);
+          const list: string[] = res.data.map((p: any) => (p.studioName || p.companyName || p.fullName || p.name || '').trim()).filter(Boolean);
           if (list.length > 0) {
-            this.producersList = [...new Set([...this.producersList, ...list])];
-            const current = this.contentForm.get('producer')?.value;
-            if (!this.isEdit && (!current || !this.producersList.includes(current))) {
+            const current = (this.contentForm.get('producer')?.value || '').trim();
+            const merged = [...new Set([...this.producersList, ...list])];
+            if (current) {
+              const exact = merged.find(p => p.toLowerCase() === current.toLowerCase());
+              if (exact) {
+                if (exact !== current) {
+                  this.contentForm.patchValue({ producer: exact });
+                }
+              } else {
+                merged.unshift(current);
+              }
+            }
+            this.producersList = merged;
+            if (!this.isEdit && !current && this.producersList.length > 0) {
               this.contentForm.patchValue({ producer: this.producersList[0] });
             }
           }
@@ -2371,17 +2444,25 @@ export class MovieFormPage implements OnInit {
       next: (res: any) => {
         const types = res?.data ?? res?.result ?? res ?? [];
         if (Array.isArray(types) && types.length > 0) {
-          this.mainTypesList = types.map((t: any) => {
-            const rawSlug = t.slug || t.title || '';
-            const codeVal = rawSlug.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+          const seenCodes = new Set<string>();
+          const mappedTypes: { label: string; value: string }[] = [];
+          for (const t of types) {
+            const rawSlug = t.slug || t.title || t.name || '';
+            const codeVal = this.normalizeMainTypeCode(rawSlug);
+            if (seenCodes.has(codeVal)) continue;
+            seenCodes.add(codeVal);
             const title = t.title || t.name || rawSlug;
-            return { label: title, value: codeVal };
-          });
-          const curr = this.contentForm.get('contentType')?.value;
-          if (curr && !this.mainTypesList.some(t => t.value === curr)) {
-            this.mainTypesList.push({ label: curr, value: curr });
+            mappedTypes.push({ label: title, value: codeVal });
           }
-          if (!this.isEdit && (!curr || !this.mainTypesList.some(t => t.value === curr))) {
+          const currRaw = this.contentForm.get('contentType')?.value;
+          const curr = currRaw ? this.normalizeMainTypeCode(currRaw) : '';
+          if (curr && !mappedTypes.some(t => t.value === curr)) {
+            mappedTypes.push({ label: curr, value: curr });
+          }
+          this.mainTypesList = mappedTypes;
+          if (this.isEdit && curr && curr !== currRaw) {
+            this.contentForm.patchValue({ contentType: curr });
+          } else if (!this.isEdit && (!curr || !this.mainTypesList.some(t => t.value === curr))) {
             const match = this.mainTypesList.find(t => t.value === curr) || this.mainTypesList.find(t => t.value === 'MOVIE') || this.mainTypesList[0];
             if (match) {
               this.contentForm.patchValue({ contentType: match.value });
@@ -2397,8 +2478,19 @@ export class MovieFormPage implements OnInit {
       next: (res: any) => {
         const langs = res?.data ?? res?.result ?? res ?? [];
         if (Array.isArray(langs) && langs.length > 0) {
-          this.languagesList = langs.map((l: any) => l.name || l.code).filter(Boolean);
-          const curr = this.contentForm.get('originalLanguage')?.value;
+          const fromApi = langs.map((l: any) => (l.name || l.code || '').trim()).filter(Boolean);
+          const defaults = ['Kannada', 'Tamil', 'Telugu', 'Hindi', 'Malayalam', 'English', 'Marathi', 'Bengali', 'Punjabi', 'Gujarati'];
+          const merged = [...new Set([...this.languagesList, ...fromApi, ...defaults])];
+          const curr = (this.contentForm.get('originalLanguage')?.value || '').trim();
+          if (curr) {
+            const exact = merged.find(l => l.toLowerCase() === curr.toLowerCase());
+            if (exact && exact !== curr) {
+              this.contentForm.patchValue({ originalLanguage: exact });
+            } else if (!exact) {
+              merged.unshift(curr);
+            }
+          }
+          this.languagesList = merged;
           if (!this.isEdit && !curr && this.languagesList.length > 0) {
             const kn = this.languagesList.find((l: string) => l.toLowerCase() === 'kannada') || this.languagesList[0];
             this.contentForm.patchValue({ originalLanguage: kn });
@@ -2490,32 +2582,41 @@ export class MovieFormPage implements OnInit {
         this.loading = false;
         const m = (res as any)?.data?.data ?? (res as any)?.data ?? res;
         if (m && (m.id || m.title)) {
-          if (m.contentType) {
-            const exists = this.mainTypesList.some(t => t.value === m.contentType);
+          const normContentType = this.normalizeMainTypeCode(m.contentType || (m as any).type);
+          if (normContentType) {
+            const exists = this.mainTypesList.some(t => t.value === normContentType);
             if (!exists) {
-              this.mainTypesList.push({ label: m.contentType, value: m.contentType });
+              this.mainTypesList = [...this.mainTypesList, { label: normContentType, value: normContentType }];
             }
           }
 
-          const rawCat = m.category || m.categories;
-          let safeCategory: string[] = Array.isArray(rawCat)
-            ? rawCat.map((c: any) => typeof c === 'string' ? c : (c?.name || c?.slug)).filter(Boolean)
-            : (rawCat ? [String(rawCat)] : []);
-          if (safeCategory.length === 0) {
-            safeCategory = this.categoriesList.length > 0 ? [this.categoriesList[0]] : ['Blockbuster Movies'];
-          }
+          const rawCat = Array.isArray(m.categories) && m.categories.length > 0 ? m.categories : m.category;
+          const safeCategory: string[] = Array.isArray(rawCat)
+            ? rawCat.map((c: any) => typeof c === 'string' ? c.trim() : (c?.name || c?.slug || '').trim()).filter(Boolean)
+            : (rawCat ? [String(rawCat).trim()].filter(Boolean) : []);
 
           const rawGenres = m.genres;
-          let safeGenres: string[] = Array.isArray(rawGenres)
-            ? rawGenres.map((g: any) => typeof g === 'string' ? g : (g?.name || g?.slug)).filter(Boolean)
-            : (rawGenres ? [String(rawGenres)] : []);
-          if (safeGenres.length === 0) {
-            safeGenres = this.genresList.length > 0 ? [this.genresList[0]] : ['Drama'];
-          }
+          const safeGenres: string[] = Array.isArray(rawGenres)
+            ? rawGenres.map((g: any) => typeof g === 'string' ? g.trim() : (g?.name || g?.slug || '').trim()).filter(Boolean)
+            : (rawGenres ? [String(rawGenres).trim()].filter(Boolean) : []);
 
           const rawCast = m.cast || m.castMembers;
           const safeCast: string[] = Array.isArray(rawCast)
-            ? rawCast.map((c: any) => typeof c === 'string' ? c : (c?.name || c?.characterName || c?.person?.name)).filter(Boolean)
+            ? rawCast.map((c: any) => {
+                if (typeof c === 'string') return c.trim();
+                const cname = (c?.name || c?.characterName || c?.person?.name || '').trim();
+                if (cname && !this.castMembersMap[cname]) {
+                  this.castMembersMap[cname] = {
+                    id: c?.id,
+                    name: cname,
+                    role: c?.role || 'Actor',
+                    bio: c?.bio || '',
+                    image: c?.image || c?.imageUrl || '',
+                    imageUrl: c?.imageUrl || c?.image || ''
+                  };
+                }
+                return cname;
+              }).filter(Boolean)
             : [];
 
           this.castList = [...new Set([...this.castList, ...safeCast])];
@@ -2531,17 +2632,25 @@ export class MovieFormPage implements OnInit {
             this.bunnyStatusText = 'READY';
           }
 
-          const mappedLang = formatLanguage(m.originalLanguage || m.originalLanguageCode || (this.languagesList[0] || 'Hindi'));
-          if (mappedLang && !this.languagesList.includes(mappedLang)) {
-            this.languagesList.push(mappedLang);
+          let mappedLang = formatLanguage(m.originalLanguage || (m as any).originalLanguageCode || (m as any).languageName || 'Kannada');
+          const existingLang = this.languagesList.find(l => l.toLowerCase() === mappedLang.toLowerCase());
+          if (existingLang) {
+            mappedLang = existingLang;
+          } else if (mappedLang) {
+            this.languagesList = [mappedLang, ...this.languagesList];
           }
 
-          const prodName = m.producer || m.productionHouse || (m as any).production_house || (m as any).producer?.companyName || '';
+          let prodName = (m.producer || (m as any).productionHouse || (m as any).production_house || (m as any).productionName || (m as any).producer?.companyName || '').trim();
           if (prodName) {
-            this.producersList = [...new Set([...this.producersList, prodName])];
+            const existingProd = this.producersList.find(p => p.toLowerCase() === prodName.toLowerCase());
+            if (existingProd) {
+              prodName = existingProd;
+            } else {
+              this.producersList = [prodName, ...this.producersList];
+            }
           }
 
-          let relDate = '2024-08-24';
+          let relDate = '';
           const rawDate = m.releaseDate || (m as any).release_date || m.createdAt;
           if (rawDate) {
             const str = String(rawDate).trim();
@@ -2556,16 +2665,21 @@ export class MovieFormPage implements OnInit {
               }
             }
           }
-          const desc = m.description || m.shortDescription || '';
+          const desc = m.description || (m as any).shortDescription || '';
+          const formattedDuration =
+            m.durationTime ||
+            this.formatSecondsToHms((m as any).durationSeconds, m.durationMinutes) ||
+            '02:00:00';
+          const normRating = this.normalizeMaturityRating(m.maturityRating || (m as any).ageRating);
 
           this.contentForm.patchValue({
             title: m.title || '',
-            contentType: m.contentType || 'MOVIE',
+            contentType: normContentType,
             description: desc,
             originalLanguage: mappedLang,
-            maturityRating: m.maturityRating || 'UA_13+',
+            maturityRating: normRating,
             releaseDate: relDate,
-            durationTime: m.durationTime || (m.durationMinutes ? `${m.durationMinutes}m` : '02:00:00'),
+            durationTime: formattedDuration,
             posterUrl: m.posterUrl || '',
             bannerUrl: m.bannerUrl || '',
             trailerUrl: m.trailerUrl || '',
@@ -2582,11 +2696,11 @@ export class MovieFormPage implements OnInit {
             category: safeCategory,
             status: m.status || 'PUBLISHED',
             monetization: m.monetization || (m.isPremium ? 'SVOD' : 'AVOD'),
-            rentPrice: m.rentPrice || 99,
-            validityHours: m.validityHours || 48,
+            rentPrice: m.rentPrice ?? 99,
+            validityHours: m.validityHours ?? 48,
             drmSystem: 'MULTI_DRM',
             geoRestrictions: ['GLOBAL'],
-            isPremium: m.isPremium !== undefined ? m.isPremium : true,
+            isPremium: m.isPremium !== undefined ? m.isPremium : false,
             isTitle: true,
             isDownload: true,
             isComment: true,
@@ -2603,6 +2717,9 @@ export class MovieFormPage implements OnInit {
             logoImageUrl: (m as any).logoImageUrl || '',
             contentWarnings: Array.isArray((m as any).contentWarnings) ? (m as any).contentWarnings : [],
             qualityBadges: Array.isArray((m as any).qualityBadges) ? (m as any).qualityBadges : [],
+            skipIntroStart: this.formatSecondsToHms((m as any).skipIntroStart),
+            skipIntroEnd: this.formatSecondsToHms((m as any).skipIntroEnd),
+            skipOutroStart: this.formatSecondsToHms((m as any).skipOutroStart),
             scheduledPublishAt: this.toDatetimeLocal((m as any).scheduledPublishAt),
             expiresAt: this.toDatetimeLocal((m as any).expiresAt)
           });
