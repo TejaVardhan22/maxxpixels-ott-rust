@@ -186,11 +186,11 @@ export default function HeroBanner({ banners }: HeroBannerProps) {
 
   return (
     <section
-      className="relative w-full bg-gradient-to-b from-[#161616] via-[#0A0A0A] to-[#0A0A0A] px-3.5 pb-2 pt-[92px] sm:px-6 sm:pb-3 sm:pt-[112px] lg:px-12 lg:pt-[82px]"
+      className="relative w-full bg-[#0A0A0A] px-0 pb-2 pt-[88px] sm:bg-gradient-to-b sm:from-[#161616] sm:via-[#0A0A0A] sm:to-[#0A0A0A] sm:px-6 sm:pb-3 sm:pt-[112px] lg:px-12 lg:pt-[82px]"
       aria-label="Featured titles"
     >
-      {/* Framed Rounded Cinema Billboard Container */}
-      <div className="group/hero relative mx-auto max-w-[1680px] overflow-hidden rounded-xl border border-white/[0.1] bg-[#0A0A0A] shadow-[0_24px_64px_rgba(0,0,0,0.85)] sm:rounded-2xl">
+      {/* Seamless Edge-to-Edge on Mobile, Framed Cinema Billboard on sm+ */}
+      <div className="group/hero relative mx-auto max-w-[1680px] overflow-hidden bg-[#0A0A0A] sm:rounded-2xl sm:border sm:border-white/[0.1] sm:shadow-[0_24px_64px_rgba(0,0,0,0.85)]">
         <Swiper
           key={`hero-swiper-${banners.length}`}
           modules={[Autoplay]}
@@ -286,12 +286,13 @@ export default function HeroBanner({ banners }: HeroBannerProps) {
             if (language) metaParts.push(language);
             if (year) metaParts.push(String(year));
             if (duration) metaParts.push(duration);
+            if (maturity) metaParts.push(cleanMaturityRating(maturity));
 
             return (
               <SwiperSlide key={`${banner.id}-${index}`}>
-                <article className="relative flex w-full select-none flex-col overflow-hidden bg-[#141414] sm:block sm:aspect-[16/9] sm:min-h-[380px] lg:aspect-[16/8.2] lg:max-h-[82svh] lg:min-h-[460px]">
-                  {/* 16:9 Artwork Stage (Uncropped full 16:9 on mobile, full-bleed cover on sm+) */}
-                  <div className="relative aspect-[16/9] w-full shrink-0 overflow-hidden bg-[#14161A] sm:absolute sm:inset-0 sm:h-full sm:aspect-auto">
+                <article className="relative flex w-full select-none flex-col overflow-hidden bg-[#0A0A0A] sm:block sm:aspect-[16/9] sm:min-h-[380px] lg:aspect-[16/8.2] lg:max-h-[82svh] lg:min-h-[460px]">
+                  {/* 16:9 Artwork Stage (Uncropped edge-to-edge 16:9 on mobile, full-bleed cover on sm+) */}
+                  <div className="relative aspect-[16/9] w-full shrink-0 overflow-hidden bg-[#0A0A0A] sm:absolute sm:inset-0 sm:h-full sm:aspect-auto">
                     {image ? (
                       <Image
                         src={image}
@@ -315,25 +316,8 @@ export default function HeroBanner({ banners }: HeroBannerProps) {
                       <div className="h-full w-full bg-gradient-to-tr from-[#1E1917] via-[#14161A] to-[#261A14]" />
                     )}
 
-                    {/* Mobile Top-Right Badges on 16:9 Image */}
-                    {(isPremium || maturity) && (
-                      <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5 sm:hidden">
-                        {isPremium && (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur-md ring-1 ring-white/15">
-                            <Sparkles className="h-3 w-3 text-[#FF6D2E]" />
-                            <span>VIP</span>
-                          </span>
-                        )}
-                        {maturity && (
-                          <span className="inline-flex items-center rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur-md ring-1 ring-white/15">
-                            {cleanMaturityRating(maturity)}
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Mobile smooth bottom blend into #141414 details dock */}
-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#141414] via-[#141414]/60 to-transparent sm:hidden" />
+                    {/* Mobile smooth bottom blend directly into #0A0A0A */}
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-[#0A0A0A] via-[#0A0A0A]/65 to-transparent sm:hidden" />
 
                     {/* Tablet/Desktop bottom & left scrim so 90% of poster stays bright and crisp */}
                     <div className="pointer-events-none absolute inset-x-0 bottom-0 hidden h-[58%] bg-gradient-to-t from-black/90 via-black/40 to-transparent sm:block" />
@@ -341,7 +325,7 @@ export default function HeroBanner({ banners }: HeroBannerProps) {
                   </div>
 
                   {/* Bottom Row: Left Title/Meta/Buttons + Right Frosted Status Pills */}
-                  <div className="relative z-10 -mt-3 flex flex-col justify-end bg-[#141414] px-4 pb-4 pt-1 sm:absolute sm:inset-0 sm:mt-0 sm:flex-row sm:items-end sm:justify-between sm:gap-6 sm:bg-transparent sm:px-8 sm:pb-9 lg:px-11 lg:pb-11">
+                  <div className="relative z-10 -mt-5 flex flex-col justify-end bg-[#0A0A0A] px-4 pb-3 pt-1 sm:absolute sm:inset-0 sm:mt-0 sm:flex-row sm:items-end sm:justify-between sm:gap-6 sm:bg-transparent sm:px-8 sm:pb-9 lg:px-11 lg:pb-11">
                     {/* Left Editorial Block */}
                     <div
                       className={`max-w-[460px] transition-all duration-700 ease-out lg:max-w-[540px] ${
@@ -401,7 +385,7 @@ export default function HeroBanner({ banners }: HeroBannerProps) {
 
                         <Link
                           href={detailsHref}
-                          className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-full bg-white/12 px-4 text-xs font-semibold text-white backdrop-blur-md transition-all duration-200 hover:bg-white/25 sm:h-11 sm:flex-none sm:bg-white/20 sm:px-6 sm:text-sm"
+                          className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-4 text-xs font-semibold text-white backdrop-blur-md transition-all duration-200 hover:bg-white/25 sm:h-11 sm:flex-none sm:border-transparent sm:bg-white/20 sm:px-6 sm:text-sm"
                         >
                           <Info className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                           <span>More Info</span>
