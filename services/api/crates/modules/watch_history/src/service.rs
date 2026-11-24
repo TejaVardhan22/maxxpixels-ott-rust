@@ -73,15 +73,33 @@ impl WatchHistoryService {
             Some(u) if !u.trim().is_empty() => u.trim(),
             _ => return String::new(),
         };
-        if raw.starts_with("http://") || raw.starts_with("https://") || raw.starts_with("data:") {
+        if raw.starts_with("data:") || raw.starts_with("blob:") {
             return raw.to_string();
         }
-        let clean = raw.trim_start_matches('/');
-        if !clean.starts_with("uploads/") {
-            format!("{}/uploads/{}", self.public_base_url, clean)
-        } else {
-            format!("{}/{}", self.public_base_url, clean)
+        if raw.starts_with("http://") || raw.starts_with("https://") {
+            if let Some(idx) = raw.find("/uploads/api/v1/uploads/") {
+                return format!("{}/api/v1/uploads/{}", &raw[..idx], &raw[idx + "/uploads/api/v1/uploads/".len()..]);
+            }
+            if let Some(idx) = raw.find("/api/v1/uploads/api/v1/uploads/") {
+                return format!("{}/api/v1/uploads/{}", &raw[..idx], &raw[idx + "/api/v1/uploads/api/v1/uploads/".len()..]);
+            }
+            return raw.to_string();
         }
+        let mut clean = raw.trim_start_matches('/');
+        loop {
+            if let Some(rest) = clean.strip_prefix("api/v1/uploads/") {
+                clean = rest;
+            } else if let Some(rest) = clean.strip_prefix("api/uploads/") {
+                clean = rest;
+            } else if let Some(rest) = clean.strip_prefix("uploads/") {
+                clean = rest;
+            } else if let Some(rest) = clean.strip_prefix("storage/") {
+                clean = rest;
+            } else {
+                break;
+            }
+        }
+        format!("{}/api/v1/uploads/{}", self.public_base_url, clean)
     }
 
     pub async fn get_continue_watching(
