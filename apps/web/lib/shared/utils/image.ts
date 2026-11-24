@@ -1,8 +1,16 @@
 
 function normalizeRelativeAssetPath(path: string): string {
   const isLeadingSlash = path.startsWith('/');
-  const trimmed = path.replace(/^\/+/, '');
+  let trimmed = path.replace(/^\/+/, '');
   if (!trimmed) return '';
+
+  // Self-heal already-proxied or double-proxied upload paths (/api/v1/uploads/...).
+  if (/^(?:api\/(?:v1\/)?)?uploads\//i.test(trimmed)) {
+    while (/^(?:api\/(?:v1\/)?)?(?:uploads|storage)\//i.test(trimmed)) {
+      trimmed = trimmed.replace(/^(?:api\/(?:v1\/)?)?(?:uploads|storage)\//i, '');
+    }
+    return trimmed ? `/api/v1/uploads/${trimmed}` : '';
+  }
 
   // Backend-served media -> backend media proxy (streams full bytes from Bunny Storage).
   if (

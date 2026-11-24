@@ -122,8 +122,14 @@ export function resolveAdminImageUrl(path?: string | null): string {
     /(?:^|\/\/)(?:vz-|video\.bunnycdn\.com)/i.test(trimmed) || /\.m3u8(?:$|[?#])/i.test(trimmed);
   if (isStreamUrl) return trimmed;
 
-  const stripMediaPrefix = (p: string) =>
-    p.replace(/^\/+/, '').replace(/^uploads\//i, '').replace(/^storage\//i, '');
+  const stripMediaPrefix = (p: string) => {
+    let cleaned = p.replace(/^\/+/, '');
+    // Strip repeated proxy/storage prefixes (e.g. /api/v1/uploads/api/v1/uploads/...)
+    while (/^(?:api\/(?:v1\/)?)?(?:uploads|storage)\//i.test(cleaned)) {
+      cleaned = cleaned.replace(/^(?:api\/(?:v1\/)?)?(?:uploads|storage)\//i, '');
+    }
+    return cleaned;
+  };
 
   const rewriteStorageCdnHost = (url: string): string => {
     try {

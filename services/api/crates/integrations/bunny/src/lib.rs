@@ -132,6 +132,7 @@ impl BunnyStreamClient {
 pub struct BunnyStorageClient {
     pub storage_zone: String,
     pub api_key: String,
+    pub storage_endpoint: String,
     pub cdn_url: String,
     pub uploads_root: PathBuf,
     http: reqwest::Client,
@@ -139,6 +140,22 @@ pub struct BunnyStorageClient {
 
 impl BunnyStorageClient {
     pub fn from_env() -> Self {
+        let storage_endpoint = std::env::var("BUNNY_STORAGE_ENDPOINT")
+            .ok()
+            .map(|s| s.trim().trim_end_matches('/').to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| {
+                let region = std::env::var("BUNNY_STORAGE_REGION")
+                    .unwrap_or_default()
+                    .trim()
+                    .to_lowercase();
+                if !region.is_empty() && region != "de" && region != "falkenstein" {
+                    format!("https://{}.storage.bunnycdn.com", region)
+                } else {
+                    "https://storage.bunnycdn.com".to_string()
+                }
+            });
+
         Self {
             storage_zone: std::env::var("BUNNY_STORAGE_ZONE")
                 .or_else(|_| std::env::var("BUNNY_STORAGE_ZONE_NAME"))
@@ -146,6 +163,7 @@ impl BunnyStorageClient {
             api_key: std::env::var("BUNNY_STORAGE_API_KEY")
                 .or_else(|_| std::env::var("BUNNY_STORAGE_ZONE_PASSWORD"))
                 .unwrap_or_default(),
+            storage_endpoint,
             cdn_url: std::env::var("BUNNY_STORAGE_CDN_URL")
                 .or_else(|_| std::env::var("BUNNY_PULL_ZONE_DOMAIN"))
                 .unwrap_or_default()
@@ -195,8 +213,8 @@ impl BunnyStorageClient {
         }
 
         let remote_url = format!(
-            "https://storage.bunnycdn.com/{}/{}/{}",
-            self.storage_zone, safe_folder, unique_name
+            "{}/{}/{}/{}",
+            self.storage_endpoint, self.storage_zone, safe_folder, unique_name
         );
         let resp = self
             .http
@@ -270,6 +288,9 @@ impl BunnyStorageClient {
         if clean_folder != "banners" {
             candidates.push(format!("banners/{}", clean_name));
         }
+        if clean_folder != "branding" {
+            candidates.push(format!("branding/{}", clean_name));
+        }
 
         let lower = clean_name.to_lowercase();
         let guessed_mime = if lower.ends_with(".png") {
@@ -289,7 +310,7 @@ impl BunnyStorageClient {
         };
 
         for rel in candidates {
-            let url = format!("https://storage.bunnycdn.com/{}/{}", self.storage_zone, rel);
+            let url = format!("{}/{}/{}", self.storage_endpoint, self.storage_zone, rel);
             if let Ok(resp) = self
                 .http
                 .get(&url)
