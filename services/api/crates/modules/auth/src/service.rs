@@ -810,7 +810,7 @@ impl AuthService {
             return Ok(());
         }
         let secret = std::env::var("RECAPTCHA_SECRET_KEY")
-            .unwrap_or_else(|_| "6Le3Di8uAAAAAHuLWrfvFHmTjEFaORrFDb1xRMTx".to_string())
+            .unwrap_or_default()
             .trim()
             .to_string();
         if secret.is_empty() {
