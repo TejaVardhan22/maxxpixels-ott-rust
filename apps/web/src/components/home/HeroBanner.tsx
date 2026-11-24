@@ -276,9 +276,17 @@ export default function HeroBanner({ banners }: HeroBannerProps) {
               rawBanner.content?.video_id,
             );
             const isSaved = savedIds.has(resourceId);
-            const actionUrl = rawBanner.action_url || rawBanner.actionUrl;
-            const isPortalBanner = Boolean(actionUrl || (banner as any).isPortalBanner);
-            const detailsHref = actionUrl || getContentUrl(banner as any);
+            const rawActionUrl = String(rawBanner.action_url || rawBanner.actionUrl || '').trim();
+            const isLegacyVideoUrl = /^\/?video\/\d+/i.test(rawActionUrl);
+            const hasExplicitNonContentAction =
+              Boolean(rawActionUrl) && !isLegacyVideoUrl && resourceId <= 0;
+            const isPortalBanner = Boolean(hasExplicitNonContentAction || (banner as any).isPortalBanner);
+            const detailsHref =
+              resourceId > 0
+                ? getContentUrl({ ...rawBanner, id: resourceId, content_id: resourceId, video_id: resourceId })
+                : !isLegacyVideoUrl && rawActionUrl
+                  ? rawActionUrl
+                  : getContentUrl(banner as any);
             const isSlideActive = activeIndex === index;
 
             const metaParts: string[] = [];
