@@ -2,7 +2,19 @@
 
 import { useEffect, useRef, useState, useCallback, KeyboardEvent } from 'react';
 import Hls from 'hls.js';
-
+import {
+  ArrowLeft,
+  Cast,
+  Check,
+  Maximize2,
+  Minimize2,
+  Pause,
+  Play,
+  SlidersHorizontal,
+  Subtitles,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
 import { SecurityWatermark } from '../security/SecurityWatermark';
 
 export interface SubtitleTrack {
@@ -15,6 +27,10 @@ interface Props {
   src: string;
   poster?: string;
   title?: string;
+  /** Subtitle line below the title, e.g. "Comedy Drama • FHD • 2h 22m" */
+  metaSubtitle?: string;
+  /** Back arrow handler in the top-left overlay */
+  onBack?: () => void;
   subtitles?: SubtitleTrack[];
   autoPlay?: boolean;
   onEnded?: () => void;
@@ -36,12 +52,20 @@ interface Props {
   firedAdMarkers?: number[];
   /** Optional external ref to the underlying HTMLVideoElement */
   videoRef?: React.Ref<HTMLVideoElement>;
+  /** Fill parent viewport instead of fixed 16/9 box */
+  fullViewport?: boolean;
 }
 
 interface QualityLevel {
   index: number;
   label: string;
   height: number;
+}
+
+interface AudioTrackItem {
+  index: number;
+  label: string;
+  lang?: string;
 }
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -65,7 +89,7 @@ function normalizeMediaSrc(rawSrc: string): string {
 }
 
 function formatTime(s: number) {
-  if (!isFinite(s)) return '0:00';
+  if (!isFinite(s) || s < 0) return '0:00';
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = Math.floor(s % 60);
@@ -74,10 +98,32 @@ function formatTime(s: number) {
     : `${m}:${String(sec).padStart(2, '0')}`;
 }
 
+function formatDurationHuman(seconds: number): string {
+  if (!isFinite(seconds) || seconds <= 0) return '';
+  const totalMinutes = Math.round(seconds / 60);
+  if (totalMinutes < 1) return `${Math.round(seconds)}s`;
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  if (h > 0 && m > 0) return `${h}h ${m}m`;
+  if (h > 0) return `${h}h`;
+  return `${m}m`;
+}
+
+function qualityBadgeFromHeight(height?: number): string {
+  if (!height) return 'FHD';
+  if (height >= 2160) return '4K UHD';
+  if (height >= 1440) return 'QHD';
+  if (height >= 1080) return 'FHD';
+  if (height >= 720) return 'HD';
+  return 'SD';
+}
+
 export default function VideoPlayer({
   src,
   poster,
   title,
+  metaSubtitle,
+  onBack,
   subtitles = [],
   autoPlay = false,
   onEnded,
@@ -90,29 +136,31 @@ export default function VideoPlayer({
   adMarkers = [],
   firedAdMarkers = [],
   videoRef: externalVideoRef,
+  fullViewport = false,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const internalVideoRef = useRef<HTMLVideoElement>(null);
   const videoRef = (externalVideoRef || internalVideoRef) as React.RefObject<HTMLVideoElement>;
-  const hlsRef       = useRef<Hls | null>(null);
-  const hideTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const progressRef  = useRef<HTMLDivElement>(null);
+  const hlsRef = useRef<Hls | null>(null);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const progressRef = useRef<HTMLDivElement>(null);
 
-  const [playing, setPlaying]         = useState(false);
+  const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration]       = useState(0);
-  const [buffered, setBuffered]       = useState(0);
-  const [volume, setVolume]           = useState(1);
-  const [muted, setMuted]             = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [buffered, setBuffered] = useState(0);
+  const [volume, setVolume] = useState(1);
+  const [muted, setMuted] = useState(false);
+  const [showVolumePopover, setShowVolumePopover] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
-  const [buffering, setBuffering]     = useState(false);
-  const [error, setError]             = useState<string | null>(null);
-  const [fullscreen, setFullscreen]   = useState(false);
-  const [pip, setPip]                 = useState(false);
-  const [speed, setSpeed]             = useState(1);
-  const [showSpeedMenu, setShowSpeedMenu] = useState(false);
-  const [qualities, setQualities]     = useState<QualityLevel[]>([]);
+  const [buffering, setBuffering] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [speed, setSpeed] = useState(1);
+  const [qualities, setQualities] = useState<QualityLevel[]>([]);
   const [currentQuality, setCurrentQuality] = useState<number>(-1); // -1 = Auto
+  const [audioTracks, setAudioTracks] = useState<AudioTrackItem[]>([]);
+  const [activeAudioTrack, setActiveAudioTrack] = useState<number>(0);
   const [showQualityMenu, setShowQualityMenu] = useState(false);
   const [showSubMenu, setShowSubMenu] = useState(false);
   const [activeSubtitle, setActiveSubtitle] = useState<number>(-1); // -1 = Off
@@ -120,33 +168,41 @@ export default function VideoPlayer({
   const [ended, setEnded] = useState(false);
   const [online, setOnline] = useState(true);
   const [showResumeNotice, setShowResumeNotice] = useState(resumeAt > 10);
-  const [seekTooltip, setSeekTooltip]  = useState<{ x: number; time: string } | null>(null);
-  const [seekFeedback, setSeekFeedback] = useState<{ dir: 'left' | 'right'; show: boolean }>({ dir: 'right', show: false });
+  const [castNotice, setCastNotice] = useState<string | null>(null);
+  const [seekTooltip, setSeekTooltip] = useState<{ x: number; time: string } | null>(null);
+  const [seekFeedback, setSeekFeedback] = useState<{ dir: 'left' | 'right'; show: boolean }>({
+    dir: 'right',
+    show: false,
+  });
+
   const mediaSrc = normalizeMediaSrc(src);
 
-  const playSafely = useCallback((video: HTMLVideoElement) => {
-    const playPromise = video.play();
-    if (playPromise && typeof playPromise.catch === 'function') {
-      playPromise.catch((err: unknown) => {
-        if (isAdMode) {
-          console.warn('[VideoPlayer] Ad playback failed, skipping ad...');
-          onEnded?.();
-          return;
-        }
-        if (err instanceof DOMException && err.name === 'NotAllowedError') {
-          console.warn('[VideoPlayer] Autoplay was blocked by browser policy, showing play control');
-          setPlaying(false);
-          return;
-        }
-        const isUnsupported = err instanceof DOMException && err.name === 'NotSupportedError';
-        setError(
-          isUnsupported
-            ? 'This title does not have a valid playable source configured.'
-            : 'Video failed to start.',
-        );
-      });
-    }
-  }, [isAdMode, onEnded]);
+  const playSafely = useCallback(
+    (video: HTMLVideoElement) => {
+      const playPromise = video.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch((err: unknown) => {
+          if (isAdMode) {
+            console.warn('[VideoPlayer] Ad playback failed, skipping ad...');
+            onEnded?.();
+            return;
+          }
+          if (err instanceof DOMException && err.name === 'NotAllowedError') {
+            console.warn('[VideoPlayer] Autoplay was blocked by browser policy, showing play control');
+            setPlaying(false);
+            return;
+          }
+          const isUnsupported = err instanceof DOMException && err.name === 'NotSupportedError';
+          setError(
+            isUnsupported
+              ? 'This title does not have a valid playable source configured.'
+              : 'Video failed to start.',
+          );
+        });
+      }
+    },
+    [isAdMode, onEnded],
+  );
 
   // ── HLS setup ────────────────────────────────────────────────
   useEffect(() => {
@@ -203,11 +259,45 @@ export default function VideoPlayer({
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         const levels: QualityLevel[] = hls.levels.map((l, i) => ({
           index: i,
-          label: `${l.height}p`,
+          label:
+            l.height >= 2160
+              ? `${l.height}p (4K)`
+              : l.height >= 1080
+              ? `${l.height}p (FHD)`
+              : l.height >= 720
+              ? `${l.height}p (HD)`
+              : `${l.height}p`,
           height: l.height,
         }));
         setQualities(levels);
+
+        if (Array.isArray(hls.audioTracks) && hls.audioTracks.length > 0) {
+          setAudioTracks(
+            hls.audioTracks.map((t, idx) => ({
+              index: idx,
+              label: t.name || t.lang || `Audio ${idx + 1}`,
+              lang: t.lang,
+            })),
+          );
+          setActiveAudioTrack(hls.audioTrack >= 0 ? hls.audioTrack : 0);
+        } else {
+          setAudioTracks([{ index: 0, label: 'Original Audio' }]);
+          setActiveAudioTrack(0);
+        }
+
         if (autoPlay) playSafely(video);
+      });
+
+      hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_, data) => {
+        if (Array.isArray(data.audioTracks) && data.audioTracks.length > 0) {
+          setAudioTracks(
+            data.audioTracks.map((t, idx) => ({
+              index: idx,
+              label: t.name || t.lang || `Audio ${idx + 1}`,
+              lang: t.lang,
+            })),
+          );
+        }
       });
 
       return () => {
@@ -215,44 +305,59 @@ export default function VideoPlayer({
         hlsRef.current = null;
       };
     } else if (video.canPlayType('application/vnd.apple.mpegurl') || !isHls) {
-      // Safari native HLS or direct MP4
       video.src = mediaSrc;
       video.load();
+      setAudioTracks([{ index: 0, label: 'Original Audio' }]);
+      setActiveAudioTrack(0);
       if (autoPlay) playSafely(video);
     } else {
       setError('Your browser does not support HLS streaming.');
     }
-  }, [mediaSrc, autoPlay, forceHls, hlsXhrSetup, playSafely]);
+  }, [mediaSrc, autoPlay, forceHls, hlsXhrSetup, playSafely, videoRef]);
 
-  // ── Apply resume seek (mid-roll return; often same src as before) ──
+  // ── Apply resume seek (initial resume or mid-roll return) ──
+  const appliedResumeKeyRef = useRef<string>('');
   useEffect(() => {
     const video = videoRef.current;
     if (!video || isAdMode) return;
     if (!resumeAt || resumeAt <= 0) return;
 
+    const resumeKey = `${src}|${resumeAt}|${resumeRequest}`;
+    if (appliedResumeKeyRef.current === resumeKey) return;
+
     const seekTo = () => {
       try {
-        video.currentTime = resumeAt;
+        if (Math.abs(video.currentTime - resumeAt) > 1.5) {
+          video.currentTime = resumeAt;
+        }
+        appliedResumeKeyRef.current = resumeKey;
       } catch {
         /* ignore */
       }
     };
 
-    if (video.readyState >= HTMLMediaElement.HAVE_METADATA) seekTo();
-    else video.addEventListener('loadedmetadata', seekTo, { once: true });
+    if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      seekTo();
+    }
+    video.addEventListener('loadedmetadata', seekTo, { once: true });
+    video.addEventListener('canplay', seekTo, { once: true });
 
     return () => {
       video.removeEventListener('loadedmetadata', seekTo);
+      video.removeEventListener('canplay', seekTo);
     };
-  }, [resumeAt, resumeRequest, src, isAdMode]);
+  }, [resumeAt, resumeRequest, src, isAdMode, videoRef]);
 
   // ── Video event listeners ────────────────────────────────────
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    const onPlay      = () => { setPlaying(true); setEnded(false); };
-    const onPause     = () => setPlaying(false);
+    const onPlay = () => {
+      setPlaying(true);
+      setEnded(false);
+    };
+    const onPause = () => setPlaying(false);
     const onTimeUpdate = () => {
       const t = video.currentTime;
       const d = Number.isFinite(video.duration) ? video.duration : 0;
@@ -262,11 +367,11 @@ export default function VideoPlayer({
         setBuffered(video.buffered.end(video.buffered.length - 1));
       }
     };
-    const onDuration  = () => setDuration(video.duration);
-    const onWaiting   = () => setBuffering(true);
-    const onPlaying   = () => setBuffering(false);
-    const onCanPlay   = () => setBuffering(false);
-    const onError     = () => {
+    const onDuration = () => setDuration(Number.isFinite(video.duration) ? video.duration : 0);
+    const onWaiting = () => setBuffering(true);
+    const onPlaying = () => setBuffering(false);
+    const onCanPlay = () => setBuffering(false);
+    const onError = () => {
       if (isAdMode) {
         console.warn('[VideoPlayer] Ad loading error, skipping ad...');
         onEnded?.();
@@ -274,10 +379,12 @@ export default function VideoPlayer({
       }
       setError('Video failed to load.');
     };
-    const onEnded_    = () => { setPlaying(false); setEnded(true); onEnded?.(); };
+    const onEnded_ = () => {
+      setPlaying(false);
+      setEnded(true);
+      onEnded?.();
+    };
     const onFullscreenChange = () => setFullscreen(!!document.fullscreenElement);
-    const onPipEnter  = () => setPip(true);
-    const onPipLeave  = () => setPip(false);
 
     video.addEventListener('play', onPlay);
     video.addEventListener('pause', onPause);
@@ -288,8 +395,6 @@ export default function VideoPlayer({
     video.addEventListener('canplay', onCanPlay);
     video.addEventListener('error', onError);
     video.addEventListener('ended', onEnded_);
-    video.addEventListener('enterpictureinpicture', onPipEnter);
-    video.addEventListener('leavepictureinpicture', onPipLeave);
     document.addEventListener('fullscreenchange', onFullscreenChange);
 
     return () => {
@@ -302,11 +407,9 @@ export default function VideoPlayer({
       video.removeEventListener('canplay', onCanPlay);
       video.removeEventListener('error', onError);
       video.removeEventListener('ended', onEnded_);
-      video.removeEventListener('enterpictureinpicture', onPipEnter);
-      video.removeEventListener('leavepictureinpicture', onPipLeave);
       document.removeEventListener('fullscreenchange', onFullscreenChange);
     };
-  }, [onEnded, onTimeUpdateProp]);
+  }, [isAdMode, onEnded, onTimeUpdateProp, videoRef]);
 
   useEffect(() => {
     const updateOnlineState = () => setOnline(navigator.onLine);
@@ -325,16 +428,28 @@ export default function VideoPlayer({
     return () => window.clearTimeout(timer);
   }, [showResumeNotice]);
 
+  useEffect(() => {
+    if (!castNotice) return;
+    const timer = window.setTimeout(() => setCastNotice(null), 3500);
+    return () => window.clearTimeout(timer);
+  }, [castNotice]);
+
   // ── Auto-hide controls ───────────────────────────────────────
   const showControls = useCallback(() => {
     setControlsVisible(true);
     if (hideTimer.current) clearTimeout(hideTimer.current);
     hideTimer.current = setTimeout(() => {
-      if (videoRef.current && !videoRef.current.paused) {
+      if (
+        videoRef.current &&
+        !videoRef.current.paused &&
+        !showQualityMenu &&
+        !showSubMenu &&
+        !showVolumePopover
+      ) {
         setControlsVisible(false);
       }
-    }, 3000);
-  }, []);
+    }, 3200);
+  }, [showQualityMenu, showSubMenu, showVolumePopover, videoRef]);
 
   // ── Controls helpers ─────────────────────────────────────────
   const togglePlay = () => {
@@ -350,7 +465,8 @@ export default function VideoPlayer({
   const seek = (t: number) => {
     const v = videoRef.current;
     if (!v) return;
-    v.currentTime = Math.max(0, Math.min(t, duration));
+    const maxDur = Number.isFinite(duration) && duration > 0 ? duration : v.duration || 0;
+    v.currentTime = Math.max(0, Math.min(t, maxDur));
   };
 
   const changeVolume = (val: number) => {
@@ -358,6 +474,7 @@ export default function VideoPlayer({
     if (!v) return;
     const clamped = Math.max(0, Math.min(1, val));
     v.volume = clamped;
+    v.muted = clamped === 0;
     setVolume(clamped);
     setMuted(clamped === 0);
   };
@@ -373,20 +490,30 @@ export default function VideoPlayer({
     const c = containerRef.current;
     if (!c) return;
     if (!document.fullscreenElement) {
-      c.requestFullscreen();
+      c.requestFullscreen().catch(() => {});
     } else {
-      document.exitFullscreen();
+      document.exitFullscreen().catch(() => {});
     }
   };
 
-  const togglePiP = async () => {
-    const v = videoRef.current;
+  const handleCast = async () => {
+    const v = videoRef.current as HTMLVideoElement & {
+      remote?: { prompt?: () => Promise<void> };
+      webkitShowPlaybackTargetPicker?: () => void;
+    };
     if (!v) return;
-    if (document.pictureInPictureElement) {
-      await document.exitPictureInPicture();
-    } else {
-      if (v.readyState < HTMLMediaElement.HAVE_METADATA) return;
-      await v.requestPictureInPicture();
+    try {
+      if (v.remote && typeof v.remote.prompt === 'function') {
+        await v.remote.prompt();
+        return;
+      }
+      if (typeof v.webkitShowPlaybackTargetPicker === 'function') {
+        v.webkitShowPlaybackTargetPicker();
+        return;
+      }
+      setCastNotice('Searching for Cast / AirPlay devices on your network…');
+    } catch {
+      setCastNotice('No Cast devices found on this network.');
     }
   };
 
@@ -395,7 +522,6 @@ export default function VideoPlayer({
     if (!v) return;
     v.playbackRate = s;
     setSpeed(s);
-    setShowSpeedMenu(false);
   };
 
   const changeQuality = (idx: number) => {
@@ -403,8 +529,18 @@ export default function VideoPlayer({
     if (hls) {
       hls.currentLevel = idx;
       setCurrentQuality(idx);
+    } else {
+      setCurrentQuality(idx);
     }
     setShowQualityMenu(false);
+  };
+
+  const changeAudioTrack = (idx: number) => {
+    const hls = hlsRef.current;
+    if (hls && idx >= 0 && idx < hls.audioTracks.length) {
+      hls.audioTrack = idx;
+    }
+    setActiveAudioTrack(idx);
   };
 
   const changeSubtitle = (idx: number) => {
@@ -421,14 +557,14 @@ export default function VideoPlayer({
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressRef.current || !duration) return;
     const rect = progressRef.current.getBoundingClientRect();
-    const pct  = (e.clientX - rect.left) / rect.width;
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     seek(pct * duration);
   };
 
   const handleProgressHover = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressRef.current || !duration) return;
     const rect = progressRef.current.getBoundingClientRect();
-    const pct  = (e.clientX - rect.left) / rect.width;
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     setSeekTooltip({ x: e.clientX - rect.left, time: formatTime(pct * duration) });
   };
 
@@ -445,7 +581,7 @@ export default function VideoPlayer({
       seek(currentTime + 10);
       flashFeedback('right');
     } else {
-      togglePlay();
+      toggleFullscreen();
     }
   };
 
@@ -460,33 +596,94 @@ export default function VideoPlayer({
     showControls();
     switch (e.key) {
       case ' ':
-      case 'k': e.preventDefault(); togglePlay(); break;
-      case 'ArrowLeft':  e.preventDefault(); seek(currentTime - 10); flashFeedback('left'); break;
-      case 'ArrowRight': e.preventDefault(); seek(currentTime + 10); flashFeedback('right'); break;
-      case 'ArrowUp':    e.preventDefault(); changeVolume(volume + 0.1); break;
-      case 'ArrowDown':  e.preventDefault(); changeVolume(volume - 0.1); break;
-      case 'f': case 'F': e.preventDefault(); toggleFullscreen(); break;
-      case 'm': case 'M': e.preventDefault(); toggleMute(); break;
-      case '?': e.preventDefault(); setShowShortcutHelp((visible) => !visible); break;
+      case 'k':
+        e.preventDefault();
+        togglePlay();
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        seek(currentTime - 10);
+        flashFeedback('left');
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        seek(currentTime + 10);
+        flashFeedback('right');
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        changeVolume(volume + 0.1);
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        changeVolume(volume - 0.1);
+        break;
+      case 'f':
+      case 'F':
+        e.preventDefault();
+        toggleFullscreen();
+        break;
+      case 'm':
+      case 'M':
+        e.preventDefault();
+        toggleMute();
+        break;
+      case '?':
+        e.preventDefault();
+        setShowShortcutHelp((visible) => !visible);
+        break;
       default:
         if (e.key >= '0' && e.key <= '9') {
           e.preventDefault();
-          seek((parseInt(e.key) / 10) * duration);
+          seek((parseInt(e.key, 10) / 10) * duration);
         }
     }
   };
 
-  const progressPct  = duration ? (currentTime / duration) * 100 : 0;
-  const bufferedPct  = duration ? (buffered / duration) * 100 : 0;
-  const supportsPiP  = typeof document !== 'undefined' && 'pictureInPictureEnabled' in document;
-
+  const progressPct = duration ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
+  const bufferedPct = duration ? Math.min(100, Math.max(0, (buffered / duration) * 100)) : 0;
   const chromeOff = isAdMode;
+
+  // Build dynamic subtitle line ("Comedy Drama • FHD • 2h 22m")
+  const highestQualityHeight =
+    currentQuality >= 0
+      ? qualities.find((q) => q.index === currentQuality)?.height
+      : qualities.length > 0
+      ? Math.max(...qualities.map((q) => q.height))
+      : undefined;
+  const qualityTag = qualityBadgeFromHeight(highestQualityHeight);
+  const durationTag = formatDurationHuman(duration);
+
+  const computedSubtitle = (() => {
+    const parts: string[] = [];
+    if (metaSubtitle) {
+      parts.push(metaSubtitle);
+    }
+    if (!metaSubtitle?.includes(qualityTag)) {
+      parts.push(qualityTag);
+    }
+    if (durationTag && !metaSubtitle?.includes(durationTag)) {
+      parts.push(durationTag);
+    }
+    return parts.filter(Boolean).join(' • ');
+  })();
+
+  const fallbackQualityOptions: QualityLevel[] =
+    qualities.length > 0
+      ? [...qualities].sort((a, b) => b.height - a.height)
+      : [
+          { index: 0, label: '1080p (FHD)', height: 1080 },
+          { index: 1, label: '720p (HD)', height: 720 },
+          { index: 2, label: '480p', height: 480 },
+        ];
 
   return (
     <div
       ref={containerRef}
-      className="relative w-full bg-black select-none focus:outline-none"
-      style={{ aspectRatio: '16/9' }}
+      className={`relative w-full bg-[#0A0A0A] select-none focus:outline-none overflow-hidden ${
+        fullViewport ? 'h-full w-full' : ''
+      }`}
+      style={fullViewport ? undefined : { aspectRatio: '16/9' }}
       tabIndex={chromeOff ? -1 : 0}
       onMouseMove={chromeOff ? undefined : showControls}
       onMouseEnter={chromeOff ? undefined : showControls}
@@ -494,7 +691,9 @@ export default function VideoPlayer({
         chromeOff
           ? undefined
           : () => {
-              if (playing) setControlsVisible(false);
+              if (playing && !showQualityMenu && !showSubMenu && !showVolumePopover) {
+                setControlsVisible(false);
+              }
             }
       }
       onDoubleClick={chromeOff ? undefined : handleDoubleClick}
@@ -503,8 +702,14 @@ export default function VideoPlayer({
         chromeOff
           ? undefined
           : () => {
+              if (showQualityMenu || showSubMenu || showVolumePopover) {
+                setShowQualityMenu(false);
+                setShowSubMenu(false);
+                setShowVolumePopover(false);
+                return;
+              }
               showControls();
-              if (!showSpeedMenu && !showQualityMenu && !showSubMenu) togglePlay();
+              togglePlay();
             }
       }
     >
@@ -515,9 +720,8 @@ export default function VideoPlayer({
         poster={poster}
         playsInline
         disablePictureInPicture
-        controlsList="nodownload noremoteplayback"
+        controlsList="nodownload"
         style={{ display: 'block' }}
-        onClick={(e) => e.stopPropagation()}
       >
         {subtitles.map((s, i) => (
           <track key={i} kind="subtitles" src={s.src} srcLang={s.srclang} label={s.label} />
@@ -529,26 +733,32 @@ export default function VideoPlayer({
 
       {/* Buffering spinner */}
       {buffering && !error && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/25 pointer-events-none">
-          <div className="w-12 h-12 border-4 border-white/25 border-t-primary-light rounded-full animate-spin" />
-          <span className="rounded-full bg-black/65 px-3 py-1.5 text-xs font-semibold text-white/75">
-            Optimizing stream…
-          </span>
+        <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/30">
+          <div className="h-12 w-12 animate-spin rounded-full border-[3px] border-white/20 border-t-[#FF6D2E]" />
         </div>
       )}
 
       {!online && (
-        <div className="absolute inset-x-0 top-4 z-30 mx-auto w-fit rounded-full border border-red-400/30 bg-red-950/90 px-4 py-2 text-xs font-bold text-red-100">
+        <div className="absolute inset-x-0 top-16 z-30 mx-auto w-fit rounded-full border border-red-400/30 bg-red-950/90 px-4 py-2 text-xs font-bold text-red-100">
           You’re offline — playback will resume when the connection returns
         </div>
       )}
 
+      {castNotice && (
+        <div className="pointer-events-none absolute inset-x-0 top-20 z-30 mx-auto w-fit rounded-full border border-white/15 bg-[#141414]/95 px-4 py-2 text-xs font-semibold text-white shadow-2xl backdrop-blur-md">
+          {castNotice}
+        </div>
+      )}
+
       {showResumeNotice && resumeAt > 10 && !chromeOff && (
-        <div className="absolute bottom-24 left-4 z-20 flex items-center gap-3 rounded-xl border border-white/10 bg-black/80 px-4 py-3 text-sm text-white shadow-xl backdrop-blur">
-          <span>Resumed at {formatTime(resumeAt)}</span>
+        <div
+          className="absolute bottom-28 left-6 z-20 flex items-center gap-3 rounded-full border border-white/15 bg-[#141414]/95 px-4 py-2 text-xs text-white shadow-xl backdrop-blur-md"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className="text-white/80">Resumed at {formatTime(resumeAt)}</span>
           <button
             type="button"
-            className="font-bold text-primary-light hover:text-white"
+            className="font-bold text-[#FF6D2E] transition hover:text-white"
             onClick={(event) => {
               event.stopPropagation();
               seek(0);
@@ -560,15 +770,26 @@ export default function VideoPlayer({
         </div>
       )}
 
+      {/* Finished screen fallback when standalone VideoPlayer finishes */}
       {ended && !chromeOff && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 px-6">
-          <div className="text-center">
-            <p className="font-display text-2xl font-black text-white">You’ve finished {title || 'this title'}</p>
-            <p className="mt-2 text-sm text-white/50">Replay it or discover something new.</p>
+        <div
+          className="absolute inset-0 z-20 flex items-center justify-center bg-black/85 px-6"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="max-w-md rounded-2xl border border-white/10 bg-[#141414]/95 p-7 text-center shadow-2xl">
+            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#FF6D2E]">
+              Finished Watching
+            </p>
+            <p className="mt-2 font-display text-2xl font-black text-white">
+              {title || 'This title'}
+            </p>
+            <p className="mt-2 text-xs text-white/55">
+              Replay it now or discover more titles.
+            </p>
             <div className="mt-6 flex justify-center gap-3">
               <button
                 type="button"
-                className="rounded-xl bg-white px-6 py-3 text-sm font-black text-black"
+                className="rounded-full bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] px-6 py-2.5 text-xs font-bold text-white shadow-[0_8px_24px_rgba(255,109,46,0.4)] transition hover:brightness-110"
                 onClick={(event) => {
                   event.stopPropagation();
                   seek(0);
@@ -576,17 +797,17 @@ export default function VideoPlayer({
                   if (videoRef.current) playSafely(videoRef.current);
                 }}
               >
-                Replay
+                Watch Again
               </button>
               <button
                 type="button"
-                className="rounded-xl border border-white/15 bg-white/10 px-6 py-3 text-sm font-black text-white"
+                className="rounded-full border border-white/15 bg-white/10 px-6 py-2.5 text-xs font-semibold text-white transition hover:bg-white/20"
                 onClick={(event) => {
                   event.stopPropagation();
                   window.location.href = '/';
                 }}
               >
-                Browse titles
+                Browse Titles
               </button>
             </div>
           </div>
@@ -594,19 +815,39 @@ export default function VideoPlayer({
       )}
 
       {showShortcutHelp && !chromeOff && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/75 p-6" onClick={() => setShowShortcutHelp(false)}>
-          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#111827] p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="absolute inset-0 z-30 flex items-center justify-center bg-black/80 p-6"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowShortcutHelp(false);
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-white/10 bg-[#141414] p-6 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="flex items-center justify-between">
-              <p className="font-display text-lg font-black text-white">Player shortcuts</p>
-              <button className="text-xl text-white/50 hover:text-white" onClick={() => setShowShortcutHelp(false)}>×</button>
+              <p className="font-display text-lg font-bold text-white">Keyboard Shortcuts</p>
+              <button
+                className="text-xl text-white/50 hover:text-white"
+                onClick={() => setShowShortcutHelp(false)}
+              >
+                ×
+              </button>
             </div>
-            <div className="mt-5 grid grid-cols-[auto_1fr] gap-x-5 gap-y-3 text-sm text-white/65">
-              <kbd className="text-white">Space / K</kbd><span>Play or pause</span>
-              <kbd className="text-white">← / →</kbd><span>Seek 10 seconds</span>
-              <kbd className="text-white">↑ / ↓</kbd><span>Change volume</span>
-              <kbd className="text-white">F</kbd><span>Toggle fullscreen</span>
-              <kbd className="text-white">M</kbd><span>Mute or unmute</span>
-              <kbd className="text-white">0–9</kbd><span>Jump through the movie</span>
+            <div className="mt-5 grid grid-cols-[auto_1fr] gap-x-5 gap-y-3 text-xs text-white/70">
+              <kbd className="rounded bg-white/10 px-2 py-0.5 font-mono text-white">Space / K</kbd>
+              <span>Play or pause</span>
+              <kbd className="rounded bg-white/10 px-2 py-0.5 font-mono text-white">← / →</kbd>
+              <span>Rewind or forward 10 seconds</span>
+              <kbd className="rounded bg-white/10 px-2 py-0.5 font-mono text-white">↑ / ↓</kbd>
+              <span>Adjust volume</span>
+              <kbd className="rounded bg-white/10 px-2 py-0.5 font-mono text-white">F</kbd>
+              <span>Toggle fullscreen</span>
+              <kbd className="rounded bg-white/10 px-2 py-0.5 font-mono text-white">M</kbd>
+              <span>Mute or unmute</span>
+              <kbd className="rounded bg-white/10 px-2 py-0.5 font-mono text-white">0–9</kbd>
+              <span>Jump to 0%–90% of video</span>
             </div>
           </div>
         </div>
@@ -615,253 +856,520 @@ export default function VideoPlayer({
       {/* Double-click seek feedback */}
       {seekFeedback.show && (
         <div
-          className={`absolute top-1/2 -translate-y-1/2 pointer-events-none flex flex-col items-center gap-1 ${seekFeedback.dir === 'left' ? 'left-8' : 'right-8'}`}
+          className={`pointer-events-none absolute top-1/2 -translate-y-1/2 flex flex-col items-center gap-1.5 ${
+            seekFeedback.dir === 'left' ? 'left-12 sm:left-20' : 'right-12 sm:right-20'
+          }`}
         >
-          <span className="text-white text-4xl font-light opacity-80">
-            {seekFeedback.dir === 'left' ? '⏮' : '⏭'}
-          </span>
-          <span className="text-white text-sm font-medium bg-black/50 px-2 py-0.5 rounded">±10s</span>
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-black/55 text-sm font-bold text-white backdrop-blur-md">
+            {seekFeedback.dir === 'left' ? '-10s' : '+10s'}
+          </div>
         </div>
       )}
 
       {/* Error state */}
       {error && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 gap-4">
-          <span className="text-white text-lg font-semibold">{error}</span>
+        <div
+          className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black/85 px-6 text-center"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className="max-w-md text-base font-semibold text-white">{error}</span>
           <button
-            className="px-6 py-2 bg-yellow-400 text-black font-bold rounded-lg hover:bg-yellow-300 transition"
-            onClick={(e) => { e.stopPropagation(); setError(null); hlsRef.current?.recoverMediaError(); }}
+            className="rounded-full bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] px-6 py-2.5 text-xs font-bold text-white shadow-lg transition hover:brightness-110"
+            onClick={(e) => {
+              e.stopPropagation();
+              setError(null);
+              if (hlsRef.current) {
+                hlsRef.current.recoverMediaError();
+              } else if (videoRef.current) {
+                videoRef.current.load();
+                playSafely(videoRef.current);
+              }
+            }}
           >
-            Retry
+            Retry Playback
           </button>
         </div>
       )}
 
-      {/* Title overlay */}
-      {title && !chromeOff && (
-        <div
-          className={`absolute top-0 left-0 right-0 px-4 pt-3 pb-8 bg-gradient-to-b from-black/70 to-transparent pointer-events-none transition-opacity duration-300 ${controlsVisible ? 'opacity-100' : 'opacity-0'}`}
-        >
-          <span className="text-white font-semibold text-base drop-shadow">{title}</span>
-        </div>
-      )}
-
-      {/* Controls overlay */}
+      {/* ── TOP OVERLAY BAR: Back + Title + Subtitle (left) & Cast + Fullscreen (right) ── */}
       {!chromeOff && (
-      <div
-        className={`absolute bottom-0 left-0 right-0 px-4 pb-3 pt-12 bg-gradient-to-t from-black/80 to-transparent transition-opacity duration-300 ${controlsVisible ? 'opacity-100' : 'opacity-0'}`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Progress bar */}
         <div
-          ref={progressRef}
-          className="w-full h-2 bg-white/20 rounded-full cursor-pointer mb-5 relative group"
-          onClick={handleProgressClick}
-          onMouseMove={handleProgressHover}
-          onMouseLeave={() => setSeekTooltip(null)}
+          className={`absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 bg-gradient-to-b from-black/85 via-black/45 to-transparent px-5 pb-12 pt-5 transition-opacity duration-300 sm:px-8 sm:pt-6 ${
+            controlsVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
+          }`}
+          onClick={(e) => e.stopPropagation()}
         >
-          {/* Buffered */}
-          <div className="absolute top-0 left-0 h-full bg-white/30 rounded" style={{ width: `${bufferedPct}%` }} />
-          {/* Played */}
-          <div className="absolute top-0 left-0 h-full rounded bg-primary" style={{ width: `${progressPct}%` }} />
-          {/* Ad markers */}
-          {duration > 0 && adMarkers.map((marker) => {
-            const pct = Math.min(100, Math.max(0, (marker / duration) * 100));
-            const isFired = firedAdMarkers.includes(marker);
-            return (
-              <span
-                key={marker}
-                className={`absolute top-1/2 z-10 h-3 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/50 transition group-hover:h-4 ${
-                  isFired ? 'bg-white/30' : 'bg-primary-light'
-                }`}
-                style={{ left: `${pct}%` }}
-                title={`Advertisement at ${formatTime(marker)}`}
-                aria-label={`Advertisement cue at ${formatTime(marker)}`}
+          <div className="flex min-w-0 items-center gap-3.5 sm:gap-4">
+            <button
+              type="button"
+              onClick={() => {
+                if (onBack) {
+                  onBack();
+                } else if (typeof window !== 'undefined') {
+                  window.history.back();
+                }
+              }}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white/90 transition hover:bg-white/10 hover:text-white"
+              aria-label="Go back"
+            >
+              <ArrowLeft className="h-6 w-6" strokeWidth={2.2} />
+            </button>
+
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-bold tracking-tight text-white drop-shadow sm:text-xl">
+                {title || 'Now Playing'}
+              </h1>
+              {computedSubtitle && (
+                <p className="mt-0.5 truncate text-xs font-medium text-white/75 sm:text-sm">
+                  {computedSubtitle}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={handleCast}
+              className="flex h-10 w-10 items-center justify-center rounded-full text-white/90 transition hover:bg-white/10 hover:text-white"
+              title="Cast to device"
+              aria-label="Cast to device"
+            >
+              <Cast className="h-5 w-5" strokeWidth={2} />
+            </button>
+
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              className="flex h-10 w-10 items-center justify-center rounded-full text-white/90 transition hover:bg-white/10 hover:text-white"
+              title={fullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}
+              aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            >
+              {fullscreen ? (
+                <Minimize2 className="h-5 w-5" strokeWidth={2} />
+              ) : (
+                <Maximize2 className="h-5 w-5" strokeWidth={2} />
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── CENTER OVERLAY TRANSPORT CONTROLS: (10s Rewind)  (Play/Pause)  (10s Forward) ── */}
+      {!chromeOff && !ended && !error && (
+        <div
+          className={`pointer-events-none absolute inset-0 z-10 flex items-center justify-center gap-12 transition-opacity duration-300 sm:gap-20 ${
+            controlsVisible ? 'opacity-100' : 'opacity-0'
+          }`}
+        >
+          {/* Rewind 10s */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              showControls();
+              seek(currentTime - 10);
+              flashFeedback('left');
+            }}
+            className="group pointer-events-auto relative flex h-14 w-14 items-center justify-center rounded-full text-white transition hover:scale-105 hover:bg-white/10 active:scale-95 sm:h-16 sm:w-16"
+            title="Rewind 10 seconds"
+            aria-label="Rewind 10 seconds"
+          >
+            <svg viewBox="0 0 48 48" className="h-11 w-11 sm:h-12 sm:w-12" fill="none">
+              <path
+                d="M24 10C15.72 10 9 16.72 9 25C9 33.28 15.72 40 24 40C32.28 40 39 33.28 39 25"
+                stroke="currentColor"
+                strokeWidth="2.75"
+                strokeLinecap="round"
               />
-            );
-          })}
-          {/* Thumb */}
-          <div
-            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-primary-light rounded-full shadow -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ left: `${progressPct}%` }}
-          />
-          {/* Hover tooltip */}
-          {seekTooltip && (
-            <div
-              className="absolute bottom-4 -translate-x-1/2 bg-black/80 text-white text-xs px-2 py-0.5 rounded pointer-events-none"
-              style={{ left: seekTooltip.x }}
-            >
-              {seekTooltip.time}
-            </div>
-          )}
-        </div>
-
-        {/* Control buttons row */}
-        <div className="flex items-center gap-3">
-          {/* Play/Pause */}
-          <button
-            className="text-white hover:text-yellow-400 transition text-xl w-8 h-8 flex items-center justify-center"
-            onClick={togglePlay}
-          >
-            {playing ? '⏸' : '▶'}
-          </button>
-
-          {/* Skip back 10s */}
-          <button
-            className="text-white hover:text-yellow-400 transition text-sm"
-            onClick={() => seek(currentTime - 10)}
-            title="-10s"
-          >
-            ↺
-          </button>
-
-          {/* Skip forward 10s */}
-          <button
-            className="text-white hover:text-yellow-400 transition text-sm"
-            onClick={() => seek(currentTime + 10)}
-            title="+10s"
-          >
-            ↻
-          </button>
-
-          {/* Volume */}
-          <div className="flex items-center gap-1.5">
-            <button className="text-white hover:text-yellow-400 transition text-base" onClick={toggleMute}>
-              {muted || volume === 0 ? '🔇' : volume < 0.5 ? '🔉' : '🔊'}
-            </button>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={muted ? 0 : volume}
-              onChange={(e) => changeVolume(Number(e.target.value))}
-              className="w-16 accent-yellow-400 cursor-pointer"
-            />
-          </div>
-
-          {/* Time */}
-          <span className="text-white text-xs font-mono ml-1 shrink-0">
-            {formatTime(currentTime)} / {formatTime(duration)}
-          </span>
-
-          {/* Spacer */}
-          <div className="flex-1" />
-
-          {/* Subtitles */}
-          {subtitles.length > 0 && (
-            <div className="relative">
-              <button
-                className={`text-sm hover:text-yellow-400 transition ${activeSubtitle >= 0 ? 'text-yellow-400' : 'text-white'}`}
-                onClick={() => { setShowSubMenu((v) => !v); setShowSpeedMenu(false); setShowQualityMenu(false); }}
+              <path
+                d="M24 5L17.5 10.5L24 16"
+                stroke="currentColor"
+                strokeWidth="2.75"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <text
+                x="24"
+                y="29.5"
+                textAnchor="middle"
+                fill="currentColor"
+                fontSize="13.5"
+                fontWeight="700"
+                fontFamily="system-ui, -apple-system, sans-serif"
               >
-                CC
-              </button>
-              {showSubMenu && (
-                <div className="absolute bottom-8 right-0 bg-black/90 border border-white/10 rounded-lg min-w-max overflow-hidden z-20">
-                  <button
-                    className={`block w-full text-left px-4 py-2 text-sm hover:bg-white/10 ${activeSubtitle === -1 ? 'text-yellow-400' : 'text-white'}`}
-                    onClick={() => changeSubtitle(-1)}
-                  >
-                    Off
-                  </button>
-                  {subtitles.map((s, i) => (
-                    <button
-                      key={i}
-                      className={`block w-full text-left px-4 py-2 text-sm hover:bg-white/10 ${activeSubtitle === i ? 'text-yellow-400' : 'text-white'}`}
-                      onClick={() => changeSubtitle(i)}
-                    >
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+                10
+              </text>
+            </svg>
+          </button>
 
-          {/* Quality selector */}
-          {qualities.length > 0 && (
-            <div className="relative">
-              <button
-                className="text-white text-xs hover:text-yellow-400 transition"
-                onClick={() => { setShowQualityMenu((v) => !v); setShowSpeedMenu(false); setShowSubMenu(false); }}
-              >
-                {currentQuality === -1 ? 'Auto' : `${qualities.find(q => q.index === currentQuality)?.height ?? '?'}p`}
-              </button>
-              {showQualityMenu && (
-                <div className="absolute bottom-8 right-0 bg-black/90 border border-white/10 rounded-lg min-w-max overflow-hidden z-20">
-                  <button
-                    className={`block w-full text-left px-4 py-2 text-sm hover:bg-white/10 ${currentQuality === -1 ? 'text-yellow-400' : 'text-white'}`}
-                    onClick={() => changeQuality(-1)}
-                  >
-                    Auto
-                  </button>
-                  {[...qualities].sort((a, b) => b.height - a.height).map((q) => (
-                    <button
-                      key={q.index}
-                      className={`block w-full text-left px-4 py-2 text-sm hover:bg-white/10 ${currentQuality === q.index ? 'text-yellow-400' : 'text-white'}`}
-                      onClick={() => changeQuality(q.index)}
-                    >
-                      {q.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Speed selector */}
-          <div className="relative">
-            <button
-              className="text-white text-xs hover:text-yellow-400 transition"
-              onClick={() => { setShowSpeedMenu((v) => !v); setShowQualityMenu(false); setShowSubMenu(false); }}
-            >
-              {speed}x
-            </button>
-            {showSpeedMenu && (
-              <div className="absolute bottom-8 right-0 bg-black/90 border border-white/10 rounded-lg min-w-max overflow-hidden z-20">
-                {SPEEDS.map((s) => (
-                  <button
-                    key={s}
-                    className={`block w-full text-left px-4 py-2 text-sm hover:bg-white/10 ${speed === s ? 'text-yellow-400' : 'text-white'}`}
-                    onClick={() => changeSpeed(s)}
-                  >
-                    {s}x
-                  </button>
-                ))}
-              </div>
+          {/* Play / Pause */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              showControls();
+              togglePlay();
+            }}
+            className="pointer-events-auto flex h-16 w-16 items-center justify-center rounded-full text-white transition hover:scale-105 hover:bg-white/10 active:scale-95 sm:h-20 sm:w-20"
+            title={playing ? 'Pause (Space)' : 'Play (Space)'}
+            aria-label={playing ? 'Pause' : 'Play'}
+          >
+            {playing ? (
+              <Pause className="h-12 w-12 fill-white text-white sm:h-14 sm:w-14" strokeWidth={1.5} />
+            ) : (
+              <Play className="ml-1 h-12 w-12 fill-white text-white sm:h-14 sm:w-14" strokeWidth={1.5} />
             )}
-          </div>
-
-          {/* PiP */}
-          {supportsPiP && (
-            <button
-              className={`text-sm transition ${pip ? 'text-yellow-400' : 'text-white hover:text-yellow-400'}`}
-              onClick={togglePiP}
-              title="Picture-in-Picture"
-            >
-              ⧉
-            </button>
-          )}
-
-          {/* Fullscreen */}
-          <button
-            className="grid h-7 w-7 place-items-center rounded-full text-xs font-black text-white/70 transition hover:bg-white/10 hover:text-white"
-            onClick={() => setShowShortcutHelp(true)}
-            title="Keyboard shortcuts"
-          >
-            ?
           </button>
 
+          {/* Forward 10s */}
           <button
-            className="text-white hover:text-yellow-400 transition text-base"
-            onClick={toggleFullscreen}
-            title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              showControls();
+              seek(currentTime + 10);
+              flashFeedback('right');
+            }}
+            className="group pointer-events-auto relative flex h-14 w-14 items-center justify-center rounded-full text-white transition hover:scale-105 hover:bg-white/10 active:scale-95 sm:h-16 sm:w-16"
+            title="Forward 10 seconds"
+            aria-label="Forward 10 seconds"
           >
-            {fullscreen ? '⛶' : '⛶'}
+            <svg viewBox="0 0 48 48" className="h-11 w-11 sm:h-12 sm:w-12" fill="none">
+              <path
+                d="M24 10C32.28 10 39 16.72 39 25C39 33.28 32.28 40 24 40C15.72 40 9 33.28 9 25"
+                stroke="currentColor"
+                strokeWidth="2.75"
+                strokeLinecap="round"
+              />
+              <path
+                d="M24 5L30.5 10.5L24 16"
+                stroke="currentColor"
+                strokeWidth="2.75"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <text
+                x="24"
+                y="29.5"
+                textAnchor="middle"
+                fill="currentColor"
+                fontSize="13.5"
+                fontWeight="700"
+                fontFamily="system-ui, -apple-system, sans-serif"
+              >
+                10
+              </text>
+            </svg>
           </button>
         </div>
-      </div>
+      )}
+
+      {/* ── BOTTOM OVERLAY: Scrubber Line + Centered Pill Buttons ── */}
+      {!chromeOff && (
+        <div
+          className={`absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/90 via-black/55 to-transparent px-5 pb-5 pt-16 transition-opacity duration-300 sm:px-10 sm:pb-6 ${
+            controlsVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
+          }`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Row 1: [Elapsed Time]  [Slim Orange Scrubber with Circular Thumb]  [Total Duration]  [Speaker Circle] */}
+          <div className="flex items-center gap-3 sm:gap-4">
+            {/* Elapsed time */}
+            <span className="min-w-[42px] text-right font-sans text-xs font-medium tabular-nums text-white/90 sm:min-w-[48px] sm:text-sm">
+              {formatTime(currentTime)}
+            </span>
+
+            {/* Timeline Scrubber */}
+            <div
+              ref={progressRef}
+              className="group relative flex flex-1 cursor-pointer items-center py-3"
+              onClick={handleProgressClick}
+              onMouseMove={handleProgressHover}
+              onMouseLeave={() => setSeekTooltip(null)}
+            >
+              {/* Track background */}
+              <div className="relative h-1 w-full overflow-visible rounded-full bg-white/30 transition-all group-hover:h-1.5">
+                {/* Buffered */}
+                <div
+                  className="absolute left-0 top-0 h-full rounded-full bg-white/40"
+                  style={{ width: `${bufferedPct}%` }}
+                />
+                {/* Played (#FF6D2E theme orange) */}
+                <div
+                  className="absolute left-0 top-0 h-full rounded-full bg-[#FF6D2E]"
+                  style={{ width: `${progressPct}%` }}
+                />
+
+                {/* Mid-roll Ad Markers */}
+                {duration > 0 &&
+                  adMarkers.map((marker) => {
+                    const pct = Math.min(100, Math.max(0, (marker / duration) * 100));
+                    const isFired = firedAdMarkers.includes(marker);
+                    return (
+                      <span
+                        key={marker}
+                        className={`absolute top-1/2 z-10 h-2.5 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full transition ${
+                          isFired ? 'bg-white/45' : 'bg-[#FF8A54] ring-1 ring-black/60'
+                        }`}
+                        style={{ left: `${pct}%` }}
+                        title={`Ad break at ${formatTime(marker)}`}
+                        aria-label={`Ad break at ${formatTime(marker)}`}
+                      />
+                    );
+                  })}
+
+                {/* Always-visible circular orange thumb */}
+                <div
+                  className="
+                    absolute top-1/2 z-20 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2
+                    rounded-full bg-[#FF6D2E] shadow-[0_0_10px_rgba(255,109,46,0.9)]
+                    transition-transform group-hover:scale-125
+                  "
+                  style={{ left: `${progressPct}%` }}
+                />
+              </div>
+
+              {/* Hover timestamp tooltip */}
+              {seekTooltip && (
+                <div
+                  className="pointer-events-none absolute -top-7 -translate-x-1/2 rounded bg-[#141414]/95 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-white shadow-lg ring-1 ring-white/10"
+                  style={{ left: seekTooltip.x }}
+                >
+                  {seekTooltip.time}
+                </div>
+              )}
+            </div>
+
+            {/* Total duration */}
+            <span className="min-w-[42px] font-sans text-xs font-medium tabular-nums text-white/90 sm:min-w-[52px] sm:text-sm">
+              {formatTime(duration)}
+            </span>
+
+            {/* Circular Speaker / Volume Button */}
+            <div
+              className="relative flex items-center"
+              onMouseEnter={() => setShowVolumePopover(true)}
+              onMouseLeave={() => setShowVolumePopover(false)}
+            >
+              {showVolumePopover && (
+                <div className="absolute bottom-11 right-0 z-30 flex items-center gap-2.5 rounded-full border border-white/15 bg-[#141414]/95 px-3.5 py-2 shadow-2xl backdrop-blur-md">
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={muted ? 0 : volume}
+                    onChange={(e) => changeVolume(Number(e.target.value))}
+                    className="h-1 w-20 cursor-pointer accent-[#FF6D2E]"
+                    aria-label="Volume"
+                  />
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={toggleMute}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-md transition hover:bg-white/30"
+                title={muted || volume === 0 ? 'Unmute (M)' : 'Mute (M)'}
+                aria-label={muted || volume === 0 ? 'Unmute' : 'Mute'}
+              >
+                {muted || volume === 0 ? (
+                  <VolumeX className="h-4 w-4" strokeWidth={2.2} />
+                ) : (
+                  <Volume2 className="h-4 w-4" strokeWidth={2.2} />
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Row 2: Centered Pill Buttons ("Quality" and "Audio & Subtitles") */}
+          <div className="mt-3 flex items-center justify-center gap-3">
+            {/* Quality Pill + Upward Popover */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowQualityMenu((v) => !v);
+                  setShowSubMenu(false);
+                }}
+                className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold text-white backdrop-blur-md transition ${
+                  showQualityMenu
+                    ? 'bg-white/30 ring-1 ring-white/40'
+                    : 'bg-white/15 hover:bg-white/25'
+                }`}
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" strokeWidth={2.2} />
+                <span>
+                  Quality
+                  {currentQuality !== -1
+                    ? ` • ${
+                        fallbackQualityOptions.find((q) => q.index === currentQuality)?.height ??
+                        ''
+                      }p`
+                    : ''}
+                </span>
+              </button>
+
+              {showQualityMenu && (
+                <div className="absolute bottom-11 left-1/2 z-30 w-60 -translate-x-1/2 rounded-2xl border border-white/15 bg-[#141414]/95 p-3 shadow-2xl backdrop-blur-xl">
+                  <p className="px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-wider text-white/45">
+                    Video Quality
+                  </p>
+                  <div className="space-y-0.5">
+                    <button
+                      type="button"
+                      onClick={() => changeQuality(-1)}
+                      className={`flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-xs font-semibold transition ${
+                        currentQuality === -1
+                          ? 'bg-[#FF6D2E]/15 text-[#FF6D2E]'
+                          : 'text-white/85 hover:bg-white/10'
+                      }`}
+                    >
+                      <span>Auto ({qualityTag})</span>
+                      {currentQuality === -1 && <Check className="h-3.5 w-3.5 text-[#FF6D2E]" />}
+                    </button>
+
+                    {fallbackQualityOptions.map((q) => (
+                      <button
+                        key={q.index}
+                        type="button"
+                        onClick={() => changeQuality(q.index)}
+                        className={`flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-xs font-semibold transition ${
+                          currentQuality === q.index
+                            ? 'bg-[#FF6D2E]/15 text-[#FF6D2E]'
+                            : 'text-white/85 hover:bg-white/10'
+                        }`}
+                      >
+                        <span>{q.label}</span>
+                        {currentQuality === q.index && (
+                          <Check className="h-3.5 w-3.5 text-[#FF6D2E]" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Playback Speed row inside Quality popover */}
+                  <div className="mt-3 border-t border-white/10 pt-2.5">
+                    <p className="px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-wider text-white/45">
+                      Playback Speed
+                    </p>
+                    <div className="grid grid-cols-3 gap-1 px-1">
+                      {SPEEDS.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => changeSpeed(s)}
+                          className={`rounded-lg py-1 text-center text-[11px] font-semibold transition ${
+                            speed === s
+                              ? 'bg-[#FF6D2E] text-white'
+                              : 'bg-white/5 text-white/75 hover:bg-white/15'
+                          }`}
+                        >
+                          {s}x
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Audio & Subtitles Pill + Upward Popover */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSubMenu((v) => !v);
+                  setShowQualityMenu(false);
+                }}
+                className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold text-white backdrop-blur-md transition ${
+                  showSubMenu
+                    ? 'bg-white/30 ring-1 ring-white/40'
+                    : 'bg-white/15 hover:bg-white/25'
+                }`}
+              >
+                <Subtitles className="h-3.5 w-3.5" strokeWidth={2.2} />
+                <span>Audio & Subtitles</span>
+              </button>
+
+              {showSubMenu && (
+                <div className="absolute bottom-11 left-1/2 z-30 w-72 -translate-x-1/2 rounded-2xl border border-white/15 bg-[#141414]/95 p-3.5 shadow-2xl backdrop-blur-xl sm:w-80">
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Audio column */}
+                    <div>
+                      <p className="px-2 pb-1.5 text-[11px] font-bold uppercase tracking-wider text-white/45">
+                        Audio
+                      </p>
+                      <div className="space-y-0.5">
+                        {(audioTracks.length > 0
+                          ? audioTracks
+                          : [{ index: 0, label: 'Original' }]
+                        ).map((track) => (
+                          <button
+                            key={track.index}
+                            type="button"
+                            onClick={() => changeAudioTrack(track.index)}
+                            className={`flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-xs font-semibold transition ${
+                              activeAudioTrack === track.index
+                                ? 'bg-[#FF6D2E]/15 text-[#FF6D2E]'
+                                : 'text-white/85 hover:bg-white/10'
+                            }`}
+                          >
+                            <span className="truncate">{track.label}</span>
+                            {activeAudioTrack === track.index && (
+                              <Check className="h-3.5 w-3.5 shrink-0 text-[#FF6D2E]" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Subtitles column */}
+                    <div className="border-l border-white/10 pl-3">
+                      <p className="px-2 pb-1.5 text-[11px] font-bold uppercase tracking-wider text-white/45">
+                        Subtitles
+                      </p>
+                      <div className="space-y-0.5">
+                        <button
+                          type="button"
+                          onClick={() => changeSubtitle(-1)}
+                          className={`flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-xs font-semibold transition ${
+                            activeSubtitle === -1
+                              ? 'bg-[#FF6D2E]/15 text-[#FF6D2E]'
+                              : 'text-white/85 hover:bg-white/10'
+                          }`}
+                        >
+                          <span>Off</span>
+                          {activeSubtitle === -1 && (
+                            <Check className="h-3.5 w-3.5 shrink-0 text-[#FF6D2E]" />
+                          )}
+                        </button>
+
+                        {subtitles.map((s, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => changeSubtitle(i)}
+                            className={`flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-xs font-semibold transition ${
+                              activeSubtitle === i
+                                ? 'bg-[#FF6D2E]/15 text-[#FF6D2E]'
+                                : 'text-white/85 hover:bg-white/10'
+                            }`}
+                          >
+                            <span className="truncate">{s.label}</span>
+                            {activeSubtitle === i && (
+                              <Check className="h-3.5 w-3.5 shrink-0 text-[#FF6D2E]" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

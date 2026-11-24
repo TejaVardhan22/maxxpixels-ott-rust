@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Script from 'next/script';
 import {
@@ -10,8 +11,10 @@ import {
 } from '@ott/shared';
 import type { SubscriptionPackage, Coupon, LoginUserResult } from '@ott/shared';
 import SubscriptionCard from '@/components/payment/SubscriptionCard';
+import { PageShell } from '@/components/layout/PageChrome';
 import { useStoredUser, setStoredUser } from '@/lib/auth';
-import { Tag, X, Shield, CheckCircle } from 'lucide-react';
+import { useBranding } from '@/hooks/useBranding';
+import { ArrowLeft, Tag, X, Shield, Crown, Check, Loader2, LogOut } from 'lucide-react';
 import { trackEvent, trackFbEvent } from '@/lib/analytics';
 
 declare global {
@@ -31,9 +34,12 @@ export default function SubscriptionPage() {
 function SubscriptionContent() {
   const router       = useRouter();
   const searchParams = useSearchParams();
-  const { user }     = useStoredUser();
+  const { user, logout } = useStoredUser();
+  const brand        = useBranding();
+  const [logoError, setLogoError] = useState(false);
   const [wtLoading, setWtLoading]   = useState(false);
   const wtAttempted  = useRef(false);
+  const isVip        = Number(user?.is_buy ?? 0) === 1;
 
   // Track page view on mount
   useEffect(() => {
@@ -81,44 +87,72 @@ function SubscriptionContent() {
   // State for V1 discount (backend Express)
   const [discountAmountV1, setDiscountAmountV1] = useState<number | null>(null);
   const [validatedPlanId, setValidatedPlanId] = useState<number | null>(null);
+  const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!packages.length || selectedPlanId !== null) return;
+    const fromQuery = searchParams.get('package_id');
+    const queryMatch = fromQuery ? packages.find((p) => String(p.id) === fromQuery) : undefined;
+    const featured = packages.find((p) =>
+      /platinum|premium|annual/i.test(String(p.name ?? '')) && p.is_active_plan !== 1,
+    );
+    const firstNonActive = packages.find((p) => p.is_active_plan !== 1);
+    const initial = queryMatch || featured || firstNonActive || packages[0];
+    if (initial?.id != null) setSelectedPlanId(Number(initial.id));
+  }, [packages, selectedPlanId, searchParams]);
+
+  const selectedPkg =
+    packages.find((p) => Number(p.id) === selectedPlanId) ?? packages[0] ?? null;
 
   const handleApplyCoupon = async () => {
-    if (!couponCode.trim()) return;
+    const cleanCode = couponCode.trim().toUpperCase();
+    if (!cleanCode) return;
     setCouponError('');
     try {
-      const selectedPkg = packages.find(p => String(p.id) === searchParams.get('package_id')) ?? packages[0];
-      if (!selectedPkg) throw new Error('Select a subscription plan before applying a coupon.');
-      const basePrice = Number(selectedPkg.price ?? 0);
+      const targetPkg = selectedPkg ?? packages[0];
+      if (!targetPkg) throw new Error('Select a subscription plan before applying a coupon.');
+      const basePrice = Number(targetPkg.price ?? 0);
 
-      // Primary: try new Express backend /api/v1/coupons/validate
+      // Primary: Rust API GET /api/v1/coupons/validate (supports planId + amount)
       try {
-        const v1Res = await validateCouponV1.mutateAsync({ code: couponCode.trim(), amount: basePrice });
+        const v1Res = await validateCouponV1.mutateAsync({
+          code: cleanCode,
+          amount: basePrice,
+          planId: targetPkg.id,
+        });
         setDiscountAmountV1(v1Res.data);
-        setValidatedPlanId(Number(selectedPkg.id));
-        setApplied({ code: couponCode.trim().toUpperCase(), discount_amount: v1Res.data } as Coupon);
+        setValidatedPlanId(Number(targetPkg.id));
+        setApplied({ code: cleanCode, discount_amount: v1Res.data } as Coupon);
         setCouponCode('');
         return;
-      } catch {
-        // Fall through to legacy API
+      } catch (v1Err) {
+        // Fallback: POST /api/v1/plans/validate-coupon
         setDiscountAmountV1(null);
         setValidatedPlanId(null);
-      }
-
-      // Fallback: legacy apply_coupon endpoint
-      const selectedPackageId = Number(searchParams.get('package_id') || packages[0]?.id || 0);
-      if (!selectedPackageId) throw new Error('Select a subscription plan before applying a coupon.');
-      const res = await applyCouponMut.mutateAsync({
-        unique_id: couponCode.trim(),
-        user_id: userId,
-        package_id: selectedPackageId,
-        apply_coupon_type: 1,
-      });
-      if (res.status === 200 && res.result) {
-        const coupon = Array.isArray(res.result) ? res.result[0] : res.result;
-        setApplied(coupon as Coupon);
-        setCouponCode('');
-      } else {
-        setCouponError(res.message || 'Invalid coupon code.');
+        try {
+          const res = await applyCouponMut.mutateAsync({
+            code: cleanCode,
+            unique_id: cleanCode,
+            user_id: userId,
+            planId: targetPkg.id,
+            plan_id: targetPkg.id,
+            package_id: targetPkg.id,
+            amount: basePrice,
+            apply_coupon_type: 1,
+          });
+          const rawCoupon: any = (res as any)?.data ?? (Array.isArray(res.result) ? res.result[0] : res.result);
+          const disc = Number(rawCoupon?.discountAmount ?? rawCoupon?.discount_amount ?? NaN);
+          if (Number.isFinite(disc)) {
+            setDiscountAmountV1(disc);
+            setValidatedPlanId(Number(targetPkg.id));
+            setApplied({ code: cleanCode, discount_amount: disc } as Coupon);
+            setCouponCode('');
+            return;
+          }
+          throw new Error(res.message || (v1Err instanceof Error ? v1Err.message : 'Invalid coupon code.'));
+        } catch (fallbackErr) {
+          throw fallbackErr instanceof Error ? fallbackErr : v1Err;
+        }
       }
     } catch (err: unknown) {
       setCouponError(err instanceof Error ? err.message : 'Failed to apply coupon.');
@@ -167,6 +201,7 @@ function loadRazorpay(): Promise<boolean> {
         const validation = await validateCouponV1.mutateAsync({
           code: appliedCoupon.code,
           amount: Number(pkg.price ?? 0),
+          planId: pkg.id,
         });
         price = Math.max(0, Number(pkg.price ?? 0) - validation.data);
       }
@@ -284,7 +319,7 @@ function loadRazorpay(): Promise<boolean> {
             recurring: String(isAutopay ? 1 : 0),
           },
           theme: {
-            color: '#e50914',
+            color: '#FF6D2E',
           },
           ...(isAutopay
             ? {
@@ -354,14 +389,21 @@ function loadRazorpay(): Promise<boolean> {
 
   if (wtLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <PageShell className="grid min-h-[calc(100vh-5rem)] place-items-center">
         <div className="text-center">
-          <div className="w-12 h-12 border-2 border-primary/30 border-t-primary rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-white font-semibold">Setting up your session…</p>
+          <div className="mx-auto mb-4 h-11 w-11 animate-spin rounded-full border-2 border-[#FF6D2E]/30 border-t-[#FF6D2E]" />
+          <p className="text-sm font-semibold text-white">Setting up your session…</p>
         </div>
-      </div>
+      </PageShell>
     );
   }
+
+  const gridColsClass =
+    packages.length >= 4
+      ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 max-w-[1360px]'
+      : packages.length === 2
+      ? 'grid-cols-1 md:grid-cols-2 max-w-3xl'
+      : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 max-w-5xl';
 
   return (
     <>
@@ -375,147 +417,277 @@ function loadRazorpay(): Promise<boolean> {
         }}
       />
 
-      <div className="min-h-screen pt-24 pb-20">
-        {/* Hero header */}
-        <div className="text-center mb-10 px-4">
-          <span className="inline-block text-xs font-bold tracking-widest uppercase text-primary border border-primary/30 px-3 py-1 rounded-full mb-4">
-            Subscription Plans
-          </span>
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-white mb-3">
-            Choose Your Plan
-          </h1>
-          <p className="text-muted-text text-base max-w-lg mx-auto">
-            Unlock unlimited entertainment. Cancel anytime.
-          </p>
-        </div>
+      <div className="min-h-screen bg-[#0A0A0A] text-white">
+        {/* Minimal Netflix-Style Subscription Header (No Full Navbar or Footer) */}
+        <header className="border-b border-white/[0.08] bg-[#0A0A0A]/95 backdrop-blur-xl">
+          <div className="mx-auto flex h-[72px] max-w-[1200px] items-center justify-between gap-4 px-4 sm:px-6">
+            {isVip ? (
+              <Link href="/" className="inline-flex items-center focus:outline-none">
+                {brand.logoUrl && !logoError ? (
+                  <img
+                    src={brand.logoUrl}
+                    alt={brand.name}
+                    onError={() => setLogoError(true)}
+                    className="h-9 max-w-[170px] object-contain sm:h-11 sm:max-w-[200px]"
+                  />
+                ) : (
+                  <span className="text-xl font-black tracking-tight text-white sm:text-2xl">
+                    {brand.name}
+                  </span>
+                )}
+              </Link>
+            ) : (
+              <div className="inline-flex items-center select-none">
+                {brand.logoUrl && !logoError ? (
+                  <img
+                    src={brand.logoUrl}
+                    alt={brand.name}
+                    onError={() => setLogoError(true)}
+                    className="h-9 max-w-[170px] object-contain sm:h-11 sm:max-w-[200px]"
+                  />
+                ) : (
+                  <span className="text-xl font-black tracking-tight text-white sm:text-2xl">
+                    {brand.name}
+                  </span>
+                )}
+              </div>
+            )}
 
-        {/* Guest prompt if not signed in */}
-        {!userId && (
-          <div className="max-w-md mx-auto mb-8 bg-surface/90 border border-primary/30 rounded-2xl px-5 py-3.5 flex items-center justify-between shadow-lg">
             <div className="flex items-center gap-3">
-              <Shield size={20} className="text-primary flex-shrink-0" />
-              <div className="text-left">
-                <p className="text-xs font-bold text-white">Already have an account?</p>
-                <p className="text-[11px] text-muted-text">Sign in to activate or renew your subscription</p>
-              </div>
+              {isVip && (
+                <Link
+                  href="/"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-4 text-xs font-semibold text-white transition hover:bg-white/15"
+                >
+                  <ArrowLeft size={14} />
+                  <span>Back to Home</span>
+                </Link>
+              )}
+
+              {userId ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    logout();
+                    router.replace('/login');
+                  }}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-4 text-xs font-bold text-white/90 transition hover:border-white/35 hover:bg-white/15 hover:text-white"
+                >
+                  <LogOut size={13} />
+                  <span>Sign Out</span>
+                </button>
+              ) : (
+                <Link
+                  href="/login?redirect=/subscription"
+                  className="inline-flex h-9 items-center rounded-full bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] px-4 text-xs font-bold text-white transition hover:brightness-110"
+                >
+                  Sign In
+                </Link>
+              )}
             </div>
-            <button
-              onClick={() => router.push('/login?redirect=/subscription')}
-              className="btn-primary text-xs font-bold px-4 py-2 rounded-lg shrink-0 ml-3"
-            >
-              Sign In
-            </button>
           </div>
-        )}
+        </header>
 
-        <div className="page-section">
-          {/* Trust indicators */}
-          <div className="flex flex-wrap justify-center gap-6 mb-10">
-            {[
-              { icon: <CheckCircle size={14} className="text-primary" />, text: 'HD & 4K Streaming' },
-              { icon: <CheckCircle size={14} className="text-primary" />, text: 'Cancel Anytime' },
-              { icon: <CheckCircle size={14} className="text-primary" />, text: 'Multi-Device' },
-              { icon: <CheckCircle size={14} className="text-primary" />, text: 'Offline Downloads' },
-            ].map((item) => (
-              <div key={item.text} className="flex items-center gap-2 text-sm text-body-text">
-                {item.icon} {item.text}
+        <PageShell className="pb-20 pt-8 sm:pt-12">
+        <div className="mx-auto max-w-[1200px]">
+          {/* Netflix-Style Left-Aligned Plan Picker Header */}
+          <div className="mb-8 max-w-2xl">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#FF8A54]">
+              Choose your plan
+            </p>
+            <h1 className="mt-1.5 text-3xl font-black tracking-tight text-white sm:text-4xl">
+              Choose the plan that&apos;s right for you
+            </h1>
+            <ul className="mt-4 space-y-1.5 text-sm text-zinc-300">
+              {[
+                'Watch all you want — movies, series, short films & originals.',
+                'Stream across Smart TV, Web, and Mobile devices.',
+                'Change or cancel your plan anytime.',
+              ].map((line) => (
+                <li key={line} className="flex items-center gap-2.5">
+                  <Check size={16} className="shrink-0 text-[#FF6D2E]" strokeWidth={2.5} />
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Guest prompt if not signed in */}
+          {!userId && (
+            <div className="mb-6 flex max-w-md items-center justify-between gap-3 rounded-xl border border-white/[0.1] bg-[#141414] px-5 py-3.5">
+              <div className="flex items-center gap-3">
+                <Shield size={18} className="shrink-0 text-[#FF6D2E]" />
+                <div className="text-left">
+                  <p className="text-xs font-bold text-white">Already a member?</p>
+                  <p className="text-[11px] text-zinc-400">Sign in to activate or renew your plan</p>
+                </div>
               </div>
-            ))}
-          </div>
-
-          {/* Error */}
-          {error && (
-            <div className="mb-6 flex items-start gap-3 rounded-xl border border-accent/30 bg-accent/8 px-5 py-4 text-sm text-accent max-w-2xl mx-auto">
-              <X size={16} className="flex-shrink-0 mt-0.5" strokeWidth={2.5} />
-              {error}
+              <button
+                onClick={() => router.push('/login?redirect=/subscription')}
+                className="shrink-0 rounded-md bg-white px-4 py-1.5 text-xs font-bold text-zinc-950 transition hover:bg-zinc-200"
+              >
+                Sign In
+              </button>
             </div>
           )}
 
-          {/* Coupon section */}
-          <div className="max-w-sm mx-auto mb-10">
-            <div className="bg-surface border border-ott-border rounded-2xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Tag size={14} className="text-primary" strokeWidth={2} />
-                <p className="text-sm font-semibold text-white">Have a coupon?</p>
-              </div>
-              {appliedCoupon ? (
-                <div className="flex items-center justify-between bg-primary/10 border border-primary/30 rounded-xl px-4 py-2.5">
-                  <div>
-                    <span className="text-xs font-bold text-primary">{appliedCoupon.unique_id ?? appliedCoupon.code}</span>
-                    <span className="text-xs text-desc-text ml-2">
-                      — ₹{Number(appliedCoupon.discount_amount ?? 0).toFixed(2)} off
-                    </span>
-                  </div>
-                  <button onClick={() => { setApplied(null); setDiscountAmountV1(null); setValidatedPlanId(null); }} className="text-muted-text hover:text-accent transition-colors">
-                    <X size={14} strokeWidth={2.5} />
-                  </button>
-                </div>
-              ) : (
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={couponCode}
-                    onChange={(e) => { setCouponCode(e.target.value.toUpperCase()); setCouponError(''); }}
-                    placeholder="COUPON CODE"
-                    className="ott-input text-sm tracking-widest uppercase flex-1 min-w-0"
-                  />
-                  <button
-                    onClick={handleApplyCoupon}
-                    disabled={applyCouponMut.isPending || validateCouponV1.isPending || !couponCode.trim()}
-                    className="btn-primary px-4 py-2.5 rounded-lg text-sm disabled:opacity-40"
-                  >
-                    {(applyCouponMut.isPending || validateCouponV1.isPending) ? '…' : 'Apply'}
-                  </button>
-                </div>
-              )}
-              {couponError && (
-                <p className="text-accent text-xs mt-2">{couponError}</p>
-              )}
+          {/* Error */}
+          {error && (
+            <div className="mb-6 flex max-w-2xl items-start gap-3 rounded-lg border border-[#FF6D2E]/40 bg-[#FF6D2E]/12 px-4 py-3 text-sm text-[#FFB088]">
+              <X size={16} className="mt-0.5 shrink-0" strokeWidth={2.5} />
+              <span>{error}</span>
             </div>
-          </div>
+          )}
 
-          {/* Plans grid */}
+          {/* Plans Grid */}
           {packagesQ.isLoading ? (
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5 max-w-4xl mx-auto">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="bg-surface rounded-2xl p-6 animate-pulse h-64">
-                  <div className="h-5 bg-shimmer rounded w-1/2 mb-4" />
-                  <div className="h-10 bg-shimmer rounded w-1/3 mb-2" />
-                  <div className="h-3 bg-shimmer rounded w-1/4 mb-8" />
-                  <div className="space-y-2">
-                    {[1,2,3].map(j => <div key={j} className="h-3 bg-shimmer rounded" />)}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-[460px] animate-pulse rounded-2xl border border-white/[0.08] bg-[#141414] p-4">
+                  <div className="mb-5 h-24 rounded-xl bg-white/[0.07]" />
+                  <div className="space-y-4 px-2">
+                    {[1, 2, 3, 4, 5].map((j) => (
+                      <div key={j} className="h-8 rounded bg-white/[0.06]" />
+                    ))}
                   </div>
                 </div>
               ))}
             </div>
           ) : packagesQ.isError ? (
-            <div className="text-center py-12">
-              <p className="text-accent">Unable to load subscription plans.</p>
-              <button onClick={() => packagesQ.refetch()} className="btn-primary mt-4 px-6 py-3">Try again</button>
+            <div className="py-12 text-center">
+              <p className="text-sm text-red-400">Unable to load subscription plans.</p>
+              <button
+                onClick={() => packagesQ.refetch()}
+                className="mt-4 rounded-md bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] px-6 py-2.5 text-xs font-bold text-white"
+              >
+                Try again
+              </button>
             </div>
           ) : packages.length > 0 ? (
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5 max-w-4xl mx-auto">
-              {packages.map((pkg, i) => (
-                <SubscriptionCard
-                  key={pkg.id ?? i}
-                  pkg={pkg}
-                  onSubscribe={handleSubscribe}
-                  loading={processingId === pkg.id}
-                  checkoutReady={razorpayReady && processingId === null}
-                  discountedPrice={appliedCoupon && (discountAmountV1 === null || validatedPlanId === Number(pkg.id))
-                    ? effectivePrice(pkg.price as number)
-                    : undefined}
-                />
-              ))}
-            </div>
+            <>
+              <div className={`grid gap-4 ${gridColsClass}`}>
+                {packages.map((pkg, i) => (
+                  <SubscriptionCard
+                    key={pkg.id ?? i}
+                    pkg={pkg}
+                    selected={Number(pkg.id) === selectedPlanId}
+                    onSelect={(p) => setSelectedPlanId(Number(p.id))}
+                    onSubscribe={handleSubscribe}
+                    loading={processingId === pkg.id}
+                    checkoutReady={razorpayReady && processingId === null}
+                    discountedPrice={
+                      appliedCoupon && (discountAmountV1 === null || validatedPlanId === Number(pkg.id))
+                        ? effectivePrice(pkg.price as number)
+                        : undefined
+                    }
+                  />
+                ))}
+              </div>
+
+              {/* Compact Coupon Bar + Centered Netflix-Style Next/Subscribe CTA */}
+              <div className="mx-auto mt-10 max-w-md space-y-5">
+                <div className="rounded-xl border border-white/[0.1] bg-[#141414] p-3">
+                  {appliedCoupon ? (
+                    <div className="flex items-center justify-between rounded-lg border border-[#FF6D2E]/35 bg-[#FF6D2E]/10 px-3.5 py-2">
+                      <div className="flex items-center gap-2">
+                        <Tag size={14} className="text-[#FF8A54]" />
+                        <span className="text-xs font-bold text-[#FF8A54]">
+                          {appliedCoupon.unique_id ?? appliedCoupon.code}
+                        </span>
+                        <span className="text-xs text-zinc-300">
+                          — ₹{Number(appliedCoupon.discount_amount ?? 0).toFixed(2)} off
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setApplied(null);
+                          setDiscountAmountV1(null);
+                          setValidatedPlanId(null);
+                        }}
+                        className="text-zinc-400 transition hover:text-white"
+                        aria-label="Remove coupon"
+                      >
+                        <X size={14} strokeWidth={2.5} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <Tag
+                          size={14}
+                          className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#FF8A54]"
+                        />
+                        <input
+                          type="text"
+                          value={couponCode}
+                          onChange={(e) => {
+                            setCouponCode(e.target.value.toUpperCase());
+                            setCouponError('');
+                          }}
+                          placeholder="Have a coupon code?"
+                          className="h-10 w-full rounded-md border border-white/15 bg-[#181818] pl-9 pr-3 text-xs font-semibold uppercase tracking-wider text-white placeholder:normal-case placeholder:tracking-normal placeholder:text-zinc-500 focus:border-[#FF6D2E] focus:outline-none"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleApplyCoupon}
+                        disabled={
+                          applyCouponMut.isPending || validateCouponV1.isPending || !couponCode.trim()
+                        }
+                        className="h-10 shrink-0 rounded-md bg-white/[0.1] px-4 text-xs font-bold text-white transition hover:bg-white/[0.18] disabled:opacity-40"
+                      >
+                        {applyCouponMut.isPending || validateCouponV1.isPending ? '…' : 'Apply'}
+                      </button>
+                    </div>
+                  )}
+                  {couponError && <p className="mt-2 px-1 text-xs text-[#FFB088]">{couponError}</p>}
+                </div>
+
+                {selectedPkg && (
+                  <button
+                    type="button"
+                    disabled={
+                      selectedPkg.is_active_plan === 1 ||
+                      processingId !== null ||
+                      (!razorpayReady && effectivePrice(Number(selectedPkg.price ?? 0)) > 0)
+                    }
+                    onClick={() => handleSubscribe(selectedPkg)}
+                    className="flex h-14 w-full items-center justify-center gap-2 rounded-md bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] text-base font-bold text-white shadow-[0_10px_30px_rgba(255,109,46,0.45)] transition hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {processingId === selectedPkg.id ? (
+                      <>
+                        <Loader2 size={18} className="animate-spin" />
+                        <span>Starting Checkout...</span>
+                      </>
+                    ) : selectedPkg.is_active_plan === 1 ? (
+                      <span>Current Active Plan</span>
+                    ) : (
+                      <span>
+                        Continue with {selectedPkg.name} • {selectedPkg.currency_code ?? '₹'}
+                        {appliedCoupon && (discountAmountV1 === null || validatedPlanId === Number(selectedPkg.id))
+                          ? effectivePrice(Number(selectedPkg.price ?? 0))
+                          : selectedPkg.price}
+                      </span>
+                    )}
+                  </button>
+                )}
+
+                <p className="text-center text-[11px] leading-relaxed text-zinc-500">
+                  Secure checkout powered by Razorpay. HD &amp; 4K availability depends on your
+                  internet service and device capabilities.
+                </p>
+              </div>
+            </>
           ) : (
-            <div className="text-center py-20">
-              <p className="text-5xl mb-4">📋</p>
-              <p className="text-xl font-bold text-white mb-2">No plans available</p>
-              <p className="text-muted-text">Please check back later</p>
+            <div className="mx-auto max-w-md rounded-xl border border-white/[0.1] bg-[#141414] py-14 text-center">
+              <Crown size={32} className="mx-auto mb-3 text-[#FF8A54]" />
+              <p className="text-lg font-bold text-white">No plans available</p>
+              <p className="mt-1 text-xs text-zinc-400">Please check back later.</p>
             </div>
           )}
         </div>
+      </PageShell>
       </div>
     </>
   );

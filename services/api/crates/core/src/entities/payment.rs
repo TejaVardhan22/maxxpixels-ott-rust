@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
+    pub payment_id: Option<String>,
+    pub order_id: Option<String>,
     pub amount: Decimal,
     pub created_at: DateTimeWithTimeZone,
     pub payment_method: Option<String>,

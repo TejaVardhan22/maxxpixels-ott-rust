@@ -1,194 +1,220 @@
 'use client';
 
-import { Check, Crown, Zap } from 'lucide-react';
+import { Check, Crown } from 'lucide-react';
 import clsx from 'clsx';
 import type { SubscriptionPackage } from '@ott/shared';
 
 interface Props {
-  pkg:              SubscriptionPackage;
-  onSubscribe:      (pkg: SubscriptionPackage) => void;
-  loading?:         boolean;
+  pkg: SubscriptionPackage;
+  selected?: boolean;
+  onSelect?: (pkg: SubscriptionPackage) => void;
+  onSubscribe: (pkg: SubscriptionPackage) => void;
+  loading?: boolean;
   discountedPrice?: number;
-  checkoutReady?:   boolean;
+  checkoutReady?: boolean;
 }
 
-export default function SubscriptionCard({ pkg, onSubscribe, loading, discountedPrice, checkoutReady = true }: Props) {
-  const isActive    = pkg.is_active_plan === 1;
-  const duration    = pkg.duration ?? pkg.time;
+export default function SubscriptionCard({
+  pkg,
+  selected = false,
+  onSelect,
+  onSubscribe,
+  loading,
+  discountedPrice,
+  checkoutReady = true,
+}: Props) {
+  const isActive = pkg.is_active_plan === 1;
+  const duration = pkg.duration ?? pkg.time;
   const durationType = pkg.duration_type ?? pkg.type ?? 'days';
-  const basePrice   = pkg.price as number;
+  const basePrice = Number(pkg.price ?? 0);
   const showDiscount = discountedPrice !== undefined && discountedPrice < basePrice;
 
-  // Highlight the "middle" plan visually
-  const isFeatured = !isActive && (pkg.name?.toLowerCase().includes('premium') || pkg.name?.toLowerCase().includes('annual'));
+  const lowerName = String(pkg.name ?? '').toLowerCase();
+  const isFeatured =
+    !isActive &&
+    (lowerName.includes('platinum') ||
+      lowerName.includes('premium') ||
+      lowerName.includes('annual'));
 
   const isFree = discountedPrice === 0;
-  const canInteract = !isActive && !loading && (checkoutReady || isFree);
-
   const pkgAny = pkg as any;
   const rawBp = (pkg.billing_period || pkgAny.billingPeriod || '').toUpperCase();
-  let validityText = '';
-  if (rawBp.includes('DAILY') || rawBp === 'DAY_1' || rawBp === '1_DAY') validityText = '1 Day Pass (24 Hours)';
-  else if (rawBp.includes('WEEK') || rawBp === 'DAY_7' || rawBp === '7_DAYS') validityText = '7 Days Pass';
-  else if (rawBp.includes('MONTH') || rawBp === 'MONTH_1') validityText = '1 Month Access';
-  else if (rawBp.includes('QUART') || rawBp === 'MONTH_3') validityText = '3 Months Access';
-  else if (rawBp.includes('YEAR') || rawBp.includes('ANNUAL') || rawBp === 'YEAR_1') validityText = '1 Year (Annual Pass)';
-  else if (rawBp === 'ONE_TIME' || rawBp === 'LIFETIME') validityText = 'Lifetime Access';
-  else if (duration) validityText = `${duration} ${durationType}`;
-  else validityText = rawBp || 'Active Subscription';
 
-  const features = (pkg.data && pkg.data.length > 0)
-    ? pkg.data
-    : [
-        { id: 1, title: `${pkgAny.maxResolution || pkgAny.max_resolution || '1080p Full HD'} streaming` },
-        { id: 2, title: `Watch on ${pkgAny.maxDevices || pkgAny.max_devices || 2} allowed devices` },
-        { id: 3, title: `${pkgAny.maxConcurrentStreams || pkgAny.max_concurrent_streams || 1} concurrent stream(s)` },
-        (pkgAny.downloadsEnabled ?? pkgAny.downloads_enabled ?? true) ? { id: 4, title: 'Offline video downloads' } : null,
-        (pkgAny.adsEnabled ?? pkgAny.ads_enabled) ? { id: 5, title: 'Contains ads (AVOD)' } : { id: 5, title: '100% Ad-free streaming' },
-        (pkgAny.trialDays > 0 || pkgAny.trial_days > 0) ? { id: 6, title: `${pkgAny.trialDays || pkgAny.trial_days} days free trial` } : null,
-      ].filter(Boolean) as { id: number; title: string }[];
+  let validityText = '';
+  if (rawBp.includes('DAILY') || rawBp === 'DAY_1' || rawBp === '1_DAY') validityText = '1 Day';
+  else if (rawBp.includes('WEEK') || rawBp === 'DAY_7' || rawBp === '7_DAYS') validityText = '7 Days';
+  else if (rawBp.includes('MONTH') || rawBp === 'MONTH_1') validityText = 'Month';
+  else if (rawBp.includes('QUART') || rawBp === 'MONTH_3') validityText = '3 Months';
+  else if (rawBp.includes('YEAR') || rawBp.includes('ANNUAL') || rawBp === 'YEAR_1') validityText = 'Year';
+  else if (rawBp === 'ONE_TIME' || rawBp === 'LIFETIME') validityText = 'Lifetime';
+  else if (duration) validityText = `${duration} ${durationType}`;
+  else validityText = rawBp || 'Plan';
+
+  const resolution = String(pkgAny.maxResolution || pkgAny.max_resolution || '1080p').toUpperCase();
+  const maxDevices = Number(pkgAny.maxDevices || pkgAny.max_devices || 2);
+  const maxStreams = Number(pkgAny.maxConcurrentStreams || pkgAny.max_concurrent_streams || 1);
+  const downloadsEnabled = pkgAny.downloadsEnabled ?? pkgAny.downloads_enabled ?? true;
+  const adsEnabled = Boolean(pkgAny.adsEnabled ?? pkgAny.ads_enabled);
+
+  const qualityLabel = resolution.includes('4K') || resolution.includes('2160')
+    ? 'Best (4K + HDR)'
+    : resolution.includes('1080')
+    ? 'Great (Full HD)'
+    : 'Good (HD)';
+
+  const customFeatures =
+    pkg.data && pkg.data.length > 0
+      ? pkg.data.map((d: any) => String(d.title ?? '').trim()).filter(Boolean)
+      : [];
+
+  // Netflix-style gradient header band per tier (strictly in obsidian + theme orange spectrum)
+  const headerGradient = isActive
+    ? 'from-emerald-700 via-emerald-800 to-[#141414]'
+    : isFeatured
+    ? 'from-[#FF6D2E] via-[#C84312] to-[#3B1508]'
+    : selected
+    ? 'from-[#E85D1F] via-[#8F310E] to-[#26110A]'
+    : 'from-[#2A2A2A] via-[#1F1F1F] to-[#141414]';
 
   return (
     <div
-      role={isActive ? undefined : 'button'}
-      tabIndex={isActive ? -1 : 0}
-      aria-disabled={!canInteract}
+      role="button"
+      tabIndex={0}
       onClick={() => {
-        if (canInteract) onSubscribe(pkg);
+        if (onSelect) onSelect(pkg);
+        else if (!isActive && !loading && (checkoutReady || isFree)) onSubscribe(pkg);
       }}
-      onKeyDown={(event) => {
-        if ((event.key === 'Enter' || event.key === ' ') && canInteract) {
-          event.preventDefault();
-          onSubscribe(pkg);
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          if (onSelect) onSelect(pkg);
+          else if (!isActive && !loading && (checkoutReady || isFree)) onSubscribe(pkg);
         }
       }}
       className={clsx(
-        'relative rounded-2xl p-6 flex flex-col transition-all duration-300 overflow-hidden',
-        isFeatured
-          ? 'bg-[#111827] border-2 border-primary/60 shadow-glow'
-          : 'bg-surface border border-ott-border hover:border-white/20',
-        isActive && 'border-2 border-primary',
-        isFree && !isActive && 'border-2 border-emerald-500/80 shadow-[0_0_20px_rgba(16,185,129,0.2)]',
-        canInteract && 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+        'relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border bg-[#141414] transition-all duration-250 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6D2E]',
+        isActive
+          ? 'border-emerald-500/70 shadow-[0_16px_44px_rgba(16,185,129,0.16)]'
+          : selected
+          ? 'border-[#FF6D2E] shadow-[0_20px_50px_rgba(255,109,46,0.22)] ring-1 ring-[#FF6D2E]'
+          : 'border-white/[0.12] hover:border-white/30',
       )}
     >
-      {/* Featured / Free ribbon */}
-      {isFree && !isActive ? (
-        <div className="absolute top-0 right-0">
-          <div className="bg-emerald-500 text-black text-[9px] font-black tracking-widest uppercase px-4 py-1.5 rounded-bl-xl shadow-md">
-            100% FREE COUPON
-          </div>
+      {/* Netflix-style Top Popular / Active Strip */}
+      {isActive ? (
+        <div className="bg-emerald-600 py-1 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white">
+          Current Active Plan
         </div>
-      ) : isFeatured && !isActive && (
-        <div className="absolute top-0 right-0">
-          <div className="bg-primary text-white text-[9px] font-black tracking-widest uppercase px-4 py-1.5 rounded-bl-xl">
-            MOST POPULAR
-          </div>
+      ) : isFeatured ? (
+        <div className="bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] py-1 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white">
+          Most Popular
         </div>
-      )}
+      ) : null}
 
-      {/* Active plan badge */}
-      {isActive && (
-        <div className="absolute top-0 left-0 right-0 h-1 bg-primary" />
-      )}
-
-      {/* Plan name + icon */}
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-2.5">
-          <div className={clsx(
-            'w-9 h-9 rounded-xl flex items-center justify-center',
-            isFree ? 'bg-emerald-500/20 text-emerald-400' : isFeatured ? 'bg-primary/20 text-primary' : 'bg-surface-light text-desc-text',
-          )}>
-            {isFeatured
-              ? <Crown size={16} strokeWidth={2} />
-              : <Zap size={16} strokeWidth={2} />}
-          </div>
-          <div>
-            <h3 className="text-base font-bold text-white">{pkg.name}</h3>
-            {isActive && (
-              <span className="text-[10px] font-semibold text-primary">Active Plan</span>
+      <div className="flex flex-1 flex-col p-3.5 sm:p-4">
+        {/* Netflix Signature Gradient Plan Header Card */}
+        <div
+          className={clsx(
+            'relative overflow-hidden rounded-xl bg-gradient-to-br p-4 text-left',
+            headerGradient,
+          )}
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h3 className="text-lg font-black tracking-tight text-white">{pkg.name}</h3>
+              <p className="mt-0.5 text-xs font-semibold text-white/80">{resolution}</p>
+            </div>
+            {isFeatured && !isActive && (
+              <Crown size={16} className="shrink-0 text-white/90" />
             )}
           </div>
-        </div>
-      </div>
 
-      {/* Price */}
-      <div className="mb-5">
-        {showDiscount ? (
-          <div className="flex items-baseline gap-2">
-            <span className={clsx('text-4xl font-black', isFree ? 'text-emerald-400' : isFeatured ? 'text-primary' : 'text-white')}>
-              {pkg.currency_code ?? '₹'}{discountedPrice}
+          {/* Crisp Selected Checkmark */}
+          {(selected || isActive) && (
+            <span className="absolute bottom-3 right-3 grid h-6 w-6 place-items-center rounded-full bg-white text-[#0A0A0A] shadow-md">
+              <Check size={14} strokeWidth={3} />
             </span>
-            <span className="text-desc-text line-through text-lg">
-              {pkg.currency_code ?? '₹'}{basePrice}
-            </span>
-            {isFree && (
-              <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded ml-1">
-                FREE
-              </span>
+          )}
+        </div>
+
+        {/* Hairline-Separated Spec Rows (Exact Netflix Card Table) */}
+        <div className="mt-2 flex-1 divide-y divide-white/[0.08] px-1.5 text-left">
+          {/* Price Row */}
+          <div className="py-3.5">
+            <p className="text-[11px] font-medium text-zinc-400">Plan price</p>
+            {showDiscount ? (
+              <div className="mt-0.5 flex items-baseline gap-2">
+                <span className="text-lg font-black text-white">
+                  {pkg.currency_code ?? '₹'}
+                  {discountedPrice}
+                </span>
+                <span className="text-xs text-zinc-500 line-through">
+                  {pkg.currency_code ?? '₹'}
+                  {basePrice}
+                </span>
+                <span className="text-xs font-medium text-zinc-400">/ {validityText}</span>
+              </div>
+            ) : (
+              <p className="mt-0.5 text-lg font-black text-white">
+                {pkg.currency_code ?? '₹'}
+                {basePrice}{' '}
+                <span className="text-xs font-medium text-zinc-400">/ {validityText}</span>
+              </p>
             )}
           </div>
-        ) : (
-          <div className="flex items-baseline gap-1">
-            <span className={clsx('text-4xl font-black', isFeatured ? 'text-primary' : 'text-white')}>
-              {pkg.currency_code ?? '₹'}{basePrice}
-            </span>
+
+          {/* Video & Sound Quality */}
+          <div className="py-3">
+            <p className="text-[11px] font-medium text-zinc-400">Video and sound quality</p>
+            <p className="mt-0.5 text-sm font-bold text-white">{qualityLabel}</p>
           </div>
-        )}
-        <p className="text-xs text-muted-text mt-1">
-          for {validityText}
-        </p>
+
+          {/* Resolution */}
+          <div className="py-3">
+            <p className="text-[11px] font-medium text-zinc-400">Resolution</p>
+            <p className="mt-0.5 text-sm font-bold text-white">{resolution}</p>
+          </div>
+
+          {/* Supported Devices */}
+          <div className="py-3">
+            <p className="text-[11px] font-medium text-zinc-400">Supported devices</p>
+            <p className="mt-0.5 text-xs font-semibold text-zinc-200">
+              TV, computer, mobile phone, tablet
+            </p>
+          </div>
+
+          {/* Simultaneous Streams */}
+          <div className="py-3">
+            <p className="text-[11px] font-medium text-zinc-400">
+              Devices you can watch at the same time
+            </p>
+            <p className="mt-0.5 text-sm font-bold text-white">{maxStreams}</p>
+          </div>
+
+          {/* Max Registered Devices & Ads/Downloads */}
+          <div className="py-3">
+            <p className="text-[11px] font-medium text-zinc-400">Registered devices &amp; perks</p>
+            <p className="mt-0.5 text-xs font-semibold text-zinc-200">
+              Up to {maxDevices} devices • {adsEnabled ? 'Ad-supported' : 'Ad-free'}
+              {downloadsEnabled ? ' • Downloads' : ''}
+            </p>
+          </div>
+
+          {customFeatures.length > 0 && (
+            <div className="py-3">
+              <p className="text-[11px] font-medium text-zinc-400">Included</p>
+              <ul className="mt-1 space-y-1">
+                {customFeatures.slice(0, 3).map((feat, idx) => (
+                  <li key={idx} className="flex items-center gap-1.5 text-xs text-zinc-200">
+                    <Check size={12} className="shrink-0 text-[#FF6D2E]" strokeWidth={2.5} />
+                    <span className="truncate">{feat}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       </div>
-
-      {/* Features list */}
-      {features.length > 0 && (
-        <ul className="space-y-2.5 mb-6 flex-1">
-          {features.map((d, i) => (
-            <li key={d.id ?? i} className="flex items-start gap-2.5 text-sm">
-              <Check size={14} className={isFree ? "text-emerald-400 flex-shrink-0 mt-0.5" : "text-primary flex-shrink-0 mt-0.5"} strokeWidth={2.5} />
-              <span className="text-body-text">{d.title}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {/* CTA button */}
-      <button
-        onClick={(event) => {
-          event.stopPropagation();
-          if (canInteract) onSubscribe(pkg);
-        }}
-        disabled={!canInteract}
-        className={clsx(
-          'w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-200 mt-auto',
-          isActive
-            ? 'bg-surface-light text-desc-text cursor-default'
-            : isFree
-              ? 'bg-emerald-500 hover:bg-emerald-600 text-black font-extrabold shadow-lg shadow-emerald-500/25 hover:shadow-none'
-              : isFeatured
-                ? 'bg-primary hover:bg-primary-dark text-white shadow-glow hover:shadow-none'
-                : 'bg-surface-light hover:bg-surface-hover text-white border border-ott-border hover:border-white/20',
-          loading && 'opacity-60 cursor-wait',
-        )}
-      >
-        {loading ? (
-          <span className="flex items-center justify-center gap-2">
-            <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-            Processing…
-          </span>
-        ) : (!isActive && !checkoutReady && !isFree) ? (
-          <span className="flex items-center justify-center gap-2">
-            <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-            Loading payment…
-          </span>
-        ) : isActive ? (
-          'Current Plan'
-        ) : isFree ? (
-          'Claim Free Plan (100% OFF)'
-        ) : (
-          'Get Started'
-        )}
-      </button>
     </div>
   );
 }

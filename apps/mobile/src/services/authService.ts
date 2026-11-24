@@ -146,8 +146,9 @@ class AuthServiceClass {
               this._authToken = session.authToken;
               this._refreshToken = storedRefreshToken ? decryptData(storedRefreshToken) : session.refreshToken || null;
               await AsyncStorage.setItem(LAST_ACTIVE_KEY, new Date().toISOString());
-              // Silently sync latest subscription entitlements in background
+              // Silently sync latest subscription entitlements and register push token in background
               this.syncSubscription().catch(() => {});
+              setupPushNotifications(this._authToken || undefined).catch(() => {});
             }
           } catch {
             await AsyncStorage.removeItem(SESSION_KEY);
@@ -460,7 +461,7 @@ class AuthServiceClass {
           : (response?.result?.[0] || response?.data?.[0] || response?.user || response?.result || response?.data || response);
         const resolvedAvatar = profileObj?.image || profileObj?.avatarUrl || profileObj?.avatar_url;
         if (resolvedAvatar && !resolvedAvatar.startsWith('file:') && !resolvedAvatar.startsWith('content:')) {
-          avatar = resolvedAvatar;
+          avatar = AppConfig.normalizeMediaUrl(resolvedAvatar);
         }
       }
     } catch (e: any) {

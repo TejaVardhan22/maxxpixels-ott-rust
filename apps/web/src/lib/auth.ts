@@ -24,8 +24,32 @@ export function parseStoredUser(raw: string | null): LoginUserResult | null {
       const fullName = parsed?.full_name || parsed?.fullName || parsed?.name || innerUser?.fullName || innerUser?.name || 'Subscriber';
       const emailVal = parsed?.email || innerUser?.email || '';
       const mobileVal = parsed?.mobile_number || parsed?.phoneNumber || parsed?.mobileNumber || innerUser?.phoneNumber || innerUser?.mobileNumber || '';
-      const isBuyVal = parsed?.is_buy ?? parsed?.isBuy ?? innerUser?.is_buy ?? innerUser?.isBuy ?? 0;
-      const packageNameVal = parsed?.package_name || parsed?.packageName || innerUser?.package_name || innerUser?.packageName || 'Free Tier';
+      const imageVal =
+        parsed?.image !== undefined
+          ? parsed.image
+          : parsed?.avatarUrl !== undefined
+          ? parsed.avatarUrl
+          : parsed?.avatar_url !== undefined
+          ? parsed.avatar_url
+          : innerUser?.image ?? innerUser?.avatarUrl ?? innerUser?.avatar_url ?? '';
+      const isBuyVal =
+        parsed?.is_buy !== undefined
+          ? Number(parsed.is_buy)
+          : parsed?.isBuy !== undefined
+          ? Number(parsed.isBuy)
+          : innerUser?.is_buy !== undefined
+          ? Number(innerUser.is_buy)
+          : innerUser?.isBuy !== undefined
+          ? Number(innerUser.isBuy)
+          : parsed?.is_subscribed || parsed?.isSubscribed || innerUser?.is_subscribed || innerUser?.isSubscribed
+          ? 1
+          : 0;
+      const packageNameVal =
+        parsed?.package_name ||
+        parsed?.packageName ||
+        innerUser?.package_name ||
+        innerUser?.packageName ||
+        (isBuyVal === 1 ? 'VIP Membership' : 'Free');
 
       return {
         ...innerUser,
@@ -35,6 +59,8 @@ export function parseStoredUser(raw: string | null): LoginUserResult | null {
         full_name: fullName,
         email: emailVal,
         mobile_number: mobileVal,
+        image: imageVal || '',
+        avatarUrl: imageVal || '',
         auth_token: token,
         refresh_token: parsed?.refresh_token || parsed?.refreshToken || innerUser?.refreshToken,
         is_buy: isBuyVal,
@@ -84,8 +110,32 @@ export function setStoredUser(userInput: any): void {
   const fullName = userInput?.full_name || userInput?.fullName || userInput?.name || innerUser?.fullName || innerUser?.name || 'Subscriber';
   const emailVal = userInput?.email || innerUser?.email || '';
   const mobileVal = userInput?.mobile_number || userInput?.phoneNumber || userInput?.mobileNumber || innerUser?.phoneNumber || innerUser?.mobileNumber || '';
-  const isBuyVal = userInput?.is_buy ?? userInput?.isBuy ?? innerUser?.is_buy ?? innerUser?.isBuy ?? 1;
-  const packageNameVal = userInput?.package_name || userInput?.packageName || innerUser?.package_name || innerUser?.packageName || 'VIP Membership';
+  const imageVal =
+    userInput?.image !== undefined
+      ? userInput.image
+      : userInput?.avatarUrl !== undefined
+      ? userInput.avatarUrl
+      : userInput?.avatar_url !== undefined
+      ? userInput.avatar_url
+      : innerUser?.image ?? innerUser?.avatarUrl ?? innerUser?.avatar_url ?? '';
+  const isBuyVal =
+    userInput?.is_buy !== undefined
+      ? Number(userInput.is_buy)
+      : userInput?.isBuy !== undefined
+      ? Number(userInput.isBuy)
+      : innerUser?.is_buy !== undefined
+      ? Number(innerUser.is_buy)
+      : innerUser?.isBuy !== undefined
+      ? Number(innerUser.isBuy)
+      : userInput?.is_subscribed || userInput?.isSubscribed || innerUser?.is_subscribed || innerUser?.isSubscribed
+      ? 1
+      : 0;
+  const packageNameVal =
+    userInput?.package_name ||
+    userInput?.packageName ||
+    innerUser?.package_name ||
+    innerUser?.packageName ||
+    (isBuyVal === 1 ? 'VIP Membership' : 'Free');
   const activeToken = token || 'token_session_active';
 
   const user: LoginUserResult = {
@@ -96,6 +146,8 @@ export function setStoredUser(userInput: any): void {
     full_name: fullName,
     email: emailVal,
     mobile_number: mobileVal,
+    image: imageVal || '',
+    avatarUrl: imageVal || '',
     auth_token: activeToken,
     refresh_token: userInput?.refresh_token || userInput?.refreshToken || innerUser?.refreshToken,
     is_buy: isBuyVal,

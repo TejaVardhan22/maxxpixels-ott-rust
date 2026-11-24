@@ -117,7 +117,7 @@ export default function RentButton({
             rent_days: String(rentDay),
           },
           theme: {
-            color: '#e50914',
+            color: '#FF6D2E',
           },
           handler: async (response: {
             razorpay_payment_id: string;
@@ -160,12 +160,12 @@ export default function RentButton({
           type="button"
           onClick={rent}
           disabled={processing}
-          className="inline-flex items-center gap-2 rounded-lg bg-gold-gradient px-6 py-3 text-sm font-black text-black shadow-glow disabled:opacity-60"
+          className="inline-flex h-11 items-center gap-2 rounded-md bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] px-7 text-sm font-bold text-white shadow-[0_8px_24px_rgba(255,109,46,0.4)] transition hover:brightness-110 disabled:opacity-60 sm:h-12"
         >
           {processing ? <Loader2 size={18} className="animate-spin" /> : <KeyRound size={18} />}
           Rent for ₹{price.toFixed(2)} · {rentDay} day{rentDay === 1 ? '' : 's'}
         </button>
-        {error && <p className="mt-2 text-xs font-semibold text-red-300">{error}</p>}
+        {error && <p className="mt-2 text-xs font-semibold text-[#FFB088]">{error}</p>}
       </div>
     </>
   );

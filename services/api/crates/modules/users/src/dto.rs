@@ -5,12 +5,22 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateProfileRequest {
+    #[serde(alias = "full_name")]
     pub full_name: Option<String>,
     pub name: Option<String>,
+    pub email: Option<String>,
     pub phone: Option<String>,
+    #[serde(alias = "phone_number")]
     pub phone_number: Option<String>,
+    #[serde(alias = "avatar_url", alias = "image")]
     pub avatar_url: Option<String>,
+    #[serde(alias = "avatar_base64", alias = "image_base64", alias = "imageBase64")]
+    pub avatar_base64: Option<String>,
+    #[serde(alias = "image_type")]
+    pub image_type: Option<String>,
+    #[serde(alias = "preferred_language")]
     pub preferred_language: Option<String>,
+    #[serde(alias = "preferred_audio_language")]
     pub preferred_audio_language: Option<String>,
     pub country: Option<String>,
 }
@@ -52,6 +62,79 @@ pub struct DeviceDto {
     pub is_active: bool,
     pub last_active_at: Option<String>,
     pub created_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisterDeviceRequest {
+    #[serde(alias = "device_id")]
+    pub device_id: String,
+    #[serde(alias = "device_name")]
+    pub device_name: Option<String>,
+    #[serde(alias = "device_model")]
+    pub device_model: Option<String>,
+    #[serde(alias = "device_type")]
+    pub device_type: Option<String>,
+    pub platform: Option<String>,
+    #[serde(alias = "os_version")]
+    pub os_version: Option<String>,
+    #[serde(alias = "app_version")]
+    pub app_version: Option<String>,
+    #[serde(alias = "fcm_token")]
+    pub fcm_token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogoutOtherDevicesRequest {
+    #[serde(alias = "current_device_id")]
+    pub current_device_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanLimitsDto {
+    pub plan_id: Option<i64>,
+    pub plan_name: String,
+    pub plan_status: String,
+    pub expires_at: Option<String>,
+    pub max_devices: i32,
+    pub max_concurrent_streams: i32,
+    pub max_profiles: i32,
+    pub max_resolution: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountUsageDto {
+    pub active_devices_count: usize,
+    pub total_devices_count: usize,
+    pub active_concurrent_streams: usize,
+    pub profiles_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceSummaryItemDto {
+    pub id: i64,
+    pub device_id: String,
+    pub device_name: Option<String>,
+    pub device_model: Option<String>,
+    pub device_type: Option<String>,
+    pub platform: Option<String>,
+    pub os_version: Option<String>,
+    pub is_active: bool,
+    pub is_streaming: bool,
+    pub last_active_at: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceSummaryDto {
+    pub plan: PlanLimitsDto,
+    pub usage: AccountUsageDto,
+    pub devices: Vec<DeviceSummaryItemDto>,
 }
 
 #[derive(Debug, Deserialize)]

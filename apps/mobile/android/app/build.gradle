@@ -42,7 +42,9 @@ react {
     // extraPackagerArgs = []
 
     /* Hermes Commands */
-    hermesCommand = file("${rootDir}/hermesc-stub.bat").absolutePath
+    if (System.getProperty("os.name").toLowerCase().contains("windows")) {
+        hermesCommand = file("${rootDir}/hermesc-stub.bat").absolutePath
+    }
 
     /* Autolinking */
     autolinkLibrariesWithApp()
@@ -76,8 +78,8 @@ android {
         applicationId "com.maxxpixels"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 58
-        versionName "1.2.0"
+        versionCode 59
+        versionName "1.2.1"
 
         externalNativeBuild {
             cmake {
@@ -87,7 +89,9 @@ android {
     }
     externalNativeBuild {
         cmake {
-            buildStagingDirectory = file("C:/b/cxx")
+            if (System.getProperty("os.name").toLowerCase().contains("windows")) {
+                buildStagingDirectory = file("C:/b/cxx")
+            }
         }
     }
     signingConfigs {

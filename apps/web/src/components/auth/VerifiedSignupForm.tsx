@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRegistrationOtp, postJson } from '@ott/shared';
 import type { LoginUserResult } from '@ott/shared';
-import { ShieldCheck, Send, RotateCcw } from 'lucide-react';
+import { ShieldCheck, RotateCcw, Loader2 } from 'lucide-react';
+import RecaptchaBox from '@/components/auth/RecaptchaBox';
 
 type Step = 'details' | 'otp';
 
@@ -18,12 +19,17 @@ function normalizePhone(countryCode: string, mobile: string): string {
   return `${countryCode.trim() || '+91'}${trimmed.replace(/\D/g, '')}`;
 }
 
-export default function VerifiedSignupForm({ submitLabel = 'Verify & Create Account', onRegistered }: VerifiedSignupFormProps) {
+export default function VerifiedSignupForm({
+  submitLabel = 'Verify & Create Account',
+  onRegistered,
+}: VerifiedSignupFormProps) {
   const requestOtp = useRegistrationOtp();
   const [step, setStep] = useState<Step>('details');
   const [otpCode, setOtpCode] = useState('');
   const [error, setError] = useState('');
   const [accepted, setAccepted] = useState(false);
+  const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
+  const [recaptchaReset, setRecaptchaReset] = useState(0);
   const [verifying, setVerifying] = useState(false);
   const [form, setForm] = useState({
     firstName: '',
@@ -57,8 +63,14 @@ export default function VerifiedSignupForm({ submitLabel = 'Verify & Create Acco
     }
   }, []);
 
-  const phone = useMemo(() => normalizePhone(form.countryCode, form.phone), [form.countryCode, form.phone]);
-  const fullName = useMemo(() => `${form.firstName.trim()} ${form.lastName.trim()}`.trim(), [form.firstName, form.lastName]);
+  const phone = useMemo(
+    () => normalizePhone(form.countryCode, form.phone),
+    [form.countryCode, form.phone],
+  );
+  const fullName = useMemo(
+    () => `${form.firstName.trim()} ${form.lastName.trim()}`.trim(),
+    [form.firstName, form.lastName],
+  );
   const busy = requestOtp.isPending || verifying;
 
   const update = (field: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -83,6 +95,9 @@ export default function VerifiedSignupForm({ submitLabel = 'Verify & Create Acco
     if (!accepted) {
       return 'Please accept the Terms of Use & Privacy Policy to continue.';
     }
+    if (step === 'details' && !recaptchaToken) {
+      return 'Please complete the reCAPTCHA verification.';
+    }
     return '';
   };
 
@@ -91,10 +106,15 @@ export default function VerifiedSignupForm({ submitLabel = 'Verify & Create Acco
     if (validationError) return setError(validationError);
     setError('');
     try {
-      await requestOtp.mutateAsync({ phone, agentCode: form.agentCode });
+      await requestOtp.mutateAsync({
+        phone,
+        agentCode: form.agentCode,
+        recaptchaToken,
+      });
       setStep('otp');
     } catch (err: any) {
       const msg = err?.message || 'Unable to send OTP. Please try again.';
+      setRecaptchaReset((c) => c + 1);
       if (/already registered|user_already_exists|already exists|409/i.test(msg)) {
         setError('User already exists');
       } else {
@@ -126,131 +146,142 @@ export default function VerifiedSignupForm({ submitLabel = 'Verify & Create Acco
       });
 
       const userPayload = response?.data || response?.result?.[0] || response?.user || response;
-      if (!userPayload || (!userPayload.id && !userPayload.uuid && !userPayload.accessToken && !userPayload.auth_token)) {
+      if (
+        !userPayload ||
+        (!userPayload.id &&
+          !userPayload.uuid &&
+          !userPayload.accessToken &&
+          !userPayload.auth_token)
+      ) {
         throw new Error(response?.message || 'Verification and Registration failed.');
       }
       onRegistered(userPayload);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Registration failed.';
-      setError(/already registered|user_already_exists|already exists|409/i.test(msg) ? 'User already exists' : msg);
+      setError(
+        /already registered|user_already_exists|already exists|409/i.test(msg)
+          ? 'User already exists'
+          : msg,
+      );
     } finally {
       setVerifying(false);
     }
   };
 
+  const inputClass =
+    'h-[50px] w-full rounded-md border border-white/20 bg-[#181818]/90 px-4 text-sm font-medium text-white placeholder:text-zinc-400 transition focus:border-white focus:outline-none focus:ring-1 focus:ring-white/30';
+
   return (
-    <div className="space-y-4 text-left">
+    <div className="space-y-3.5 text-left">
       {step === 'details' && (
         <>
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-muted-text uppercase tracking-wider mb-1">First Name *</label>
-              <input
-                className="ott-input"
-                placeholder="e.g. Rahul"
-                autoComplete="given-name"
-                value={form.firstName}
-                onChange={update('firstName')}
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-muted-text uppercase tracking-wider mb-1">Last Name *</label>
-              <input
-                className="ott-input"
-                placeholder="e.g. Sharma"
-                autoComplete="family-name"
-                value={form.lastName}
-                onChange={update('lastName')}
-                required
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-muted-text uppercase tracking-wider mb-1">Mobile Number *</label>
-            <div className="grid grid-cols-[88px_1fr] gap-2">
-              <input
-                className="ott-input font-bold text-center"
-                value={form.countryCode}
-                onChange={update('countryCode')}
-                aria-label="Country code"
-              />
-              <input
-                className="ott-input"
-                type="tel"
-                inputMode="numeric"
-                placeholder="10-digit mobile number"
-                autoComplete="tel"
-                value={form.phone}
-                onChange={(e) => setForm((c) => ({ ...c, phone: e.target.value.replace(/\D/g, '').slice(0, 12) }))}
-                required
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-muted-text uppercase tracking-wider mb-1">
-              Email Address <span className="text-muted-text/70 font-normal normal-case">(Optional)</span>
-            </label>
             <input
-              className="ott-input"
-              type="email"
-              placeholder="name@example.com (optional)"
-              autoComplete="email"
-              value={form.email}
-              onChange={update('email')}
+              className={inputClass}
+              placeholder="First name *"
+              autoComplete="given-name"
+              value={form.firstName}
+              onChange={update('firstName')}
+              required
+            />
+            <input
+              className={inputClass}
+              placeholder="Last name *"
+              autoComplete="family-name"
+              value={form.lastName}
+              onChange={update('lastName')}
+              required
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-muted-text uppercase tracking-wider mb-1">
-              Referral Code <span className="text-muted-text/70 font-normal normal-case">(Optional)</span>
-            </label>
+          <div className="grid grid-cols-[84px_1fr] gap-2.5">
             <input
-              className="ott-input font-bold uppercase tracking-wider"
-              placeholder="e.g. MKT-A1B2C3D4"
-              autoComplete="off"
-              value={form.agentCode}
-              onChange={(e) => setForm((c) => ({ ...c, agentCode: e.target.value.trim().toUpperCase() }))}
+              className={`${inputClass} px-2 text-center font-semibold`}
+              value={form.countryCode}
+              onChange={update('countryCode')}
+              aria-label="Country code"
             />
-            <p className="mt-1 text-[11px] text-muted-text/80">
-              Enter your referral code if you have one.
-            </p>
+            <input
+              className={inputClass}
+              type="tel"
+              inputMode="numeric"
+              placeholder="Mobile number *"
+              autoComplete="tel"
+              value={form.phone}
+              onChange={(e) =>
+                setForm((c) => ({ ...c, phone: e.target.value.replace(/\D/g, '').slice(0, 12) }))
+              }
+              required
+            />
           </div>
 
-          <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/5 px-3.5 py-3 text-xs text-desc-text">
+          <input
+            className={inputClass}
+            type="email"
+            placeholder="Email address (optional)"
+            autoComplete="email"
+            value={form.email}
+            onChange={update('email')}
+          />
+
+          <input
+            className={`${inputClass} uppercase tracking-wider placeholder:normal-case placeholder:tracking-normal`}
+            placeholder="Referral code (optional)"
+            autoComplete="off"
+            value={form.agentCode}
+            onChange={(e) =>
+              setForm((c) => ({ ...c, agentCode: e.target.value.trim().toUpperCase() }))
+            }
+          />
+
+          <label className="flex cursor-pointer items-start gap-2.5 pt-1 text-xs text-zinc-400">
             <input
               type="checkbox"
-              className="mt-0.5 h-4 w-4 accent-primary rounded"
+              className="mt-0.5 h-4 w-4 shrink-0 rounded accent-[#FF6D2E]"
               checked={accepted}
               onChange={(event) => setAccepted(event.target.checked)}
               required
             />
-            <span>
+            <span className="leading-relaxed">
               I agree to the{' '}
-              <a className="text-primary hover:underline font-semibold" href="/legal/terms-of-service">Terms of Use</a>{' '}
+              <a
+                className="font-semibold text-[#FF8A54] hover:underline"
+                href="/legal/terms-of-service"
+              >
+                Terms of Use
+              </a>{' '}
               and{' '}
-              <a className="text-primary hover:underline font-semibold" href="/legal/privacy-policy">Privacy Policy</a>.
+              <a
+                className="font-semibold text-[#FF8A54] hover:underline"
+                href="/legal/privacy-policy"
+              >
+                Privacy Policy
+              </a>
+              .
             </span>
           </label>
 
+          <RecaptchaBox
+            onVerify={(token) => {
+              setRecaptchaToken(token);
+              if (token) setError('');
+            }}
+            resetSignal={recaptchaReset}
+          />
+
           <button
             type="button"
-            className="btn-primary w-full py-3.5 rounded-xl text-sm font-bold shadow-glow hover:shadow-card transition-all flex items-center justify-center gap-2"
+            className="mt-1 flex h-12 w-full items-center justify-center gap-2 rounded-md bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] text-[15px] font-bold text-white shadow-[0_6px_22px_rgba(255,109,46,0.4)] transition hover:brightness-110 active:scale-[0.99] disabled:opacity-50"
             onClick={sendOtp}
             disabled={busy}
           >
             {requestOtp.isPending ? (
-              <span className="flex items-center gap-2">
-                <span className="w-4 h-4 border-2 border-black/40 border-t-black rounded-full animate-spin" />
-                Sending SMS OTP...
-              </span>
-            ) : (
               <>
-                <Send size={16} />
-                Send Verification OTP
+                <Loader2 size={17} className="animate-spin" />
+                <span>Sending code...</span>
               </>
+            ) : (
+              <span>Send Verification Code</span>
             )}
           </button>
         </>
@@ -258,42 +289,45 @@ export default function VerifiedSignupForm({ submitLabel = 'Verify & Create Acco
 
       {step === 'otp' && (
         <div className="space-y-4">
-          <div className="p-4 rounded-xl bg-primary/10 border border-primary/30 text-center">
-            <p className="text-xs text-primary font-bold uppercase tracking-wider">SMS OTP Sent</p>
-            <p className="text-sm text-white mt-1">
-              We sent a 6-digit code to <span className="font-bold text-primary-light">{phone}</span>
+          <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-center">
+            <p className="text-xs font-medium text-emerald-300">
+              We sent a 6-digit code to <span className="font-bold text-white">{phone}</span>
             </p>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-muted-text uppercase tracking-wider mb-1 text-center">
-              Enter 6-Digit Code
-            </label>
-            <input
-              className="w-full bg-app-bg border border-ott-border rounded-xl px-4 py-3.5 text-2xl text-center tracking-[0.3em] font-black text-white focus:outline-none focus:border-primary/60"
-              value={otpCode}
-              onChange={(e) => {
-                setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6));
-                setError('');
-              }}
-              placeholder="000000"
-              inputMode="numeric"
-              maxLength={6}
-              autoFocus
-            />
-          </div>
+          <input
+            className="h-[56px] w-full rounded-md border border-white/25 bg-[#181818] px-4 text-center font-mono text-2xl font-black tracking-[0.4em] text-white placeholder:font-sans placeholder:text-sm placeholder:font-normal placeholder:tracking-normal placeholder:text-zinc-400 transition focus:border-[#FF6D2E] focus:outline-none focus:ring-1 focus:ring-[#FF6D2E]/50"
+            value={otpCode}
+            onChange={(e) => {
+              setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6));
+              setError('');
+            }}
+            placeholder="Enter 6-digit code"
+            inputMode="numeric"
+            maxLength={6}
+            autoFocus
+          />
 
           <button
             type="button"
-            className="btn-primary w-full py-3.5 rounded-xl text-sm font-bold shadow-glow flex items-center justify-center gap-2"
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-md bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] text-[15px] font-bold text-white shadow-[0_6px_22px_rgba(255,109,46,0.4)] transition hover:brightness-110 disabled:opacity-50"
             onClick={confirmCodeAndRegister}
             disabled={busy}
           >
-            <ShieldCheck size={16} />
-            {verifying ? 'Verifying...' : submitLabel}
+            {verifying ? (
+              <>
+                <Loader2 size={17} className="animate-spin" />
+                <span>Verifying...</span>
+              </>
+            ) : (
+              <>
+                <ShieldCheck size={17} />
+                <span>{submitLabel}</span>
+              </>
+            )}
           </button>
 
-          <div className="flex items-center justify-between text-xs text-muted-text pt-1">
+          <div className="flex items-center justify-between pt-1 text-xs">
             <button
               type="button"
               onClick={() => {
@@ -301,24 +335,24 @@ export default function VerifiedSignupForm({ submitLabel = 'Verify & Create Acco
                 setOtpCode('');
                 setError('');
               }}
-              className="hover:text-white transition-colors"
+              className="text-zinc-400 transition hover:text-white"
             >
-              Change details
+              &larr; Change details
             </button>
             <button
               type="button"
               onClick={sendOtp}
               disabled={busy}
-              className="inline-flex items-center gap-1 text-primary hover:underline font-semibold"
+              className="inline-flex items-center gap-1 font-semibold text-[#FF8A54] hover:underline disabled:opacity-50"
             >
-              <RotateCcw size={13} /> Resend OTP
+              <RotateCcw size={13} /> Resend code
             </button>
           </div>
         </div>
       )}
 
       {error && (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs font-medium text-red-300">
+        <div className="rounded-md border border-[#FF6D2E]/40 bg-[#FF6D2E]/12 px-3.5 py-2.5 text-xs font-medium text-[#FFB088]">
           {error}
         </div>
       )}

@@ -64,16 +64,28 @@ function did(ctx?: SessionContext): string {
 // ──────────────────── Auth ────────────────────
 
 export const authApi = {
-  requestRegistrationOtp: (phone: string, agentCode?: string): Promise<AuthAcceptedEnvelope> =>
+  requestRegistrationOtp: (
+    phone: string,
+    agentCode?: string,
+    recaptchaToken?: string | null,
+  ): Promise<AuthAcceptedEnvelope> =>
     postJson('auth/send-otp', {
       phone,
       mode: 'register',
       isRegister: true,
       agentCode: agentCode?.trim().toUpperCase() || undefined,
+      recaptchaToken: recaptchaToken || undefined,
     }),
 
-  requestPhoneLoginOtp: (phone: string): Promise<AuthAcceptedEnvelope> =>
-    postJson('auth/send-otp', { phone, mode: 'login' }),
+  requestPhoneLoginOtp: (
+    phone: string,
+    recaptchaToken?: string | null,
+  ): Promise<AuthAcceptedEnvelope> =>
+    postJson('auth/send-otp', {
+      phone,
+      mode: 'login',
+      recaptchaToken: recaptchaToken || undefined,
+    }),
 
   phoneOtpLogin: async (phone: string, code: string): Promise<ApiListResponse<LoginUserResult[]>> =>
     postJson('auth/verify-otp', { phone, otp: code }),
@@ -146,7 +158,7 @@ export const catalogApi = {
     getJson('content-types'),
 
   getBanner: (_body?: Json): Promise<ApiListResponse<Banner[]>> =>
-    getJson('cms/banners'),
+    getJson('cms/banners', { params: { platform: 'WEB' } }),
 
   getPortalBanners: (portalKey?: string): Promise<ApiListResponse<PortalBanner[]>> =>
     getJson('cms/portal-banners', portalKey ? { params: { portalKey } } : undefined),
@@ -198,8 +210,8 @@ export const catalogApi = {
     getJson('live/channels'),
 
   searchContent: (body?: Json): Promise<ApiListResponse<ContentItem[]>> => {
-    const q = String(body?.q ?? body?.query ?? body?.name ?? '');
-    return getJson('search', { params: { q } });
+    const q = String(body?.q ?? body?.query ?? body?.name ?? '').trim();
+    return getJson('search', { params: { q, size: 60 } });
   },
 
   rentContentList: (_body?: Json): Promise<ApiListResponse<RentItem[]>> =>
@@ -273,26 +285,52 @@ export const engagementApi = {
     Promise.resolve({ status: 200, message: 'Success', result: [] }),
 
   addComment: (body: Json): Promise<ApiListResponse<Comment[]>> =>
-    postJson('analytics/events', body),
+    postJson('analytics/event', {
+      ...body,
+      contentId: body?.contentId ?? body?.content_id ?? body?.video_id,
+      eventType: 'COMMENT',
+      interactionType: 'COMMENT',
+    }),
 
   editComment: (body: Json): Promise<ApiListResponse<Comment[]>> =>
-    postJson('analytics/events', body),
+    postJson('analytics/event', {
+      ...body,
+      contentId: body?.contentId ?? body?.content_id ?? body?.video_id,
+      eventType: 'COMMENT_EDIT',
+      interactionType: 'COMMENT',
+    }),
 
   deleteComment: (body: Json): Promise<ApiListResponse<ContentRecord[]>> =>
-    postJson('analytics/events', body),
+    postJson('analytics/event', {
+      ...body,
+      contentId: body?.contentId ?? body?.content_id ?? body?.video_id,
+      eventType: 'COMMENT_DELETE',
+      interactionType: 'COMMENT',
+    }),
 
   addVideoView: (body: Json): Promise<ApiListResponse<ContentRecord[]>> =>
     postJson('analytics/event', {
       ...body,
+      contentId: body?.contentId ?? body?.content_id ?? body?.video_id,
       eventType: 'CONTENT_VIEW',
       interactionType: 'VIEW',
     }),
 
-  addRemoveBookmark: (body: Json): Promise<ApiListResponse<ContentRecord[]>> =>
-    postJson('watchlist', { contentId: body?.contentId ?? body?.video_id }),
+  addRemoveBookmark: (body: Json): Promise<ApiListResponse<ContentRecord[]>> => {
+    const contentId = body?.contentId ?? body?.content_id ?? body?.video_id ?? body?.id;
+    if (body?.action === 'remove' && contentId) {
+      return deleteJson(`watchlist/${contentId}`);
+    }
+    return postJson('watchlist', { contentId });
+  },
 
   addRemoveLike: (body: Json): Promise<ApiListResponse<ContentRecord[]>> =>
-    postJson('analytics/events', { ...body, eventType: 'CONTENT_LIKE' }),
+    postJson('analytics/event', {
+      ...body,
+      contentId: body?.contentId ?? body?.content_id ?? body?.video_id,
+      eventType: 'CONTENT_LIKE',
+      interactionType: 'LIKE',
+    }),
 
   addContinueWatching: (body: Json): Promise<ApiListResponse<ContentRecord[]>> =>
     postJson('watch/progress', {
@@ -337,16 +375,41 @@ export const paymentApi = {
   getTransactionList: (_body?: Json): Promise<ApiListResponse<Transaction[]>> =>
     getJson('payments/my-transactions'),
 
-  validateCouponV1: async (code: string, amount: number): Promise<{ success: boolean; data: number; message: string }> => {
-    const res = await fetch(`/api/v1/coupons/validate?code=${encodeURIComponent(code)}&amount=${amount}`, {
+  validateCouponV1: async (
+    code: string,
+    amount: number,
+    planId?: number | string,
+  ): Promise<{ success: boolean; data: number; message: string }> => {
+    const qs = new URLSearchParams({
+      code: code.trim().toUpperCase(),
+      amount: String(amount),
+    });
+    if (planId != null && String(planId).trim() !== '') {
+      qs.set('planId', String(planId));
+    }
+    const res = await fetch(`/api/v1/coupons/validate?${qs.toString()}`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     });
-    const json = await res.json() as { success?: boolean; data?: number; message?: string };
-    if (!res.ok || !json.success) {
+    const json = (await res.json()) as {
+      success?: boolean;
+      data?: number | { discountAmount?: number; discount_amount?: number };
+      result?: number | { discountAmount?: number; discount_amount?: number };
+      message?: string;
+    };
+    const payload = json.data ?? json.result;
+    const discountAmount =
+      typeof payload === 'number'
+        ? payload
+        : Number(payload?.discountAmount ?? payload?.discount_amount ?? NaN);
+    if (!res.ok || !json.success || !Number.isFinite(discountAmount)) {
       throw new Error(json.message ?? 'Invalid coupon code');
     }
-    return { success: true, data: Number(json.data ?? 0), message: json.message ?? 'Coupon applied' };
+    return {
+      success: true,
+      data: discountAmount,
+      message: json.message ?? 'Coupon applied',
+    };
   },
 };
 

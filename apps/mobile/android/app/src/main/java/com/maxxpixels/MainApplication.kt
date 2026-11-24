@@ -5,6 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.graphics.Bitmap
+import android.media.AudioAttributes
+import android.net.Uri
 import android.os.Build
 import android.util.Log
 import com.facebook.drawee.backends.pipeline.Fresco
@@ -90,28 +92,37 @@ class MainApplication : Application(), ReactApplication {
       val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
           ?: return
 
-      val defaultChannel = NotificationChannel(
-        "maxxpixels_default",
-        "MaxxPixels Notifications",
+      val soundUri = Uri.parse("android.resource://${packageName}/raw/maxxpixels_notify")
+      val audioAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+        .build()
+
+      // New channel IDs ensure Android applies custom sound (existing channel settings are immutable).
+      val alertsChannel = NotificationChannel(
+        "maxxpixels_alerts",
+        "MaxxPixels Alerts",
         NotificationManager.IMPORTANCE_HIGH
       ).apply {
         description = "MaxxPixels updates, new releases and alerts"
         enableLights(true)
         enableVibration(true)
+        setSound(soundUri, audioAttributes)
       }
 
-      val backendChannel = NotificationChannel(
-        "maxxpixels_channel",
+      val broadcastsChannel = NotificationChannel(
+        "maxxpixels_broadcasts",
         "MaxxPixels Broadcasts",
         NotificationManager.IMPORTANCE_HIGH
       ).apply {
         description = "MaxxPixels alerts, content updates and announcements"
         enableLights(true)
         enableVibration(true)
+        setSound(soundUri, audioAttributes)
       }
 
-      notificationManager.createNotificationChannel(defaultChannel)
-      notificationManager.createNotificationChannel(backendChannel)
+      notificationManager.createNotificationChannel(alertsChannel)
+      notificationManager.createNotificationChannel(broadcastsChannel)
     }
   }
 }

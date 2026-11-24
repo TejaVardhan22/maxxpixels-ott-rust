@@ -1,6 +1,6 @@
 use chrono::Utc;
 use maxx_common::error::AppError;
-use maxx_core::entities::{banner, legal_page, page, section, system_setting};
+use maxx_core::entities::{banner, content, legal_page, page, section, system_setting};
 use maxx_core::AppState;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter,
@@ -901,6 +901,146 @@ impl AdminService {
         Ok(q.all(&state.db).await?)
     }
 
+    pub async fn list_banners_with_platform(
+        state: &AppState,
+        only_active: bool,
+        platform_filter: Option<&str>,
+    ) -> AppResult<Vec<Value>> {
+        let mut q = banner::Entity::find()
+            .order_by_asc(banner::Column::DisplayOrder)
+            .order_by_desc(banner::Column::Id);
+        if only_active {
+            q = q.filter(banner::Column::IsActive.eq(true));
+        }
+        let rows = q.all(&state.db).await?;
+
+        let target_plat = platform_filter
+            .map(|p| p.trim().to_uppercase())
+            .filter(|p| !p.is_empty() && p != "ALL");
+
+        let filtered: Vec<banner::Model> = rows
+            .into_iter()
+            .filter(|b| {
+                let Some(ref tp) = target_plat else {
+                    return true;
+                };
+                let b_plat = b
+                    .placement
+                    .as_deref()
+                    .unwrap_or("ALL")
+                    .trim()
+                    .to_uppercase();
+                b_plat.is_empty() || b_plat == "ALL" || b_plat == *tp
+            })
+            .collect();
+
+        let content_ids: Vec<i64> = filtered.iter().filter_map(|b| b.content_id).collect();
+        let mut content_map: HashMap<i64, content::Model> = HashMap::new();
+        if !content_ids.is_empty() {
+            if let Ok(contents) = content::Entity::find()
+                .filter(content::Column::Id.is_in(content_ids))
+                .all(&state.db)
+                .await
+            {
+                for c in contents {
+                    content_map.insert(c.id, c);
+                }
+            }
+        }
+
+        let public_base = std::env::var("PUBLIC_BASE_URL")
+            .unwrap_or_default()
+            .trim_end_matches('/')
+            .to_string();
+        let abs_url = |opt: Option<&str>| -> String {
+            let Some(raw) = opt.map(str::trim).filter(|s| !s.is_empty()) else {
+                return String::new();
+            };
+            if raw.starts_with("http://") || raw.starts_with("https://") || raw.starts_with("data:") {
+                raw.to_string()
+            } else if public_base.is_empty() {
+                raw.to_string()
+            } else if raw.starts_with('/') {
+                format!("{}{}", public_base, raw)
+            } else {
+                format!("{}/{}", public_base, raw)
+            }
+        };
+
+        let out = filtered
+            .into_iter()
+            .map(|b| {
+                let linked = b.content_id.and_then(|cid| content_map.get(&cid));
+                let fallback_img = linked.and_then(|c| {
+                    c.banner_image_url
+                        .as_deref()
+                        .filter(|s| !s.trim().is_empty())
+                        .or_else(|| c.landscape_image_url.as_deref().filter(|s| !s.trim().is_empty()))
+                        .or_else(|| c.backdrop_url.as_deref().filter(|s| !s.trim().is_empty()))
+                        .or_else(|| c.poster_url.as_deref().filter(|s| !s.trim().is_empty()))
+                });
+                let web_img = abs_url(b.image_url.as_deref().filter(|s| !s.trim().is_empty()).or(fallback_img));
+                let mob_img = abs_url(
+                    b.mobile_image_url
+                        .as_deref()
+                        .filter(|s| !s.trim().is_empty())
+                        .or_else(|| linked.and_then(|c| c.poster_url.as_deref()))
+                        .or(if !web_img.is_empty() { Some(web_img.as_str()) } else { None }),
+                );
+                let platform = b
+                    .placement
+                    .as_deref()
+                    .map(|s| s.trim().to_uppercase())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| "ALL".to_string());
+                let content_type = linked
+                    .and_then(|c| c.content_type.clone().or_else(|| c.r#type.clone()))
+                    .unwrap_or_else(|| "MOVIE".to_string());
+                let slug = linked.map(|c| c.slug.clone()).unwrap_or_default();
+                let lang_code = linked
+                    .and_then(|c| c.original_language_code.clone())
+                    .unwrap_or_default();
+
+                json!({
+                    "id": b.id,
+                    "title": b.title,
+                    "name": b.title,
+                    "subtitle": b.subtitle,
+                    "description": b.subtitle,
+                    "contentId": b.content_id,
+                    "content_id": b.content_id,
+                    "videoId": b.content_id,
+                    "video_id": b.content_id,
+                    "slug": slug,
+                    "contentTitle": linked.map(|c| c.title.clone()),
+                    "contentType": content_type,
+                    "originalLanguageCode": lang_code,
+                    "language": lang_code,
+                    "releaseYear": linked.and_then(|c| c.release_year),
+                    "ageRating": linked.and_then(|c| c.age_rating.clone()),
+                    "maturityRating": linked.and_then(|c| c.age_rating.clone()),
+                    "durationSeconds": linked.and_then(|c| c.duration_seconds),
+                    "isPremium": linked.and_then(|c| c.is_premium).unwrap_or(false),
+                    "imageUrl": web_img,
+                    "bannerUrl": web_img,
+                    "bannerImageUrl": web_img,
+                    "landscapeImageUrl": web_img,
+                    "mobileImageUrl": mob_img,
+                    "actionUrl": b.action_url.or(b.target_url.clone()),
+                    "targetUrl": b.target_url,
+                    "platform": platform,
+                    "placement": platform,
+                    "pageSlug": b.page_slug.unwrap_or_else(|| "all".to_string()),
+                    "displayOrder": b.display_order.unwrap_or(0),
+                    "isActive": b.is_active.unwrap_or(true),
+                    "createdAt": b.created_at.map(|dt| dt.to_rfc3339()),
+                })
+            })
+            .collect();
+
+        Ok(out)
+    }
+
     pub async fn upsert_banner(
         state: &AppState,
         body: Value,
@@ -913,13 +1053,47 @@ impl AdminService {
         };
         let now: chrono::DateTime<chrono::FixedOffset> = Utc::now().into();
 
+        let platform_val = body
+            .get("platform")
+            .or_else(|| body.get("placement"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_uppercase())
+            .filter(|s| !s.is_empty());
+
+        let content_id_val = body
+            .get("contentId")
+            .or_else(|| body.get("content_id"))
+            .and_then(|v| v.as_i64())
+            .filter(|&cid| cid > 0);
+
         if let Some(b) = existing {
             let mut am: banner::ActiveModel = b.into();
             if let Some(t) = body.get("title").and_then(|v| v.as_str()) {
-                am.title = Set(t.to_string());
+                am.title = Set(t.trim().to_string());
+            }
+            if let Some(sub) = body.get("subtitle").and_then(|v| v.as_str()) {
+                am.subtitle = Set(Some(sub.trim().to_string()));
             }
             if let Some(u) = body.get("imageUrl").and_then(|v| v.as_str()) {
-                am.image_url = Set(Some(u.to_string()));
+                am.image_url = Set(Some(u.trim().to_string()));
+            }
+            if let Some(mu) = body.get("mobileImageUrl").and_then(|v| v.as_str()) {
+                am.mobile_image_url = Set(Some(mu.trim().to_string()));
+            }
+            if let Some(au) = body.get("actionUrl").and_then(|v| v.as_str()) {
+                am.action_url = Set(Some(au.trim().to_string()));
+            }
+            if let Some(tu) = body.get("targetUrl").and_then(|v| v.as_str()) {
+                am.target_url = Set(Some(tu.trim().to_string()));
+            }
+            if body.get("contentId").is_some() || body.get("content_id").is_some() {
+                am.content_id = Set(content_id_val);
+            }
+            if let Some(p) = platform_val {
+                am.placement = Set(Some(p));
+            }
+            if let Some(ps) = body.get("pageSlug").and_then(|v| v.as_str()) {
+                am.page_slug = Set(Some(ps.trim().to_lowercase()));
             }
             if let Some(a) = body.get("isActive").and_then(|v| v.as_bool()) {
                 am.is_active = Set(Some(a));
@@ -934,24 +1108,43 @@ impl AdminService {
                     .get("title")
                     .and_then(|v| v.as_str())
                     .unwrap_or("Banner")
+                    .trim()
                     .to_string()),
                 subtitle: Set(body
                     .get("subtitle")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())),
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())),
                 image_url: Set(body
                     .get("imageUrl")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())),
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())),
                 mobile_image_url: Set(body
                     .get("mobileImageUrl")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())),
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())),
                 action_url: Set(body
                     .get("actionUrl")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())),
-                content_id: Set(body.get("contentId").and_then(|v| v.as_i64())),
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())),
+                target_url: Set(body
+                    .get("targetUrl")
+                    .or_else(|| body.get("actionUrl"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())),
+                content_id: Set(content_id_val),
+                placement: Set(Some(platform_val.unwrap_or_else(|| "ALL".to_string()))),
+                page_slug: Set(Some(
+                    body.get("pageSlug")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.trim().to_lowercase())
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or_else(|| "all".to_string()),
+                )),
                 display_order: Set(Some(
                     body.get("displayOrder")
                         .and_then(|v| v.as_i64())

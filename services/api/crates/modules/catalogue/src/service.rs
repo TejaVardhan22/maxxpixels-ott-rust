@@ -1,6 +1,8 @@
 use chrono::Datelike;
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+    sea_query::{extension::postgres::PgExpr, Expr},
+    ColumnTrait, Condition, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder,
 };
 use std::collections::HashMap;
 
@@ -47,23 +49,44 @@ impl CatalogueService {
         }
 
         if let Some(ctype) = query.content_type.as_deref() {
-            let ct = ctype.trim().to_uppercase();
+            let raw_ct = ctype.trim().to_uppercase();
+            let ct = match raw_ct.as_str() {
+                "MOVIES" | "FILM" => "MOVIE".to_string(),
+                "ALBUMS" | "SONGS" | "SONG" | "MUSIC" => "ALBUM".to_string(),
+                "SHORT-FILMS" | "SHORT_FILMS" | "SHORTS" | "SHORT" => "SHORT_FILM".to_string(),
+                "MICRO-DRAMA" | "MICRO_DRAMA" | "MICRODRAMAS" => "MICRODRAMA".to_string(),
+                "PODCASTS" => "PODCAST".to_string(),
+                "WEB-SERIES" | "WEB_SERIES" | "SHOWS" | "SHOW" | "TV_SHOW" => "SERIES".to_string(),
+                "AI-CINEMA" | "AI" | "AI_MOVIE" => "AI_CINEMA".to_string(),
+                "STAGE-DRAMA" | "STAGEDRAMA" => "STAGE_DRAMA".to_string(),
+                "DOCUMENTARIES" => "DOCUMENTARY".to_string(),
+                _ => raw_ct,
+            };
             if !ct.is_empty() && ct != "ALL" {
                 select = select.filter(
-                    content::Column::ContentType
-                        .eq(&ct)
-                        .or(content::Column::Type.eq(&ct)),
+                    content::Column::ContentType.eq(&ct).or(
+                        content::Column::ContentType
+                            .is_null()
+                            .and(content::Column::Type.eq(&ct)),
+                    ),
                 );
             }
         }
 
         if let Some(lang) = query.language.as_deref() {
             let l = lang.trim().to_lowercase();
-            if l == "non-kannada" || l == "except-kannada" {
+            if l == "non-kannada" || l == "except-kannada" || l == "all-indian" || l == "all_indian" {
                 select = select.filter(
                     content::Column::OriginalLanguageCode
-                        .ne("kn")
-                        .and(content::Column::OriginalLanguageCode.ne("kannada")),
+                        .is_not_null()
+                        .and(content::Column::OriginalLanguageCode.ne(""))
+                        .and(content::Column::OriginalLanguageCode.ne("kn"))
+                        .and(content::Column::OriginalLanguageCode.ne("KN"))
+                        .and(content::Column::OriginalLanguageCode.ne("kan"))
+                        .and(content::Column::OriginalLanguageCode.ne("KAN"))
+                        .and(content::Column::OriginalLanguageCode.ne("kannada"))
+                        .and(content::Column::OriginalLanguageCode.ne("Kannada"))
+                        .and(content::Column::OriginalLanguageCode.ne("KANNADA")),
                 );
             } else if !l.is_empty() && l != "all" {
                 let code_alias = match l.as_str() {
@@ -108,11 +131,98 @@ impl CatalogueService {
         if let Some(s) = search_term.as_deref() {
             let clean = s.trim();
             if !clean.is_empty() {
-                select = select.filter(
-                    content::Column::Title
-                        .contains(clean)
-                        .or(content::Column::Description.contains(clean)),
-                );
+                let pattern = format!("%{}%", clean);
+                let lower = clean.to_lowercase();
+
+                // Collect content IDs matching any category name or genre name (case-insensitive)
+                let mut matched_meta_ids: Vec<i64> = Vec::new();
+                if let Ok(cats) = category::Entity::find()
+                    .filter(Expr::col(category::Column::Name).ilike(&pattern))
+                    .all(&self.db)
+                    .await
+                {
+                    let cat_ids: Vec<i64> = cats.into_iter().map(|c| c.id).collect();
+                    if !cat_ids.is_empty() {
+                        if let Ok(cc_rows) = content_category::Entity::find()
+                            .filter(content_category::Column::CategoryId.is_in(cat_ids))
+                            .all(&self.db)
+                            .await
+                        {
+                            matched_meta_ids.extend(cc_rows.into_iter().map(|r| r.content_id));
+                        }
+                    }
+                }
+                if let Ok(genres) = genre::Entity::find()
+                    .filter(Expr::col(genre::Column::Name).ilike(&pattern))
+                    .all(&self.db)
+                    .await
+                {
+                    let g_ids: Vec<i64> = genres.into_iter().map(|g| g.id).collect();
+                    if !g_ids.is_empty() {
+                        if let Ok(cg_rows) = content_genre::Entity::find()
+                            .filter(content_genre::Column::GenreId.is_in(g_ids))
+                            .all(&self.db)
+                            .await
+                        {
+                            matched_meta_ids.extend(cg_rows.into_iter().map(|r| r.content_id));
+                        }
+                    }
+                }
+
+                // Case-insensitive search across all content metadata fields
+                let mut cond = Condition::any()
+                    .add(Expr::col(content::Column::Title).ilike(&pattern))
+                    .add(Expr::col(content::Column::Slug).ilike(&pattern))
+                    .add(Expr::col(content::Column::Description).ilike(&pattern))
+                    .add(Expr::col(content::Column::ShortDescription).ilike(&pattern))
+                    .add(Expr::col(content::Column::OneLineBrief).ilike(&pattern))
+                    .add(Expr::col(content::Column::CastJson).ilike(&pattern))
+                    .add(Expr::col(content::Column::ProductionName).ilike(&pattern))
+                    .add(Expr::col(content::Column::ContentType).ilike(&pattern))
+                    .add(Expr::col(content::Column::Type).ilike(&pattern))
+                    .add(Expr::col(content::Column::OriginalLanguageCode).ilike(&pattern));
+
+                // Map common language names in search query (e.g., "kannada" -> "kn")
+                let lang_code_match = match lower.as_str() {
+                    "kannada" => Some("kn"),
+                    "telugu" => Some("te"),
+                    "tamil" => Some("ta"),
+                    "hindi" => Some("hi"),
+                    "malayalam" => Some("ml"),
+                    "marathi" => Some("mr"),
+                    "bengali" => Some("bn"),
+                    "punjabi" => Some("pa"),
+                    "gujarati" => Some("gu"),
+                    "english" => Some("en"),
+                    _ => None,
+                };
+                if let Some(code) = lang_code_match {
+                    cond = cond.add(Expr::col(content::Column::OriginalLanguageCode).ilike(code));
+                }
+
+                // Map plural/alias content type words (e.g., "movies" -> "MOVIE", "songs" -> "ALBUM")
+                let type_alias_match = match lower.as_str() {
+                    "movies" | "movie" | "film" | "films" => Some("MOVIE"),
+                    "songs" | "song" | "music" | "albums" | "album" => Some("ALBUM"),
+                    "short" | "shorts" | "short film" | "short films" => Some("SHORT_FILM"),
+                    "microdrama" | "microdramas" | "micro drama" => Some("MICRODRAMA"),
+                    "podcast" | "podcasts" => Some("PODCAST"),
+                    "series" | "web series" | "shows" | "show" => Some("SERIES"),
+                    _ => None,
+                };
+                if let Some(ct_alias) = type_alias_match {
+                    cond = cond
+                        .add(Expr::col(content::Column::ContentType).ilike(ct_alias))
+                        .add(Expr::col(content::Column::Type).ilike(ct_alias));
+                }
+
+                if !matched_meta_ids.is_empty() {
+                    matched_meta_ids.sort_unstable();
+                    matched_meta_ids.dedup();
+                    cond = cond.add(content::Column::Id.is_in(matched_meta_ids));
+                }
+
+                select = select.filter(cond);
             }
         }
 
@@ -408,9 +518,10 @@ impl CatalogueService {
         genres: Vec<GenreDto>,
     ) -> ContentDto {
         let ctype = c
-            .r#type
+            .content_type
             .clone()
-            .or_else(|| c.content_type.clone())
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| c.r#type.clone().filter(|s| !s.trim().is_empty()))
             .unwrap_or_else(|| "MOVIE".to_string())
             .to_uppercase();
 
@@ -422,6 +533,8 @@ impl CatalogueService {
             "PODCAST" | "PODCASTS" => 5,
             "SERIES" | "SHOWS" | "WEB-SERIES" => 6,
             _ if ctype.starts_with("AI_") => 7,
+            "STAGE_DRAMA" | "STAGEDRAMA" => 8,
+            "DOCUMENTARY" | "DOCUMENTARIES" => 9,
             _ => 1,
         };
 
@@ -468,18 +581,24 @@ impl CatalogueService {
         };
 
         let poster_url = self.ensure_absolute_url(c.poster_url.as_deref());
-        let raw_backdrop = c
-            .backdrop_url
-            .as_deref()
-            .or(c.landscape_image_url.as_deref())
-            .or(c.poster_url.as_deref());
-        let backdrop_url = self.ensure_absolute_url(raw_backdrop);
-        let raw_banner = c
-            .banner_image_url
-            .as_deref()
-            .or(c.landscape_image_url.as_deref())
-            .or(raw_backdrop);
+        fn non_empty(opt: Option<&str>) -> Option<&str> {
+            opt.map(str::trim).filter(|s| !s.is_empty())
+        }
+        let raw_banner = non_empty(c.banner_image_url.as_deref())
+            .or_else(|| non_empty(c.landscape_image_url.as_deref()))
+            .or_else(|| non_empty(c.backdrop_url.as_deref()))
+            .or_else(|| non_empty(c.poster_url.as_deref()));
         let banner_url = self.ensure_absolute_url(raw_banner);
+        let raw_backdrop = non_empty(c.backdrop_url.as_deref())
+            .or_else(|| non_empty(c.banner_image_url.as_deref()))
+            .or_else(|| non_empty(c.landscape_image_url.as_deref()))
+            .or_else(|| non_empty(c.poster_url.as_deref()));
+        let backdrop_url = self.ensure_absolute_url(raw_backdrop);
+        let raw_landscape = non_empty(c.landscape_image_url.as_deref())
+            .or_else(|| non_empty(c.banner_image_url.as_deref()))
+            .or_else(|| non_empty(c.backdrop_url.as_deref()))
+            .or_else(|| non_empty(c.poster_url.as_deref()));
+        let landscape_image_url = self.ensure_absolute_url(raw_landscape);
 
         let release_year = c.release_year.unwrap_or_else(|| {
             c.release_date
@@ -521,8 +640,8 @@ impl CatalogueService {
             age_rating: c.age_rating.clone().unwrap_or_else(|| "U/A 13+".to_string()),
             maturity_rating: c.age_rating.unwrap_or_else(|| "U/A 13+".to_string()),
             poster_url,
-            backdrop_url: backdrop_url.clone(),
-            landscape_image_url: backdrop_url,
+            backdrop_url,
+            landscape_image_url,
             banner_url,
             logo_image_url: c.logo_image_url.unwrap_or_default(),
             trailer_url: c.trailer_url.unwrap_or_default(),

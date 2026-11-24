@@ -162,3 +162,33 @@ pub async fn device_token_handler(
     let res = service.update_device_token(user_id, payload).await?;
     Ok((StatusCode::OK, Json(ApiResponse::success(res, "Device token updated", 200))))
 }
+
+pub async fn generate_tv_code_handler(
+    State(service): State<Arc<AuthService>>,
+    payload: Option<Json<crate::dto::GenerateTvCodeRequest>>,
+) -> Result<impl IntoResponse, AppError> {
+    let req = payload.map(|Json(p)| p).unwrap_or_default();
+    let res = service.generate_tv_code(req).await?;
+    Ok((StatusCode::OK, Json(ApiResponse::success(res, "TV pairing code generated", 200))))
+}
+
+pub async fn poll_tv_code_handler(
+    State(service): State<Arc<AuthService>>,
+    axum::extract::Path(code): axum::extract::Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let res = service.poll_tv_code(&code).await?;
+    Ok((StatusCode::OK, Json(ApiResponse::success(res, "TV pairing status retrieved", 200))))
+}
+
+pub async fn activate_tv_code_handler(
+    claims: Claims,
+    State(service): State<Arc<AuthService>>,
+    Json(payload): Json<crate::dto::ActivateTvCodeRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let user_id = claims
+        .sub
+        .parse::<i64>()
+        .map_err(|_| AppError::BadRequest("Invalid user ID in token claim".to_string()))?;
+    let res = service.activate_tv_code(user_id, payload).await?;
+    Ok((StatusCode::OK, Json(ApiResponse::success(res, "TV activated successfully", 200))))
+}

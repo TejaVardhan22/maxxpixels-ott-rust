@@ -347,6 +347,7 @@ export class AdminLayoutComponent implements OnInit, OnDestroy {
     { label: 'Producer Onboarding', icon: 'person_add', route: '/admin/producers/onboard', permissions: ['PRODUCER_VIEW'] },
     { label: 'Producer Reviews', icon: 'fact_check', route: '/admin/producer-reviews', permissions: ['PRODUCER_VIEW'] },
     { label: 'Home CMS', icon: 'view_quilt', route: '/admin/cms', permissions: ['CONTENT_UPDATE'] },
+    { label: 'Hero Banners', icon: 'panorama', route: '/admin/banners', permissions: ['CONTENT_UPDATE'] },
     { label: 'Intro Video', icon: 'play_circle_filled', route: '/admin/intro-video', permissions: ['CONTENT_UPDATE'] },
     { label: 'Portal Banners', icon: 'view_carousel', route: '/admin/portal-banners', permissions: ['CONTENT_UPDATE'] },
     { label: 'Legal Pages', icon: 'gavel', route: '/admin/legal-pages', roles: ['SUPER_ADMIN', 'ADMIN'] },
@@ -371,6 +372,55 @@ export class AdminLayoutComponent implements OnInit, OnDestroy {
     return true;
   }
 
+  private readonly onBrandingUpdated = (event: Event): void => {
+    const detail = (event as CustomEvent)?.detail;
+    if (detail && typeof detail === 'object') {
+      this.applyBranding(detail);
+    }
+  };
+
+  private resolveBrandAsset(raw: unknown): string {
+    const val = typeof raw === 'string' ? raw.trim() : '';
+    if (!val) return '';
+    if (/^https?:\/\//i.test(val) || val.startsWith('data:') || val.startsWith('assets/')) {
+      return val;
+    }
+    const apiOrigin = environment.apiBaseUrl.replace(/\/api\/v1\/?$/i, '');
+    return val.startsWith('/') ? `${apiOrigin}${val}` : `${apiOrigin}/${val}`;
+  }
+
+  private applyBranding(settings: Record<string, any>): void {
+    const shortName = settings['appShortName'] || settings['app_short_name'] || settings['appName'] || settings['platform_name'];
+    if (typeof shortName === 'string' && shortName.trim()) {
+      this.brandName = shortName.trim();
+      if (typeof document !== 'undefined') {
+        document.title = `${this.brandName} — Console Admin`;
+      }
+    }
+
+    const rawLogo =
+      settings['darkLogoUrl'] ||
+      settings['dark_logo_url'] ||
+      settings['logoUrl'] ||
+      settings['logo_url'];
+    const resolvedLogo = this.resolveBrandAsset(rawLogo);
+    if (resolvedLogo) {
+      this.brandLogoUrl = resolvedLogo;
+    }
+
+    const rawFavicon = settings['faviconUrl'] || settings['favicon_url'];
+    const resolvedFavicon = this.resolveBrandAsset(rawFavicon);
+    if (resolvedFavicon && typeof document !== 'undefined') {
+      let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.head.appendChild(link);
+      }
+      link.href = resolvedFavicon;
+    }
+  }
+
   ngOnInit(): void {
     this.breakpointSub = this.breakpointObserver
       .observe(['(max-width: 959.98px)'])
@@ -378,17 +428,23 @@ export class AdminLayoutComponent implements OnInit, OnDestroy {
         this.isMobile = state.matches;
       });
 
+    if (typeof window !== 'undefined') {
+      window.addEventListener('maxx:branding-updated', this.onBrandingUpdated);
+    }
+
     this.http.get<any>(`${environment.apiBaseUrl}/settings`).subscribe({
       next: (response) => {
-        const settings = response?.data ?? {};
-        this.brandName = settings.app_short_name || settings.platform_name || this.brandName;
-        this.brandLogoUrl = settings.dark_logo_url || settings.logo_url || 'assets/logo.png';
+        const settings = response?.data ?? response?.result ?? {};
+        this.applyBranding(settings);
       }
     });
   }
 
   ngOnDestroy(): void {
     this.breakpointSub?.unsubscribe();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('maxx:branding-updated', this.onBrandingUpdated);
+    }
   }
 
   onNavItemClick(drawer: MatSidenav): void {

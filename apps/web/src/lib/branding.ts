@@ -1,16 +1,50 @@
-import type { GeneralSettingRow } from '@ott/shared';
+import { resolveImageUrl } from '@ott/shared';
 
 export type BrandSettings = {
   name: string;
+  shortName: string;
+  companyName: string;
   logoUrl: string | null;
+  lightLogoUrl: string | null;
+  darkLogoUrl: string | null;
+  faviconUrl: string | null;
+  seoTitle: string;
   description: string;
+  supportEmail: string;
+  supportPhone: string;
+  websiteUrl: string;
+  androidAppUrl: string;
+  iosAppUrl: string;
 };
 
 export const FALLBACK_BRAND: BrandSettings = {
   name: 'MaxxPixels',
+  shortName: 'MaxxPixels',
+  companyName: 'MaxxPixels Entertainment Pvt Ltd',
   logoUrl: '/logo.png',
+  lightLogoUrl: '/logo.png',
+  darkLogoUrl: '/logo.png',
+  faviconUrl: '/logo.png',
+  seoTitle: 'MaxxPixels - Stream Movies, Short Films & Web Series',
   description: 'Stream movies, short films, and web series anytime, anywhere.',
+  supportEmail: 'support@maxxpixels.com',
+  supportPhone: '',
+  websiteUrl: 'https://maxxpixels.com',
+  androidAppUrl: 'https://play.google.com/store/apps/details?id=com.maxxpixels',
+  iosAppUrl: '',
 };
+
+function cleanAssetUrl(raw?: string | null): string | null {
+  const val = String(raw ?? '').trim();
+  if (!val) return null;
+  if (val.startsWith('http://') || val.startsWith('https://') || val.startsWith('data:')) {
+    return val;
+  }
+  if (val.startsWith('/')) {
+    return val;
+  }
+  return resolveImageUrl(val) || `/${val}`;
+}
 
 export function parseBrandSettings(rows?: any): BrandSettings {
   if (!rows) return FALLBACK_BRAND;
@@ -19,50 +53,86 @@ export function parseBrandSettings(rows?: any): BrandSettings {
 
   if (Array.isArray(rows)) {
     if (rows.length === 0) return FALLBACK_BRAND;
-    // Check if it's an array of { key, value } objects or an array with an object
-    if (rows[0] && typeof rows[0] === 'object' && 'key' in rows[0]) {
+    if (rows[0] && typeof rows[0] === 'object' && ('key' in rows[0] || 'settingKey' in rows[0])) {
       settings = Object.fromEntries(
         rows
-          .filter((row: any) => row && row.key)
-          .map((row: any) => [String(row.key), String(row.value ?? '').trim()])
+          .filter((row: any) => row && (row.key || row.settingKey))
+          .map((row: any) => [
+            String(row.key || row.settingKey),
+            String(row.value ?? row.settingValue ?? '').trim(),
+          ]),
       );
     } else if (rows[0] && typeof rows[0] === 'object') {
       settings = { ...rows[0] };
     }
   } else if (typeof rows === 'object') {
-    settings = { ...rows };
+    const inner = rows.data ?? rows.result ?? rows;
+    if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+      settings = { ...inner };
+    } else {
+      settings = { ...rows };
+    }
   }
+
+  const pick = (...keys: string[]): string => {
+    for (const k of keys) {
+      const v = settings[k];
+      if (v !== undefined && v !== null && String(v).trim() !== '') {
+        return String(v).trim();
+      }
+    }
+    return '';
+  };
+
+  const shortName =
+    pick('app_short_name', 'appShortName', 'app_name', 'appName', 'platform_name', 'platformName') ||
+    FALLBACK_BRAND.shortName;
 
   const name =
-    settings.app_name ||
-    settings.platform_name ||
-    settings.app_short_name ||
-    settings.appName ||
-    settings.appShortName ||
+    pick('app_short_name', 'appShortName', 'app_name', 'appName', 'platform_name', 'platformName') ||
     FALLBACK_BRAND.name;
 
-  let logoUrl =
-    settings.app_logo ||
-    settings.logo_url ||
-    settings.dark_logo_url ||
-    settings.logoUrl ||
-    settings.darkLogoUrl ||
-    '/logo.png';
+  const companyName =
+    pick('company_name', 'companyName') || FALLBACK_BRAND.companyName;
 
-  if (logoUrl && typeof logoUrl === 'string' && !logoUrl.startsWith('http://') && !logoUrl.startsWith('https://') && !logoUrl.startsWith('/')) {
-    logoUrl = '/' + logoUrl;
-  }
+  const darkLogoUrl = cleanAssetUrl(
+    pick('dark_logo_url', 'darkLogoUrl', 'app_logo', 'logo_url', 'logoUrl'),
+  );
+  const lightLogoUrl = cleanAssetUrl(
+    pick('logo_url', 'logoUrl', 'app_logo', 'dark_logo_url', 'darkLogoUrl'),
+  );
+  const logoUrl = darkLogoUrl || lightLogoUrl || FALLBACK_BRAND.logoUrl;
+  const faviconUrl = cleanAssetUrl(pick('favicon_url', 'faviconUrl')) || logoUrl;
+
+  const seoTitle =
+    pick('seo_title', 'seoTitle') || `${name} - Stream Movies, Short Films & Web Series`;
 
   const description =
-    settings.app_desripation ||
-    settings.app_description ||
-    settings.seo_description ||
-    settings.seoDescription ||
+    pick('seo_description', 'seoDescription', 'app_description', 'app_desripation') ||
     FALLBACK_BRAND.description;
+
+  const supportEmail = pick('support_email', 'supportEmail') || FALLBACK_BRAND.supportEmail;
+  const supportPhone = pick('support_phone', 'supportPhone') || '';
+  const websiteUrl = pick('website_url', 'websiteUrl') || FALLBACK_BRAND.websiteUrl;
+  const androidAppUrl =
+    pick('android_app_url', 'androidAppUrl', 'play_store_url', 'playStoreUrl') ||
+    FALLBACK_BRAND.androidAppUrl;
+  const iosAppUrl = pick('ios_app_url', 'iosAppUrl') || '';
 
   return {
     name,
+    shortName,
+    companyName,
     logoUrl,
+    lightLogoUrl,
+    darkLogoUrl,
+    faviconUrl,
+    seoTitle,
     description,
+    supportEmail,
+    supportPhone,
+    websiteUrl,
+    androidAppUrl,
+    iosAppUrl,
   };
 }

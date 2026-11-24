@@ -39,19 +39,20 @@ export function LandscapeCardSkeleton() {
 
 export function BannerSkeleton() {
   return (
-    <div className="relative w-full h-[56vh] sm:h-[70vh] lg:h-[88vh] -mt-[68px] bg-surface overflow-hidden">
-      <div className="shimmer absolute inset-0" />
-      {/* Fake hero content */}
-      <div className="absolute bottom-24 left-4 sm:left-12 space-y-4 animate-pulse">
-        <div className="w-48 h-3 bg-white/10 rounded" />
-        <div className="w-80 h-10 bg-white/10 rounded-md" />
-        <div className="w-64 h-4 bg-white/10 rounded" />
-        <div className="flex gap-3 mt-6">
-          <div className="w-28 h-11 bg-white/10 rounded-md" />
-          <div className="w-28 h-11 bg-white/10 rounded-md" />
+    <section className="relative w-full bg-[#0A0A0A] px-3 pb-3 pt-[104px] sm:px-6 sm:pt-[112px] lg:px-12 lg:pt-[82px]">
+      <div className="relative mx-auto max-w-[1680px] overflow-hidden rounded-xl border border-white/[0.08] bg-[#141414] min-h-[300px] sm:rounded-2xl sm:aspect-[16/9] sm:min-h-[380px] lg:aspect-[16/8.2] lg:max-h-[82svh]">
+        <div className="shimmer absolute inset-0 opacity-60" />
+        <div className="absolute bottom-6 left-4 sm:bottom-10 sm:left-11 space-y-3">
+          <div className="h-3 w-32 sm:w-40 rounded bg-white/[0.07]" />
+          <div className="h-8 w-52 sm:h-10 sm:w-72 rounded-md bg-white/[0.08]" />
+          <div className="h-3.5 w-44 sm:h-4 sm:w-60 rounded bg-white/[0.06]" />
+          <div className="mt-4 flex gap-2.5 sm:gap-3">
+            <div className="h-9 w-24 sm:h-11 sm:w-28 rounded-full bg-white/[0.08]" />
+            <div className="h-9 w-24 sm:h-11 sm:w-28 rounded-full bg-white/[0.06]" />
+          </div>
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 

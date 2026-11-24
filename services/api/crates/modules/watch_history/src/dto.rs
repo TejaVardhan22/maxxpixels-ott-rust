@@ -56,11 +56,17 @@ pub struct WatchlistToggleRequest {
 pub struct WatchlistItemDto {
     pub id: i64,
     pub content_id: i64,
+    pub video_id: i64,
+    pub is_bookmark: i32,
     pub title: String,
     pub slug: String,
     pub poster_url: String,
     pub backdrop_url: String,
     pub content_type: String,
+    pub release_year: Option<i32>,
+    pub maturity_rating: Option<String>,
+    pub duration_seconds: Option<i32>,
+    pub is_premium: bool,
     pub added_at: String,
 }
 

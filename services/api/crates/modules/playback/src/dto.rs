@@ -102,7 +102,9 @@ pub struct HeartbeatRequest {
     pub episode_id: Option<i64>,
     pub position_seconds: Option<i32>,
     pub current_position_seconds: Option<i32>,
+    pub duration_seconds: Option<i32>,
     pub total_duration_seconds: Option<i32>,
+    pub completed: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -110,5 +112,10 @@ pub struct HeartbeatRequest {
 pub struct StopPlaybackRequest {
     pub session_id: Option<String>,
     pub session_token: Option<String>,
+    pub position_seconds: Option<i32>,
+    pub current_position_seconds: Option<i32>,
+    pub duration_seconds: Option<i32>,
+    pub total_duration_seconds: Option<i32>,
+    pub completed: Option<bool>,
 }
 

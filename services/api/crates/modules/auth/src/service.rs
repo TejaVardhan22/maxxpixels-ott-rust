@@ -1,7 +1,8 @@
 use chrono::{Duration, Utc};
 use rand::Rng;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseConnection,
+    EntityTrait, QueryFilter, QueryOrder, Set, Statement,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -67,6 +68,7 @@ impl AuthService {
                 mode: None,
                 is_register: None,
                 agent_code: None,
+                recaptcha_token: None,
             };
             return self.verify_otp(v).await;
         }
@@ -258,13 +260,17 @@ impl AuthService {
         };
         let _ = new_profile.insert(&self.db).await;
 
-        link_registration_agent(
-            &self.db,
-            agent_code.as_deref(),
-            saved_user.id,
-            phone.as_deref(),
-        )
-        .await?;
+        if let Some(code) = agent_code.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
+            // Unified attribution: Marketing Agent takes priority, otherwise User Referral (never both)
+            if validate_agent_code(&self.db, code).await.is_ok() {
+                link_registration_agent(&self.db, Some(code), saved_user.id, phone.as_deref())
+                    .await?;
+            } else if !self.try_link_user_referral(code, saved_user.id).await {
+                return Err(AppError::BadRequest(
+                    "Invalid referral or marketing agent code".to_string(),
+                ));
+            }
+        }
 
         self.build_auth_response(&saved_user, assigned_roles, true).await
     }
@@ -740,6 +746,7 @@ impl AuthService {
 
     pub async fn send_otp(&self, req: SendOtpRequest) -> Result<serde_json::Value, AppError> {
         req.validate()?;
+        self.verify_recaptcha_if_present(req.recaptcha_token.as_deref()).await?;
         let raw_phone = req.mobile_number.or(req.phone).or(req.mobile).or(req.phone_number).or(req.identifier)
             .ok_or_else(|| AppError::BadRequest("Mobile number is required".to_string()))?;
         let phone_plus = Self::normalize_phone(&raw_phone);
@@ -761,7 +768,10 @@ impl AuthService {
                 return Err(AppError::Conflict("User already exists".to_string()));
             }
             if let Some(code) = req.agent_code.as_deref() {
-                validate_agent_code(&self.db, code).await?;
+                let is_user_ref = self.is_valid_user_referral_code(code).await;
+                if !is_user_ref {
+                    validate_agent_code(&self.db, code).await?;
+                }
             }
         }
 
@@ -775,6 +785,63 @@ impl AuthService {
             "identifier": phone_plus, "otpSent": true, "expiresInSeconds": 300,
             "provider": provider, "message": "OTP sent successfully"
         }))
+    }
+
+    async fn verify_recaptcha_if_present(&self, token_opt: Option<&str>) -> Result<(), AppError> {
+        let Some(token) = token_opt.map(str::trim).filter(|t| !t.is_empty()) else {
+            return Ok(());
+        };
+        // Skip local/unconfigured fallback tokens
+        if matches!(token, "unconfigured" | "recaptcha-fallback") {
+            return Ok(());
+        }
+        let secret = std::env::var("RECAPTCHA_SECRET_KEY")
+            .unwrap_or_else(|_| "6Le3Di8uAAAAAHuLWrfvFHmTjEFaORrFDb1xRMTx".to_string())
+            .trim()
+            .to_string();
+        if secret.is_empty() {
+            return Ok(());
+        }
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
+        match client
+            .post("https://www.google.com/recaptcha/api/siteverify")
+            .form(&[("secret", secret.as_str()), ("response", token)])
+            .send()
+            .await
+        {
+            Ok(res) => {
+                if let Ok(json) = res.json::<serde_json::Value>().await {
+                    let ok = json.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+                    if !ok {
+                        let codes = json
+                            .get("error-codes")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|c| c.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(",")
+                            })
+                            .unwrap_or_default();
+                        warn!("[RECAPTCHA] Siteverify returned success=false ({})", codes);
+                        if codes.contains("invalid-input-response") || codes.contains("timeout-or-duplicate") {
+                            return Err(AppError::BadRequest(
+                                "reCAPTCHA verification expired or invalid. Please try again.".to_string(),
+                            ));
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("[RECAPTCHA] Network error reaching google siteverify: {}", e);
+            }
+        }
+        Ok(())
     }
 
     async fn upsert_device(&self, user_id: i64, device_id: Option<String>, device_name: Option<String>, fcm_token: Option<String>, platform: Option<String>) {
@@ -968,16 +1035,113 @@ impl AuthService {
         }
 
         let user = user_opt.ok_or_else(|| AppError::Internal("User resolution failed".to_string()))?;
-        link_registration_agent(
-            &self.db,
-            agent_code.as_deref(),
-            user.id,
-            Some(&phone_plus),
-        )
-        .await?;
+        if let Some(code) = agent_code.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
+            // Unified attribution: Marketing Agent takes priority, otherwise User Referral (never both)
+            if validate_agent_code(&self.db, code).await.is_ok() {
+                let already_user_ref = self
+                    .db
+                    .query_one(Statement::from_sql_and_values(
+                        DatabaseBackend::Postgres,
+                        "SELECT id FROM user_referrals WHERE referred_user_id = $1 LIMIT 1",
+                        vec![user.id.into()],
+                    ))
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some();
+                if !already_user_ref {
+                    link_registration_agent(&self.db, Some(code), user.id, Some(&phone_plus))
+                        .await?;
+                }
+            } else if !self.try_link_user_referral(code, user.id).await {
+                return Err(AppError::BadRequest(
+                    "Invalid referral or marketing agent code".to_string(),
+                ));
+            }
+        }
         self.upsert_device(user.id, req.device_id.clone(), req.device_name.clone(), req.fcm_token.clone(), req.platform.clone()).await;
         let roles = self.get_user_role_names(user.id).await;
         self.build_auth_response(&user, roles, is_new_user).await
+    }
+
+    async fn is_valid_user_referral_code(&self, raw_code: &str) -> bool {
+        let clean = raw_code.trim().to_uppercase();
+        if clean.is_empty() {
+            return false;
+        }
+        self.db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT id FROM users WHERE UPPER(referral_code) = $1 LIMIT 1",
+                vec![clean.into()],
+            ))
+            .await
+            .ok()
+            .flatten()
+            .is_some()
+    }
+
+    async fn try_link_user_referral(&self, raw_code: &str, new_user_id: i64) -> bool {
+        let clean = raw_code.trim().to_uppercase();
+        if clean.is_empty() {
+            return false;
+        }
+        // Mutual exclusion: do not attach a user referral if already linked to a marketing agent
+        let already_agent = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT id FROM marketing_agent_members WHERE user_id = $1 LIMIT 1",
+                vec![new_user_id.into()],
+            ))
+            .await
+            .ok()
+            .flatten()
+            .is_some();
+        if already_agent {
+            return true;
+        }
+        let referrer = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT id FROM users WHERE UPPER(referral_code) = $1 AND id <> $2 LIMIT 1",
+                vec![clean.clone().into(), new_user_id.into()],
+            ))
+            .await
+            .ok()
+            .flatten();
+
+        let Some(row) = referrer else {
+            return false;
+        };
+        let referrer_id: i64 = match row.try_get("", "id") {
+            Ok(id) if id > 0 => id,
+            _ => return false,
+        };
+
+        let _ = self
+            .db
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "UPDATE users SET referred_by_user_id = $1, updated_at = NOW() \
+                 WHERE id = $2 AND referred_by_user_id IS NULL",
+                vec![referrer_id.into(), new_user_id.into()],
+            ))
+            .await;
+
+        let _ = self
+            .db
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "INSERT INTO user_referrals (referrer_user_id, referred_user_id, referral_code, status, reward_type, reward_days, reward_amount) \
+                 VALUES ($1, $2, $3, 'SIGNED_UP', 'VIP_DAYS', 7, 0) \
+                 ON CONFLICT (referred_user_id) DO NOTHING",
+                vec![referrer_id.into(), new_user_id.into(), clean.into()],
+            ))
+            .await;
+
+        true
     }
 
     pub async fn update_device_token(&self, user_id: i64, req: DeviceTokenRequest) -> Result<serde_json::Value, AppError> {
@@ -985,6 +1149,157 @@ impl AuthService {
         let fcm = req.fcm_token.or(req.device_token);
         self.upsert_device(user_id, Some(did.clone()), req.device_name, fcm.clone(), req.platform.or(req.os)).await;
         Ok(serde_json::json!({ "success": true, "deviceId": did, "fcmRegistered": fcm.is_some(), "updatedAt": Utc::now().to_rfc3339() }))
+    }
+
+    pub async fn generate_tv_code(&self, req: crate::dto::GenerateTvCodeRequest) -> Result<serde_json::Value, AppError> {
+        const CHARSET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        let code: String = {
+            let mut rng = rand::thread_rng();
+            (0..6)
+                .map(|_| CHARSET[rng.gen_range(0..CHARSET.len())] as char)
+                .collect()
+        };
+
+        let device_id = req
+            .device_id
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| format!("tv-{}", &code.to_lowercase()));
+        let device_name = req
+            .device_name
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "Smart TV".to_string());
+        let platform = req
+            .platform
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "ANDROID_TV".to_string())
+            .to_uppercase();
+
+        let session = crate::dto::TvPairSession {
+            code: code.clone(),
+            device_id: device_id.clone(),
+            device_name: device_name.clone(),
+            platform: platform.clone(),
+            status: "PENDING".to_string(),
+            user_id: None,
+            auth: None,
+            created_at: Utc::now().to_rfc3339(),
+        };
+
+        let key = format!("tv:pair:{}", code);
+        self.redis
+            .set(&key, &session, 600)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to store TV pairing code: {}", e)))?;
+
+        Ok(serde_json::json!({
+            "code": code,
+            "uniqueCode": code,
+            "deviceId": device_id,
+            "deviceName": device_name,
+            "platform": platform,
+            "expiresInSeconds": 600,
+            "activateUrl": "/tvactivate",
+        }))
+    }
+
+    pub async fn poll_tv_code(&self, raw_code: &str) -> Result<serde_json::Value, AppError> {
+        let code = raw_code.trim().to_uppercase();
+        if code.is_empty() {
+            return Err(AppError::BadRequest("TV pairing code is required".to_string()));
+        }
+        let key = format!("tv:pair:{}", code);
+        let session: Option<crate::dto::TvPairSession> = self.redis.get(&key).await;
+
+        let Some(sess) = session else {
+            return Ok(serde_json::json!({ "status": "EXPIRED", "code": code }));
+        };
+
+        if sess.status == "AUTHORIZED" {
+            let _ = self.redis.del(&key).await;
+            return Ok(serde_json::json!({
+                "status": "AUTHORIZED",
+                "code": code,
+                "deviceId": sess.device_id,
+                "deviceName": sess.device_name,
+                "platform": sess.platform,
+                "auth": sess.auth,
+            }));
+        }
+
+        Ok(serde_json::json!({
+            "status": "PENDING",
+            "code": code,
+            "deviceId": sess.device_id,
+            "deviceName": sess.device_name,
+        }))
+    }
+
+    pub async fn activate_tv_code(
+        &self,
+        user_id: i64,
+        req: crate::dto::ActivateTvCodeRequest,
+    ) -> Result<serde_json::Value, AppError> {
+        let code = req
+            .code
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .to_uppercase();
+        if code.len() < 4 {
+            return Err(AppError::BadRequest(
+                "Please enter a valid 6-character TV pairing code.".to_string(),
+            ));
+        }
+
+        let key = format!("tv:pair:{}", code);
+        let session: Option<crate::dto::TvPairSession> = self.redis.get(&key).await;
+
+        let Some(mut sess) = session else {
+            return Err(AppError::BadRequest(
+                "Invalid or expired TV pairing code. Please check the code on your TV screen and try again.".to_string(),
+            ));
+        };
+
+        if let Some(custom_name) = req.device_name.filter(|s| !s.trim().is_empty()) {
+            sess.device_name = custom_name.trim().to_string();
+        }
+
+        let user_model = user::Entity::find_by_id(user_id)
+            .one(&self.db)
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?
+            .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+
+        let roles = self.get_user_role_names(user_id).await;
+        let auth_res = self.build_auth_response(&user_model, roles, false).await?;
+
+        // Register the Smart TV in PostgreSQL devices table & enforce plan max_devices
+        self.upsert_device(
+            user_id,
+            Some(sess.device_id.clone()),
+            Some(sess.device_name.clone()),
+            None,
+            Some(sess.platform.clone()),
+        )
+        .await;
+
+        sess.status = "AUTHORIZED".to_string();
+        sess.user_id = Some(user_id);
+        sess.auth = Some(auth_res);
+
+        // Keep authorized payload in Redis for 2 minutes for Smart TV polling pickup
+        self.redis
+            .set(&key, &sess, 120)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+
+        Ok(serde_json::json!({
+            "activated": true,
+            "code": code,
+            "deviceId": sess.device_id,
+            "deviceName": sess.device_name,
+            "platform": sess.platform,
+        }))
     }
 
 }

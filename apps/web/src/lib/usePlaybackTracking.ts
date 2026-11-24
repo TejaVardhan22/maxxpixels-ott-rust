@@ -33,6 +33,8 @@ export interface PlaybackTrackingOptions {
 export interface PlaybackTracking {
   /** Call from the player's timeupdate tick; feeds the next heartbeat. */
   reportProgress: (positionSeconds: number, durationSeconds?: number) => void;
+  /** Call when playback reaches the end so the title is marked completed and removed from Continue Watching. */
+  reportCompleted: (durationSeconds?: number) => void;
 }
 
 function authHeaders(): Record<string, string> {
@@ -95,39 +97,41 @@ export function usePlaybackTracking({
   }, [awaitingAuthorization, contentId, deviceType, episodeId, sessionToken]);
 
   // Session lifecycle: one heartbeat loop per authorized session token.
+  const completedRef = useRef(false);
   useEffect(() => {
     if (!sessionToken) return;
+    completedRef.current = false;
 
     const snapshot = () => {
       const currentContentId = contentIdRef.current;
       const currentEpisodeId = episodeIdRef.current;
+      const pos = Math.max(0, Math.floor(positionRef.current));
+      const dur = Math.max(0, Math.floor(durationRef.current));
       return {
         sessionToken,
         contentId: currentContentId && currentContentId > 0 ? currentContentId : undefined,
         episodeId: currentEpisodeId && currentEpisodeId > 0 ? currentEpisodeId : undefined,
-        currentPositionSeconds: Math.max(0, Math.floor(positionRef.current)),
-        totalDurationSeconds: Math.max(0, Math.floor(durationRef.current)),
+        positionSeconds: pos,
+        currentPositionSeconds: pos,
+        durationSeconds: dur,
+        totalDurationSeconds: dur,
+        completed: completedRef.current || (dur > 0 && pos >= Math.floor(dur * 0.92)),
         deviceType,
       };
     };
 
-    const sendHeartbeat = () => postJson('/api/v1/playback/heartbeat', snapshot());
+    const sendHeartbeat = () => {
+      // Skip initial 0s tick so we never overwrite a saved resume position before playback starts.
+      if (positionRef.current <= 0 && !completedRef.current) return;
+      postJson('/api/v1/playback/heartbeat', snapshot());
+    };
 
-    sendHeartbeat();
-    const interval = window.setInterval(sendHeartbeat, 15_000);
+    const interval = window.setInterval(sendHeartbeat, 10_000);
 
     return () => {
       window.clearInterval(interval);
-      // keepalive lets the release request finish while the route unmounts.
-      postJson(
-        '/api/v1/playback/stop',
-        {
-          ...snapshot(),
-          positionSeconds: Math.max(0, Math.floor(positionRef.current)),
-          durationSeconds: Math.max(0, Math.floor(durationRef.current)),
-        },
-        true,
-      );
+      // keepalive lets the release & final progress request finish while the route unmounts.
+      postJson('/api/v1/playback/stop', snapshot(), true);
     };
   }, [deviceType, sessionToken]);
 
@@ -140,5 +144,59 @@ export function usePlaybackTracking({
     }
   }, []);
 
-  return { reportProgress };
+  const reportCompleted = useCallback(
+    (durationSeconds?: number) => {
+      completedRef.current = true;
+      const dur = Math.max(
+        0,
+        Math.floor(
+          Number.isFinite(durationSeconds) && Number(durationSeconds) > 0
+            ? Number(durationSeconds)
+            : durationRef.current || positionRef.current,
+        ),
+      );
+      if (dur > 0) {
+        durationRef.current = dur;
+        positionRef.current = dur;
+      }
+
+      const currentContentId = contentIdRef.current;
+      const currentEpisodeId = episodeIdRef.current;
+
+      if (currentContentId && currentContentId > 0) {
+        postJson(
+          '/api/v1/watch/history',
+          {
+            contentId: currentContentId,
+            episodeId: currentEpisodeId && currentEpisodeId > 0 ? currentEpisodeId : undefined,
+            positionSeconds: dur,
+            durationSeconds: dur,
+            completed: true,
+          },
+          true,
+        );
+      }
+
+      if (sessionToken) {
+        postJson(
+          '/api/v1/playback/heartbeat',
+          {
+            sessionToken,
+            contentId: currentContentId && currentContentId > 0 ? currentContentId : undefined,
+            episodeId: currentEpisodeId && currentEpisodeId > 0 ? currentEpisodeId : undefined,
+            positionSeconds: dur,
+            currentPositionSeconds: dur,
+            durationSeconds: dur,
+            totalDurationSeconds: dur,
+            completed: true,
+            deviceType,
+          },
+          true,
+        );
+      }
+    },
+    [deviceType, sessionToken],
+  );
+
+  return { reportProgress, reportCompleted };
 }

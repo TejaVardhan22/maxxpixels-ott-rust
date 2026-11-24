@@ -261,6 +261,36 @@ export interface AuditHistoryRecord {
               </div>
             </div>
 
+            <div class="section-title"><mat-icon>share</mat-icon><span>Social Media Links (Shown in Website Footer)</span></div>
+            <div class="form-row">
+              <div class="half-width">
+                <mat-form-field appearance="outline" class="full-width custom-field">
+                  <mat-label>Facebook Page URL</mat-label>
+                  <input matInput type="url" formControlName="facebookUrl" placeholder="https://www.facebook.com/maxxpixels">
+                </mat-form-field>
+              </div>
+              <div class="half-width">
+                <mat-form-field appearance="outline" class="full-width custom-field">
+                  <mat-label>Instagram Profile URL</mat-label>
+                  <input matInput type="url" formControlName="instagramUrl" placeholder="https://www.instagram.com/maxxpixels">
+                </mat-form-field>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="half-width">
+                <mat-form-field appearance="outline" class="full-width custom-field">
+                  <mat-label>X (Twitter) Profile URL</mat-label>
+                  <input matInput type="url" formControlName="twitterUrl" placeholder="https://x.com/maxxpixels">
+                </mat-form-field>
+              </div>
+              <div class="half-width">
+                <mat-form-field appearance="outline" class="full-width custom-field">
+                  <mat-label>YouTube Channel URL</mat-label>
+                  <input matInput type="url" formControlName="youtubeUrl" placeholder="https://www.youtube.com/@maxxpixels">
+                </mat-form-field>
+              </div>
+            </div>
+
             <button mat-raised-button class="full-width submit-btn" type="submit" [disabled]="isSaving">
               <mat-icon>save</mat-icon> Save Branding Configuration
             </button>
@@ -1331,6 +1361,10 @@ export class SystemSettingsPage implements OnInit {
     seoDescription: ['Stream movies, series and live entertainment on MaxxPixels.', [Validators.required, Validators.maxLength(170)]],
     androidAppUrl: ['https://play.google.com/store/apps/details?id=com.maxxpixels'],
     iosAppUrl: ['https://apps.apple.com/app/maxxpixels'],
+    facebookUrl: ['https://www.facebook.com/maxxpixels'],
+    instagramUrl: ['https://www.instagram.com/maxxpixels'],
+    twitterUrl: ['https://x.com/maxxpixels'],
+    youtubeUrl: ['https://www.youtube.com/@maxxpixels'],
     cdnBaseUrl: [''],
     defaultLanguage: ['en', [Validators.required]],
     defaultRegion: ['GLOBAL', [Validators.required]],
@@ -1456,6 +1490,9 @@ export class SystemSettingsPage implements OnInit {
         if (res.success && res.data) {
           this.settingsForm.patchValue(this.coerceSettingsPayload(res.data));
           this.settingsForm.markAsPristine();
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('maxx:branding-updated', { detail: res.data }));
+          }
         }
       },
       error: () => {
@@ -1694,6 +1731,9 @@ export class SystemSettingsPage implements OnInit {
             ? 'No changes detected — configuration is already up to date.'
             : `Platform settings saved (${count ?? ''} updated) and cache refreshed!`
         );
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('maxx:branding-updated', { detail: dto }));
+        }
         this.loadSettings();
         if (this.activeTab === 'HISTORY') {
           this.loadHistory();

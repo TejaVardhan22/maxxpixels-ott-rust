@@ -57,14 +57,18 @@ export default function PlayButtonGuard({
         className={
           className ??
           (compact
-            ? 'inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/15 hover:bg-white/25 text-white disabled:opacity-60'
-            : 'inline-flex items-center gap-2 bg-[#E50914] hover:bg-[#B80710] text-white font-black px-8 py-3 rounded-xl shadow-[0_0_20px_rgba(229,9,20,0.45)] transition-all hover:scale-105 disabled:opacity-60')
+            ? 'inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#FF6D2E]/40 bg-[#FF6D2E]/20 text-white transition hover:bg-[#FF6D2E] disabled:opacity-60'
+            : 'inline-flex h-11 items-center gap-2.5 rounded-md bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] px-7 text-sm font-bold text-white shadow-[0_8px_28px_rgba(255,109,46,0.4)] transition hover:brightness-110 active:scale-[0.99] disabled:opacity-60 sm:h-12')
         }
       >
         {loading ? (
           <Loader2 size={compact ? 16 : 18} className="animate-spin text-white" />
         ) : (
-          <Play size={compact ? 16 : 18} fill={compact ? 'currentColor' : 'currentColor'} className={compact ? 'text-white ml-0.5' : ''} />
+          <Play
+            size={compact ? 16 : 18}
+            fill="currentColor"
+            className={compact ? 'ml-0.5 text-white' : ''}
+          />
         )}
         {!compact && (loading ? 'Starting…' : 'Play')}
       </button>

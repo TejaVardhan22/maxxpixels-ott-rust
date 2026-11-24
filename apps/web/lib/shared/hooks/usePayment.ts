@@ -24,8 +24,8 @@ export function useApplyCoupon() {
  */
 export function useValidateCouponV1() {
   return useMutation({
-    mutationFn: ({ code, amount }: { code: string; amount: number }) =>
-      paymentApi.validateCouponV1(code, amount),
+    mutationFn: ({ code, amount, planId }: { code: string; amount: number; planId?: number | string }) =>
+      paymentApi.validateCouponV1(code, amount, planId),
   });
 }
 

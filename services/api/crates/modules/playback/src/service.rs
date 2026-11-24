@@ -65,9 +65,9 @@ impl PlaybackService {
             .unwrap_or(if c.is_premium.unwrap_or(false) { "SVOD" } else { "AVOD" })
             .to_uppercase();
 
-        if !is_trailer && mode != "AVOD" && mode != "FREE" {
+        if !is_trailer {
             let uid = user_id.ok_or_else(|| {
-                AppError::Unauthorized("Authentication required for premium content".to_string())
+                AppError::Unauthorized("Authentication and active subscription required to watch content".to_string())
             })?;
 
             // Allow ADMIN / SUPER_ADMIN to preview streams in the Admin Panel
@@ -224,7 +224,12 @@ impl PlaybackService {
                 .one(&self.db)
                 .await
             {
-                resume_pos = wh.position_seconds.unwrap_or(0);
+                let already_done = wh.is_completed.unwrap_or(false) || wh.completed.unwrap_or(false);
+                resume_pos = if already_done {
+                    0
+                } else {
+                    wh.position_seconds.unwrap_or(0)
+                };
             }
         }
 
@@ -402,6 +407,73 @@ impl PlaybackService {
         })
     }
 
+    async fn persist_watch_progress(
+        &self,
+        uid: i64,
+        prof_id: i64,
+        cid: i64,
+        ep_id: Option<i64>,
+        pos_val: i32,
+        dur_val: i32,
+        explicit_completed: Option<bool>,
+    ) {
+        let completed = explicit_completed.unwrap_or(dur_val > 0 && pos_val >= (dur_val * 92 / 100));
+        if pos_val <= 0 && !completed {
+            // Never overwrite a saved resume position with 0 on initial mount heartbeat.
+            return;
+        }
+        let final_pos = if completed && dur_val > 0 { dur_val } else { pos_val.max(0) };
+        let pct = if completed {
+            100.0
+        } else if dur_val > 0 {
+            ((final_pos as f64 / dur_val as f64) * 100.0).min(100.0)
+        } else {
+            0.0
+        };
+        let pct_dec = Decimal::from_f64_retain(pct).unwrap_or(Decimal::ZERO);
+        let now_wh: chrono::DateTime<Utc> = Utc::now();
+
+        let wh_sql = r#"
+            INSERT INTO watch_history (
+                user_id, profile_id, content_id, episode_id,
+                position_seconds, watched_seconds, watched_duration_seconds,
+                duration_seconds, total_duration_seconds,
+                percentage, completed, is_completed, last_watched_at
+            ) VALUES ($1,$2,$3,$4,$5,$5,$5,$6,$6,$7,$8,$8,$9)
+            ON CONFLICT (profile_id, content_id) DO UPDATE SET
+                user_id = EXCLUDED.user_id,
+                episode_id = EXCLUDED.episode_id,
+                position_seconds = EXCLUDED.position_seconds,
+                watched_seconds = EXCLUDED.watched_seconds,
+                watched_duration_seconds = EXCLUDED.watched_duration_seconds,
+                duration_seconds = CASE WHEN EXCLUDED.duration_seconds > 0 THEN EXCLUDED.duration_seconds ELSE watch_history.duration_seconds END,
+                total_duration_seconds = CASE WHEN EXCLUDED.total_duration_seconds > 0 THEN EXCLUDED.total_duration_seconds ELSE watch_history.total_duration_seconds END,
+                percentage = EXCLUDED.percentage,
+                completed = EXCLUDED.completed,
+                is_completed = EXCLUDED.is_completed,
+                last_watched_at = EXCLUDED.last_watched_at
+        "#;
+        let _ = self
+            .db
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                wh_sql,
+                vec![
+                    uid.into(),
+                    prof_id.into(),
+                    cid.into(),
+                    ep_id.into(),
+                    final_pos.into(),
+                    dur_val.into(),
+                    pct_dec.into(),
+                    completed.into(),
+                    now_wh.into(),
+                ],
+            ))
+            .await;
+        bump_analytics_version().await;
+    }
+
     pub async fn record_heartbeat(&self, req: HeartbeatRequest) -> Result<(), AppError> {
         let sid = req.session_id.or(req.session_token);
         if let Some(session_key) = sid {
@@ -412,6 +484,7 @@ impl PlaybackService {
                 .map_err(|e| AppError::Database(e.to_string()))?
             {
                 let pos = req.position_seconds.or(req.current_position_seconds);
+                let dur = req.duration_seconds.or(req.total_duration_seconds);
                 let now = Utc::now().into();
                 let uid_opt = session.user_id;
                 let cid = session.content_id;
@@ -420,70 +493,25 @@ impl PlaybackService {
 
                 let mut active: playback_session::ActiveModel = session.into();
                 if let Some(p) = pos {
-                    active.current_position_seconds = Set(Some(p));
+                    if p > 0 {
+                        active.current_position_seconds = Set(Some(p));
+                    }
                 }
-                if let Some(dur) = req.total_duration_seconds {
-                    active.total_duration_seconds = Set(Some(dur));
+                if let Some(d) = dur {
+                    if d > 0 {
+                        active.total_duration_seconds = Set(Some(d));
+                    }
                 }
                 active.last_heartbeat = Set(Some(now));
                 active.last_heartbeat_at = Set(Some(now));
                 let _ = active.update(&self.db).await;
 
                 if let Some(uid) = uid_opt {
-                    if let Some(pos_val) = pos {
-                        // Canonical watch-history write path: one row per profile + content.
-                        // The progress API uses the same unique key and 92% completion rule.
-                        let dur_val = req.total_duration_seconds.unwrap_or(0);
-                        let prof_id = prof_id_opt.unwrap_or(uid);
-                        let completed = dur_val > 0 && pos_val >= (dur_val * 92 / 100);
-                        let pct = if dur_val > 0 {
-                            ((pos_val as f64 / dur_val as f64) * 100.0).min(100.0)
-                        } else {
-                            0.0
-                        };
-                        let pct_dec = Decimal::from_f64_retain(pct).unwrap_or(Decimal::ZERO);
-                        let now_wh: chrono::DateTime<Utc> = Utc::now();
-
-                        let wh_sql = r#"
-                            INSERT INTO watch_history (
-                                user_id, profile_id, content_id, episode_id,
-                                position_seconds, watched_seconds, watched_duration_seconds,
-                                duration_seconds, total_duration_seconds,
-                                percentage, completed, is_completed, last_watched_at
-                            ) VALUES ($1,$2,$3,$4,$5,$5,$5,$6,$6,$7,$8,$8,$9)
-                            ON CONFLICT (profile_id, content_id) DO UPDATE SET
-                                user_id = EXCLUDED.user_id,
-                                episode_id = EXCLUDED.episode_id,
-                                position_seconds = EXCLUDED.position_seconds,
-                                watched_seconds = EXCLUDED.watched_seconds,
-                                watched_duration_seconds = EXCLUDED.watched_duration_seconds,
-                                duration_seconds = EXCLUDED.duration_seconds,
-                                total_duration_seconds = EXCLUDED.total_duration_seconds,
-                                percentage = EXCLUDED.percentage,
-                                completed = EXCLUDED.completed,
-                                is_completed = EXCLUDED.is_completed,
-                                last_watched_at = EXCLUDED.last_watched_at
-                        "#;
-                        let _ = self
-                            .db
-                            .execute(Statement::from_sql_and_values(
-                                DatabaseBackend::Postgres,
-                                wh_sql,
-                                vec![
-                                    uid.into(),
-                                    prof_id.into(),
-                                    cid.into(),
-                                    ep_id.into(),
-                                    pos_val.into(),
-                                    dur_val.into(),
-                                    pct_dec.into(),
-                                    completed.into(),
-                                    now_wh.into(),
-                                ],
-                            ))
-                            .await;
-                        bump_analytics_version().await;
-                    }
+                    let pos_val = pos.unwrap_or(0);
+                    let dur_val = dur.unwrap_or(0);
+                    let prof_id = prof_id_opt.unwrap_or(uid);
+                    self.persist_watch_progress(uid, prof_id, cid, ep_id, pos_val, dur_val, req.completed)
+                        .await;
                 }
             }
         }
@@ -499,10 +527,35 @@ impl PlaybackService {
                 .await
                 .map_err(|e| AppError::Database(e.to_string()))?
             {
+                let pos = req.position_seconds.or(req.current_position_seconds);
+                let dur = req.duration_seconds.or(req.total_duration_seconds);
+                let uid_opt = session.user_id;
+                let cid = session.content_id;
+                let ep_id = session.episode_id;
+                let prof_id_opt = session.profile_id;
+
                 let mut active: playback_session::ActiveModel = session.into();
+                if let Some(p) = pos {
+                    if p > 0 {
+                        active.current_position_seconds = Set(Some(p));
+                    }
+                }
+                if let Some(d) = dur {
+                    if d > 0 {
+                        active.total_duration_seconds = Set(Some(d));
+                    }
+                }
                 active.status = Set(Some("ENDED".to_string()));
                 active.is_active = Set(Some(false));
                 let _ = active.update(&self.db).await;
+
+                if let Some(uid) = uid_opt {
+                    let pos_val = pos.unwrap_or(0);
+                    let dur_val = dur.unwrap_or(0);
+                    let prof_id = prof_id_opt.unwrap_or(uid);
+                    self.persist_watch_progress(uid, prof_id, cid, ep_id, pos_val, dur_val, req.completed)
+                        .await;
+                }
             }
         }
         Ok(())

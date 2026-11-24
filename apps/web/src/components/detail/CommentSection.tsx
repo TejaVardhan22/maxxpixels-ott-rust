@@ -47,22 +47,22 @@ export default function CommentSection({ videoType, videoId, subVideoType = 0, u
 
   return (
     <section className="mt-8">
-      <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-        <MessageCircle size={20} /> Comments
+      <h3 className="mb-4 flex items-center gap-2 text-lg font-bold text-white">
+        <MessageCircle size={19} className="text-[#FF6D2E]" /> Comments
       </h3>
 
       {userId && (
-        <form onSubmit={handleSubmit} className="flex gap-3 mb-6">
+        <form onSubmit={handleSubmit} className="mb-6 flex gap-3">
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder={replyTo ? 'Write a reply...' : 'Add a comment...'}
-            className="flex-1 bg-surface border border-ott-border rounded-lg px-4 py-3 text-sm text-white placeholder:text-muted-text focus:outline-none focus:border-primary/50"
+            className="flex-1 rounded-md border border-white/15 bg-[#141414] px-4 py-3 text-sm text-white placeholder:text-zinc-500 focus:border-[#FF6D2E] focus:outline-none"
           />
           <button
             type="submit"
             disabled={!text.trim() || addMut.isPending}
-            className="bg-primary hover:bg-primary-dark disabled:opacity-40 text-white rounded-lg px-5 py-3 font-semibold text-sm transition-colors"
+            className="rounded-md bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] px-5 py-3 text-sm font-bold text-white transition hover:brightness-110 disabled:opacity-40"
           >
             <Send size={16} />
           </button>
@@ -71,22 +71,25 @@ export default function CommentSection({ videoType, videoId, subVideoType = 0, u
 
       <div className="space-y-4">
         {comments.map((c) => (
-          <div key={c.id} className="flex gap-3">
+          <div
+            key={c.id}
+            className="flex gap-3 rounded-xl border border-white/[0.06] bg-[#141414] p-3.5"
+          >
             <img
               src={avatarUrl(c.user_image)}
               alt=""
-              className="w-9 h-9 rounded-full flex-shrink-0 bg-shimmer"
+              className="h-9 w-9 flex-shrink-0 rounded-full bg-[#1F1F1F] object-cover"
             />
-            <div className="flex-1 min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold">{firstText(c.full_name)}</span>
-                <span className="text-xs text-muted-text">{firstText(c.created_at)}</span>
+                <span className="text-sm font-semibold text-white">{firstText(c.full_name)}</span>
+                <span className="text-xs text-zinc-500">{firstText(c.created_at)}</span>
               </div>
-              <p className="text-sm text-body-text mt-0.5">{firstText(c.comment)}</p>
-              <div className="flex gap-4 mt-1">
+              <p className="mt-0.5 text-sm text-zinc-300">{firstText(c.comment)}</p>
+              <div className="mt-1 flex gap-4">
                 <button
                   onClick={() => setReplyTo(c.id ?? null)}
-                  className="text-xs text-desc-text hover:text-primary transition-colors"
+                  className="text-xs font-semibold text-zinc-400 transition-colors hover:text-[#FF6D2E]"
                 >
                   Reply {c.reply_count ? `(${c.reply_count})` : ''}
                 </button>
@@ -96,7 +99,9 @@ export default function CommentSection({ videoType, videoId, subVideoType = 0, u
         ))}
 
         {comments.length === 0 && !commentsQ.isLoading && (
-          <p className="text-center text-desc-text text-sm py-8">No comments yet. Be the first!</p>
+          <p className="py-8 text-center text-sm text-zinc-500">
+            No comments yet. Be the first!
+          </p>
         )}
       </div>
     </section>

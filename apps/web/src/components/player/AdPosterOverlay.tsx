@@ -49,7 +49,7 @@ async function downloadPoster(url: string, title: string): Promise<void> {
 
 export default function AdPosterOverlay({ thumbnail, title }: AdPosterOverlayProps) {
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black">
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#0A0A0A]">
       <img
         src={thumbnail}
         alt={title}
@@ -58,18 +58,20 @@ export default function AdPosterOverlay({ thumbnail, title }: AdPosterOverlayPro
           event.currentTarget.src = posterFallback(title);
         }}
       />
-      <div className="absolute bottom-5 left-5 rounded bg-black/70 px-3 py-2 text-sm font-bold text-white">
-        <span className="mr-2 rounded bg-yellow-400 px-1.5 py-0.5 text-xs font-black text-black">AD</span>
-        {title}
+      <div className="absolute bottom-6 left-6 flex items-center gap-2 rounded-full border border-white/15 bg-[#141414]/90 px-4 py-2 text-xs font-bold text-white backdrop-blur-md">
+        <span className="rounded bg-[#FF6D2E] px-1.5 py-0.5 text-[10px] font-extrabold uppercase text-white">
+          Ad
+        </span>
+        <span>{title}</span>
       </div>
       <button
         type="button"
-        className="pointer-events-auto absolute right-5 top-5 inline-flex items-center gap-2 rounded bg-black/75 px-3 py-2 text-xs font-bold text-white ring-1 ring-white/25 transition hover:bg-black/90 hover:ring-yellow-400/70"
+        className="pointer-events-auto absolute right-6 top-6 inline-flex items-center gap-2 rounded-full border border-white/15 bg-[#141414]/90 px-4 py-2 text-xs font-semibold text-white backdrop-blur-md transition hover:border-[#FF6D2E] hover:bg-[#FF6D2E]"
         onClick={() => {
           void downloadPoster(thumbnail, title);
         }}
       >
-        <Download size={14} strokeWidth={2.4} />
+        <Download size={14} strokeWidth={2.2} />
         Download poster
       </button>
     </div>

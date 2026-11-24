@@ -1,0 +1,528 @@
+package com.maxxpixels
+
+import android.os.Bundle
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.LocalFireDepartment
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.lifecycleScope
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.maxxpixels.data.model.CreatedOrder
+import com.maxxpixels.data.model.SubscriptionPlan
+import com.maxxpixels.data.repository.ApiResult
+import com.maxxpixels.ui.components.OfflineStatusBanner
+import com.maxxpixels.ui.screens.auth.LoginScreen
+import com.maxxpixels.ui.screens.auth.SignUpScreen
+import com.maxxpixels.ui.screens.details.DetailsScreen
+import com.maxxpixels.ui.screens.games.GamesHubScreen
+import com.maxxpixels.ui.screens.home.HomeScreen
+import com.maxxpixels.ui.screens.newhot.NewHotScreen
+import com.maxxpixels.ui.screens.player.PlayerScreen
+import com.maxxpixels.ui.screens.portal.PortalSelectionScreen
+import com.maxxpixels.ui.screens.profile.AccountScreen
+import com.maxxpixels.ui.screens.profile.CategoryContentScreen
+import com.maxxpixels.ui.screens.profile.HelpSupportScreen
+import com.maxxpixels.ui.screens.profile.MyDownloadsScreen
+import com.maxxpixels.ui.screens.profile.NotificationsScreen
+import com.maxxpixels.ui.screens.profile.PrivacyLegalScreen
+import com.maxxpixels.ui.screens.profile.ProfileScreen
+import com.maxxpixels.ui.screens.profile.RentalsScreen
+import com.maxxpixels.ui.screens.profile.SettingsScreen
+import com.maxxpixels.ui.screens.profile.StorageScreen
+import com.maxxpixels.ui.screens.search.SearchScreen
+import com.maxxpixels.ui.screens.splash.SplashScreen
+import com.maxxpixels.ui.screens.subscription.SubscriptionScreen
+import com.maxxpixels.ui.theme.MaxxColors
+import com.maxxpixels.ui.theme.MaxxPixelsTheme
+import com.razorpay.Checkout
+import com.razorpay.PaymentData
+import com.razorpay.PaymentResultWithDataListener
+import kotlinx.coroutines.launch
+import org.json.JSONObject
+import java.net.URLDecoder
+import java.net.URLEncoder
+
+class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
+
+    private var pendingOrder: Pair<CreatedOrder, SubscriptionPlan>? = null
+    private var onPaymentSuccessCallback: (() -> Unit)? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        Checkout.preload(applicationContext)
+
+        val app = application as MaxxPixelsApplication
+
+        setContent {
+            MaxxPixelsTheme {
+                MaxxPixelsApp(
+                    app = app,
+                    onStartRazorpay = { order, plan, onActivated ->
+                        pendingOrder = order to plan
+                        onPaymentSuccessCallback = onActivated
+                        launchRazorpayCheckout(order, plan, app)
+                    }
+                )
+            }
+        }
+    }
+
+    private fun launchRazorpayCheckout(
+        order: CreatedOrder,
+        plan: SubscriptionPlan,
+        app: MaxxPixelsApplication
+    ) {
+        try {
+            val checkout = Checkout()
+            checkout.setKeyID(order.keyId)
+            val user = app.sessionManager.session.value
+            val options = JSONObject().apply {
+                put("name", "MaxxPixels")
+                put("description", plan.name)
+                put("currency", order.currency)
+                put("amount", order.amountPaise)
+                if (!order.gatewayOrderId.isNullOrBlank()) {
+                    put("order_id", order.gatewayOrderId)
+                }
+                put("theme", JSONObject().put("color", "#E50914"))
+                put("prefill", JSONObject().apply {
+                    put("name", user?.fullName.orEmpty())
+                    put("email", user?.email.orEmpty())
+                    put("contact", user?.phoneNumber.orEmpty())
+                })
+            }
+            checkout.open(this, options)
+        } catch (e: Exception) {
+            Toast.makeText(this, e.message ?: "Unable to launch Razorpay", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    override fun onPaymentSuccess(razorpayPaymentId: String?, paymentData: PaymentData?) {
+        val pair = pendingOrder ?: return
+        val (order, plan) = pair
+        val app = application as MaxxPixelsApplication
+        val orderId = paymentData?.orderId ?: order.orderId
+        val paymentId = razorpayPaymentId ?: paymentData?.paymentId ?: return
+        val signature = paymentData?.signature.orEmpty()
+
+        lifecycleScope.launch {
+            when (val res = app.repository.verifyPayment(orderId, paymentId, signature, plan.name)) {
+                is ApiResult.Success -> {
+                    Toast.makeText(this@MainActivity, "${plan.name} activated!", Toast.LENGTH_SHORT).show()
+                    onPaymentSuccessCallback?.invoke()
+                }
+                is ApiResult.Error -> {
+                    Toast.makeText(this@MainActivity, res.message, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    override fun onPaymentError(code: Int, description: String?, paymentData: PaymentData?) {
+        Toast.makeText(this, description ?: "Payment cancelled", Toast.LENGTH_SHORT).show()
+    }
+}
+
+@Composable
+private fun MaxxPixelsApp(
+    app: MaxxPixelsApplication,
+    onStartRazorpay: (CreatedOrder, SubscriptionPlan, () -> Unit) -> Unit
+) {
+    val navController = rememberNavController()
+    val isOnline by app.networkMonitor.isOnline.collectAsState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaxxColors.CinemaBlack)
+    ) {
+        OfflineStatusBanner(isOffline = !isOnline)
+
+        Box(modifier = Modifier.weight(1f)) {
+            NavHost(navController = navController, startDestination = "splash") {
+                composable("splash") {
+                    SplashScreen(
+                        repository = app.repository,
+                        onNavigateLogin = {
+                            navController.navigate("login") { popUpTo("splash") { inclusive = true } }
+                        },
+                        onNavigateSubscription = {
+                            navController.navigate("subscription") { popUpTo("splash") { inclusive = true } }
+                        },
+                        onNavigateHome = {
+                            navController.navigate("portal") { popUpTo("splash") { inclusive = true } }
+                        }
+                    )
+                }
+
+                composable("login") {
+                    LoginScreen(
+                        repository = app.repository,
+                        onAuthenticated = { hasActiveSub ->
+                            val target = if (hasActiveSub) "portal" else "subscription"
+                            navController.navigate(target) { popUpTo("login") { inclusive = true } }
+                        },
+                        onNavigateSignUp = { prefillPhone ->
+                            val safe = URLEncoder.encode(prefillPhone, "UTF-8")
+                            navController.navigate("signup?phone=$safe")
+                        }
+                    )
+                }
+
+                composable(
+                    route = "signup?phone={phone}",
+                    arguments = listOf(navArgument("phone") { type = NavType.StringType; defaultValue = "" })
+                ) { entry ->
+                    val prefill = URLDecoder.decode(entry.arguments?.getString("phone").orEmpty(), "UTF-8")
+                    SignUpScreen(
+                        repository = app.repository,
+                        prefillPhone = prefill,
+                        onAuthenticated = { hasActiveSub ->
+                            val target = if (hasActiveSub) "portal" else "subscription"
+                            navController.navigate(target) { popUpTo(0) { inclusive = true } }
+                        },
+                        onNavigateLogin = { navController.popBackStack() }
+                    )
+                }
+
+                composable("subscription") {
+                    SubscriptionScreen(
+                        repository = app.repository,
+                        onLaunchRazorpay = { order, plan ->
+                            onStartRazorpay(order, plan) {
+                                navController.navigate("portal") {
+                                    popUpTo("subscription") { inclusive = true }
+                                }
+                            }
+                        },
+                        onSubscriptionActivated = {
+                            navController.navigate("portal") {
+                                popUpTo("subscription") { inclusive = true }
+                            }
+                        },
+                        onBackHome = { navController.popBackStack() },
+                        onSignedOut = {
+                            navController.navigate("login") { popUpTo(0) { inclusive = true } }
+                        }
+                    )
+                }
+
+                // Exact RN PortalSelectionScreen
+                composable("portal") {
+                    PortalSelectionScreen(
+                        repository = app.repository,
+                        onOpenOttPortal = { lang, typeId ->
+                            navController.navigate("main?lang=$lang&typeId=$typeId&tab=0")
+                        },
+                        onOpenGamesHub = { navController.navigate("games") },
+                        onOpenSearch = { navController.navigate("main?lang=kannada&typeId=0&tab=1") },
+                        onOpenSubscription = { navController.navigate("subscription") }
+                    )
+                }
+
+                composable("games") {
+                    GamesHubScreen(
+                        repository = app.repository,
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+
+                // 1:1 RN MainScreen 4-Tab Shell: Home | Search | New & Hot | My Space
+                composable(
+                    route = "main?lang={lang}&typeId={typeId}&tab={tab}",
+                    arguments = listOf(
+                        navArgument("lang") { type = NavType.StringType; defaultValue = "kannada" },
+                        navArgument("typeId") { type = NavType.IntType; defaultValue = 0 },
+                        navArgument("tab") { type = NavType.IntType; defaultValue = 0 }
+                    )
+                ) { entry ->
+                    val lang = entry.arguments?.getString("lang") ?: "kannada"
+                    val typeId = entry.arguments?.getInt("typeId") ?: 0
+                    val initialTab = entry.arguments?.getInt("tab") ?: 0
+                    RnMainTabsShell(
+                        app = app,
+                        initialLanguage = lang,
+                        initialTypeId = typeId,
+                        initialTab = initialTab,
+                        onOpenDetails = { id -> navController.navigate("details/$id") },
+                        onPlay = { id, title ->
+                            val encoded = URLEncoder.encode(title, "UTF-8")
+                            navController.navigate("player/$id/0/$encoded")
+                        },
+                        onOpenNotifications = { navController.navigate("notifications") },
+                        onOpenCategory = { title, tid, l ->
+                            val enc = URLEncoder.encode(title, "UTF-8")
+                            navController.navigate("category/$enc/$tid/$l")
+                        },
+                        onOpenGames = { navController.navigate("games") },
+                        onOpenSubscription = { navController.navigate("subscription") },
+                        onOpenAccount = { navController.navigate("account") },
+                        onOpenRentals = { navController.navigate("rentals") },
+                        onOpenDownloads = { navController.navigate("downloads") },
+                        onOpenStorage = { navController.navigate("storage") },
+                        onOpenSettings = { navController.navigate("settings") },
+                        onOpenHelp = { navController.navigate("help") },
+                        onOpenLegal = { navController.navigate("legal") },
+                        onOpenPortalHub = {
+                            navController.navigate("portal") { launchSingleTop = true }
+                        },
+                        onSignedOut = {
+                            navController.navigate("login") { popUpTo(0) { inclusive = true } }
+                        }
+                    )
+                }
+
+                composable("account") {
+                    AccountScreen(repository = app.repository, onBack = { navController.popBackStack() })
+                }
+
+                composable("notifications") {
+                    NotificationsScreen(repository = app.repository, onBack = { navController.popBackStack() })
+                }
+
+                composable("rentals") {
+                    RentalsScreen(
+                        repository = app.repository,
+                        onBack = { navController.popBackStack() },
+                        onOpenDetails = { id -> navController.navigate("details/$id") }
+                    )
+                }
+
+                composable("downloads") {
+                    MyDownloadsScreen(
+                        onBack = { navController.popBackStack() },
+                        onExplore = { navController.popBackStack() }
+                    )
+                }
+
+                composable("storage") {
+                    StorageScreen(onBack = { navController.popBackStack() })
+                }
+
+                composable("settings") {
+                    SettingsScreen(onBack = { navController.popBackStack() })
+                }
+
+                composable("help") {
+                    HelpSupportScreen(onBack = { navController.popBackStack() })
+                }
+
+                composable("legal") {
+                    PrivacyLegalScreen(repository = app.repository, onBack = { navController.popBackStack() })
+                }
+
+                composable(
+                    route = "category/{title}/{typeId}/{lang}",
+                    arguments = listOf(
+                        navArgument("title") { type = NavType.StringType },
+                        navArgument("typeId") { type = NavType.IntType },
+                        navArgument("lang") { type = NavType.StringType }
+                    )
+                ) { entry ->
+                    val title = URLDecoder.decode(entry.arguments?.getString("title").orEmpty(), "UTF-8")
+                    val tid = entry.arguments?.getInt("typeId") ?: 0
+                    val l = entry.arguments?.getString("lang") ?: "kannada"
+                    CategoryContentScreen(
+                        title = title,
+                        typeId = tid,
+                        language = l,
+                        repository = app.repository,
+                        onBack = { navController.popBackStack() },
+                        onOpenDetails = { id -> navController.navigate("details/$id") }
+                    )
+                }
+
+                composable(
+                    route = "details/{contentId}",
+                    arguments = listOf(navArgument("contentId") { type = NavType.LongType })
+                ) { entry ->
+                    val contentId = entry.arguments?.getLong("contentId") ?: 0L
+                    DetailsScreen(
+                        contentId = contentId,
+                        repository = app.repository,
+                        onBack = { navController.popBackStack() },
+                        onOpenDetails = { nextId -> navController.navigate("details/$nextId") },
+                        onPlay = { cid, epId, title ->
+                            val encoded = URLEncoder.encode(title, "UTF-8")
+                            navController.navigate("player/$cid/${epId ?: 0L}/$encoded")
+                        },
+                        onRequireSubscription = { navController.navigate("subscription") }
+                    )
+                }
+
+                composable(
+                    route = "player/{contentId}/{episodeId}/{title}",
+                    arguments = listOf(
+                        navArgument("contentId") { type = NavType.LongType },
+                        navArgument("episodeId") { type = NavType.LongType },
+                        navArgument("title") { type = NavType.StringType }
+                    )
+                ) { entry ->
+                    val cid = entry.arguments?.getLong("contentId") ?: 0L
+                    val epId = entry.arguments?.getLong("episodeId")?.takeIf { it > 0L }
+                    val title = URLDecoder.decode(entry.arguments?.getString("title").orEmpty(), "UTF-8")
+                    PlayerScreen(
+                        contentId = cid,
+                        episodeId = epId,
+                        title = title,
+                        repository = app.repository,
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 1:1 Replication of React Native MainScreen (apps/mobile/src/screens/MainScreen/MainScreen.tsx):
+ * 4 Bottom Tabs: Home | Search | New & Hot | My Space (#11141E surface, #E50914 active tint, #8E8E93 inactive)
+ */
+@Composable
+private fun RnMainTabsShell(
+    app: MaxxPixelsApplication,
+    initialLanguage: String,
+    initialTypeId: Int,
+    initialTab: Int,
+    onOpenDetails: (Long) -> Unit,
+    onPlay: (Long, String) -> Unit,
+    onOpenNotifications: () -> Unit,
+    onOpenCategory: (String, Int, String) -> Unit,
+    onOpenGames: () -> Unit,
+    onOpenSubscription: () -> Unit,
+    onOpenAccount: () -> Unit,
+    onOpenRentals: () -> Unit,
+    onOpenDownloads: () -> Unit,
+    onOpenStorage: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenHelp: () -> Unit,
+    onOpenLegal: () -> Unit,
+    onOpenPortalHub: () -> Unit,
+    onSignedOut: () -> Unit
+) {
+    var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab) }
+
+    Scaffold(
+        containerColor = MaxxColors.CinemaBlack,
+        bottomBar = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaxxColors.SurfaceDark)
+                    .navigationBarsPadding()
+            ) {
+                HorizontalDivider(thickness = 1.dp, color = MaxxColors.BorderSubtle)
+                val tabs = listOf(
+                    Triple("Home", Icons.Rounded.Home, 0),
+                    Triple("Search", Icons.Rounded.Search, 1),
+                    Triple("New & Hot", Icons.Rounded.LocalFireDepartment, 2),
+                    Triple("My Space", Icons.Rounded.Person, 3)
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp)
+                        .padding(horizontal = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceAround,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    tabs.forEach { (label, icon, idx) ->
+                        val active = selectedTab == idx
+                        val tint = if (active) MaxxColors.Primary else Color(0xFF8E8E93)
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { selectedTab = idx }
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(22.dp))
+                            Spacer(Modifier.height(2.dp))
+                            Text(label, color = tint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    ) { innerPadding ->
+        Box(modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding())) {
+            when (selectedTab) {
+                0 -> HomeScreen(
+                    repository = app.repository,
+                    initialLanguage = initialLanguage,
+                    initialTypeId = initialTypeId,
+                    onOpenDetails = onOpenDetails,
+                    onPlayItem = onPlay,
+                    onOpenSearch = { selectedTab = 1 },
+                    onOpenNotifications = onOpenNotifications,
+                    onOpenCategory = onOpenCategory,
+                    onOpenSubscription = onOpenSubscription,
+                    onOpenGames = onOpenGames,
+                    onOpenPortalHub = onOpenPortalHub
+                )
+                1 -> SearchScreen(
+                    repository = app.repository,
+                    onOpenDetails = onOpenDetails
+                )
+                2 -> NewHotScreen(
+                    repository = app.repository,
+                    onOpenDetails = onOpenDetails,
+                    onPlayItem = onPlay
+                )
+                else -> ProfileScreen(
+                    repository = app.repository,
+                    onOpenDetails = onOpenDetails,
+                    onOpenSubscription = onOpenSubscription,
+                    onOpenAccount = onOpenAccount,
+                    onOpenRentals = onOpenRentals,
+                    onOpenDownloads = onOpenDownloads,
+                    onOpenStorage = onOpenStorage,
+                    onOpenSettings = onOpenSettings,
+                    onOpenHelp = onOpenHelp,
+                    onOpenLegal = onOpenLegal,
+                    onSignedOut = onSignedOut
+                )
+            }
+        }
+    }
+}

@@ -35,11 +35,15 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     metadataBase: new URL(siteUrl),
     title: {
-      default: `${brand.name} - Stream Movies, Short Films & Web Series`,
+      default: brand.seoTitle || `${brand.name} - Stream Movies, Short Films & Web Series`,
       template: `%s | ${brand.name}`,
     },
     description: brand.description,
-    icons: brand.logoUrl ? { icon: brand.logoUrl } : undefined,
+    icons: brand.faviconUrl
+      ? { icon: brand.faviconUrl, apple: brand.faviconUrl }
+      : brand.logoUrl
+      ? { icon: brand.logoUrl }
+      : undefined,
     openGraph: {
       siteName: brand.name,
       title: `${brand.name} - Stream Movies, Short Films & Web Series`,
@@ -66,17 +70,25 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const gtmId = process.env.NEXT_PUBLIC_GTM_ID || 'GTM-KLGH8XL4';
+  const gtmId = process.env.NEXT_PUBLIC_GTM_ID || 'GTM-NCD2C9GP';
 
   return (
     <html lang="en" className={`dark ${inter.variable} ${outfit.variable}`} suppressHydrationWarning>
       <head>
-        {/* Google Tag Manager */}
+        {/* Google Tag Manager & gtag dataLayer */}
+        <script
+          async
+          src={`https://www.googletagmanager.com/gtm.js?id=${gtmId}`}
+        />
         <Script
           id="google-tag-manager"
           strategy="afterInteractive"
           dangerouslySetInnerHTML={{
-            __html: `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+            __html: `
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
 new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
 j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);

@@ -5,10 +5,10 @@
   "scripts": {
     "android": "react-native run-android",
     "ios": "react-native run-ios",
-    "build:apk:debug": "cd android && gradlew.bat assembleDebug",
-    "build:apk:release": "cd android && gradlew.bat assembleRelease && copy /Y app\\build\\outputs\\apk\\release\\app-release.apk ..\\MaxxPixels-release-v1.0.37.apk",
-    "build:bundle:release": "cd android && gradlew.bat bundleRelease && copy /Y app\\build\\outputs\\bundle\\release\\app-release.aab ..\\MaxxPixels-release-v1.0.37.aab",
-    "build:bundle:debug": "cd android && gradlew.bat bundleDebug",
+    "build:apk:debug": "cd android && ./gradlew assembleDebug",
+    "build:apk:release": "cd android && ./gradlew assembleRelease && cp app/build/outputs/apk/release/app-release.apk ../MaxxPixels-release-v1.0.37.apk",
+    "build:bundle:release": "cd android && ./gradlew bundleRelease && cp app/build/outputs/bundle/release/app-release.aab ../MaxxPixels-release-v1.0.37.aab",
+    "build:bundle:debug": "cd android && ./gradlew bundleDebug",
     "lint": "eslint .",
     "start": "react-native start",
     "test": "jest"

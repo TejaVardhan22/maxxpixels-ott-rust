@@ -10,6 +10,8 @@ interface GoogleImaAdPlayerProps {
   contentSrc: string;
   poster?: string;
   title?: string;
+  metaSubtitle?: string;
+  onBack?: () => void;
   subtitles?: SubtitleTrack[];
   autoPlay?: boolean;
   forceHls?: boolean;
@@ -17,12 +19,15 @@ interface GoogleImaAdPlayerProps {
   adConfig?: AdRequestConfig;
   onPlaybackProgress?: (currentTime: number, duration: number) => void;
   onEnded?: () => void;
+  fullViewport?: boolean;
 }
 
 export default function GoogleImaAdPlayer({
   contentSrc,
   poster,
   title,
+  metaSubtitle,
+  onBack,
   subtitles = [],
   autoPlay = true,
   forceHls = false,
@@ -30,6 +35,7 @@ export default function GoogleImaAdPlayer({
   adConfig,
   onPlaybackProgress,
   onEnded,
+  fullViewport = false,
 }: GoogleImaAdPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -73,12 +79,14 @@ export default function GoogleImaAdPlayer({
   );
 
   return (
-    <div ref={containerRef} className="relative w-full">
+    <div ref={containerRef} className={`relative w-full ${fullViewport ? 'h-full' : ''}`}>
       <VideoPlayer
         videoRef={videoRef}
         src={contentSrc}
         poster={poster}
         title={title}
+        metaSubtitle={metaSubtitle}
+        onBack={onBack}
         subtitles={subtitles}
         autoPlay={autoPlay}
         forceHls={forceHls}
@@ -86,6 +94,7 @@ export default function GoogleImaAdPlayer({
         isAdMode={isAdPlaying || contentPausedForAd}
         onTimeUpdate={handleTimeUpdate}
         onEnded={onEnded}
+        fullViewport={fullViewport}
       />
 
       <GoogleImaOverlay

@@ -24,16 +24,25 @@ export function useRegister() {
 
 export function useRegistrationOtp() {
   return useMutation({
-    mutationFn: (input: string | { phone: string; agentCode?: string }) => {
+    mutationFn: (
+      input: string | { phone: string; agentCode?: string; recaptchaToken?: string | null },
+    ) => {
       const phone = typeof input === 'string' ? input : input.phone;
       const agentCode = typeof input === 'string' ? undefined : input.agentCode;
-      return authApi.requestRegistrationOtp(phone, agentCode);
+      const recaptchaToken = typeof input === 'string' ? undefined : input.recaptchaToken;
+      return authApi.requestRegistrationOtp(phone, agentCode, recaptchaToken);
     },
   });
 }
 
 export function usePhoneLoginOtpRequest() {
-  return useMutation({ mutationFn: (phone: string) => authApi.requestPhoneLoginOtp(phone) });
+  return useMutation({
+    mutationFn: (input: string | { phone: string; recaptchaToken?: string | null }) => {
+      const phone = typeof input === 'string' ? input : input.phone;
+      const recaptchaToken = typeof input === 'string' ? undefined : input.recaptchaToken;
+      return authApi.requestPhoneLoginOtp(phone, recaptchaToken);
+    },
+  });
 }
 
 export function usePhoneOtpLogin() {

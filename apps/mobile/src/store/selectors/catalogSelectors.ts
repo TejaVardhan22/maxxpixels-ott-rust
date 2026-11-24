@@ -348,33 +348,70 @@ export const selectFilteredContinueWatching = createSelector(
   }
 );
 
-// 12. Hero Banners with Strict Filter (Shows Latest Titles for selected type & language)
+// 12. Hero Banners (Uses Admin-configured MOBILE/ALL Hero Banners first, falls back to latest catalog)
 export const selectHeroBanners = createSelector(
   [selectBanners, selectPortalMode, selectSelectedIndianLanguage, selectLanguages, selectSelectedTypeId, selectFilteredAllItems],
   (banners, portalMode, selectedIndianLanguage, languages, selectedTypeId, filteredAllItems): CatalogItem[] => {
-    // 1. Filter promo banners for current portal + language + selected type
-    const matchingBanners = (
-      portalMode === 'kannada'
-        ? banners.filter(isKannadaCatalogItem)
-        : banners.filter(isNonKannadaCatalogItem).filter((i) => matchesIndianSubLanguage(i, selectedIndianLanguage, languages))
-    ).filter((item) => matchesMainType(item, selectedTypeId));
+    const activeTypeSlug = (() => {
+      switch (selectedTypeId) {
+        case MAIN_TYPE_IDS.MOVIES: return 'movie';
+        case MAIN_TYPE_IDS.SONGS: return 'album';
+        case MAIN_TYPE_IDS.SHORT_FILMS: return 'short_film';
+        case MAIN_TYPE_IDS.MICRO_DRAMA: return 'microdrama';
+        case MAIN_TYPE_IDS.PODCASTS: return 'podcast';
+        case MAIN_TYPE_IDS.WEB_SERIES: return 'series';
+        default: return '';
+      }
+    })();
 
-    // 2. Filter all items for current portal + language + selected type, sorted newest first
+    // 1. Filter Admin Hero Banners for MOBILE + current portal/pageSlug + type
+    const matchingBanners = banners
+      .filter((item: any) => {
+        if (!item) return false;
+        const plat = String(item.platform || item.placement || 'ALL').toUpperCase().trim();
+        if (plat && plat !== 'ALL' && plat !== 'MOBILE') return false;
+
+        const pageSlug = String(item.pageSlug || item.page_slug || 'all').toLowerCase().trim();
+        if (pageSlug && pageSlug !== 'all') {
+          if (pageSlug.includes(':')) {
+            const [slugLang, slugType] = pageSlug.split(':');
+            const langMatches =
+              slugLang === 'all' ||
+              (slugLang === 'kannada' && portalMode === 'kannada') ||
+              ((slugLang === 'all-indian' || slugLang === 'all_indian') && portalMode !== 'kannada');
+            const typeMatches =
+              !slugType || slugType === 'all'
+                ? selectedTypeId === MAIN_TYPE_IDS.ALL
+                : activeTypeSlug !== '' && slugType === activeTypeSlug;
+            return langMatches && typeMatches;
+          }
+          if (pageSlug === 'kannada') return portalMode === 'kannada' && selectedTypeId === MAIN_TYPE_IDS.ALL;
+          if (pageSlug === 'all-indian' || pageSlug === 'all_indian') {
+            return portalMode !== 'kannada' && selectedTypeId === MAIN_TYPE_IDS.ALL;
+          }
+          return activeTypeSlug !== '' && pageSlug === activeTypeSlug;
+        }
+
+        const langOk =
+          portalMode === 'kannada'
+            ? isKannadaCatalogItem(item)
+            : isNonKannadaCatalogItem(item) && matchesIndianSubLanguage(item, selectedIndianLanguage, languages);
+        return langOk && matchesMainType(item, selectedTypeId);
+      })
+      .sort((a: any, b: any) => Number(a.displayOrder ?? 0) - Number(b.displayOrder ?? 0));
+
+    // If Admin configured active Hero Banners for this Mobile view, display them in exact displayOrder!
+    if (matchingBanners.length > 0) {
+      return matchingBanners.slice(0, 8);
+    }
+
+    // 2. Fallback: latest catalog items when no Admin Hero Banners are configured
     const typeItems = filteredAllItems
       .filter((item) => matchesMainType(item, selectedTypeId))
       .sort(sortByLatest);
 
-    // 3. When a specific pill is selected (e.g. Movies pill):
-    // Prioritize the latest movies for that language in the hero banner!
-    let pool: CatalogItem[];
-    if (selectedTypeId !== MAIN_TYPE_IDS.ALL) {
-      pool = [...typeItems, ...matchingBanners];
-    } else {
-      pool = [...matchingBanners, ...typeItems];
-    }
-
     const unique = new Map<number | string, CatalogItem>();
-    pool.forEach((item) => {
+    typeItems.forEach((item) => {
       if (item && item.id !== undefined && !unique.has(item.id)) {
         if (item.landscape || item.thumbnail || item.image || (item as any).posterUrl) {
           unique.set(item.id, item);

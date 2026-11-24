@@ -264,8 +264,10 @@ impl WatchHistoryService {
             .filter_map(|w| {
                 let c = cmap.get(&w.content_id)?;
                 Some(WatchlistItemDto {
-                    id: w.id,
+                    id: w.content_id,
                     content_id: w.content_id,
+                    video_id: w.content_id,
+                    is_bookmark: 1,
                     title: c.title.clone(),
                     slug: c.slug.clone(),
                     poster_url: self.ensure_absolute_url(c.poster_url.as_deref()),
@@ -280,6 +282,13 @@ impl WatchHistoryService {
                         .clone()
                         .or_else(|| c.r#type.clone())
                         .unwrap_or_else(|| "MOVIE".to_string()),
+                    release_year: c.release_year,
+                    maturity_rating: c.age_rating.clone(),
+                    duration_seconds: c.duration_seconds,
+                    is_premium: matches!(
+                        c.access_type.as_deref().map(|s| s.to_uppercase()).as_deref(),
+                        Some("SUBSCRIPTION") | Some("VIP") | Some("PREMIUM") | Some("SVOD") | Some("TVOD") | Some("RENT")
+                    ),
                     added_at: w.added_at.unwrap_or(w.created_at).to_rfc3339(),
                 })
             })
@@ -329,7 +338,11 @@ impl WatchHistoryService {
     ) -> Result<(), AppError> {
         let rows = watchlist::Entity::find()
             .filter(watchlist::Column::UserId.eq(user_id))
-            .filter(watchlist::Column::ContentId.eq(content_id))
+            .filter(
+                watchlist::Column::ContentId
+                    .eq(content_id)
+                    .or(watchlist::Column::Id.eq(content_id)),
+            )
             .all(&self.db)
             .await
             .map_err(|e| AppError::Database(e.to_string()))?;

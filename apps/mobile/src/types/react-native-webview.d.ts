@@ -26,6 +26,7 @@ declare module 'react-native-webview' {
 
   export interface WebViewProps extends ViewProps {
     source?: { uri?: string; html?: string; headers?: Record<string, string> };
+    cacheMode?: 'LOAD_DEFAULT' | 'LOAD_CACHE_ELSE_NETWORK' | 'LOAD_NO_CACHE' | 'LOAD_CACHE_ONLY';
     javaScriptEnabled?: boolean;
     domStorageEnabled?: boolean;
     thirdPartyCookiesEnabled?: boolean;

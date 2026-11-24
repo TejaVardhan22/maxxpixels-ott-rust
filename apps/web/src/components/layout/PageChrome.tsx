@@ -11,9 +11,18 @@ interface PageShellProps {
 
 export function PageShell({ children, className, narrow }: PageShellProps) {
   return (
-    <div className={cn('relative min-h-screen overflow-hidden pb-20 pt-8 md:pt-12', className)}>
-      <div className="pointer-events-none fixed inset-0 -z-10 bg-[#0C111B]" />
-      <div className={cn('mx-auto w-full px-4 sm:px-6 lg:px-12', narrow ? 'max-w-4xl' : 'max-w-[1500px]')}>
+    <div className={cn('relative min-h-screen overflow-hidden pb-24 pt-6 md:pt-10', className)}>
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[#0A0A0A]" />
+      <div
+        className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-[440px] bg-[radial-gradient(ellipse_at_top,_rgba(255,109,46,0.09)_0%,_transparent_70%)]"
+        aria-hidden
+      />
+      <div
+        className={cn(
+          'mx-auto w-full px-4 sm:px-6 lg:px-10',
+          narrow ? 'max-w-4xl' : 'max-w-[1600px]',
+        )}
+      >
         {children}
       </div>
     </div>
@@ -31,7 +40,7 @@ interface PageHeroProps {
 }
 
 export function PageHero({
-  eyebrow = 'MaxxPixels',
+  eyebrow,
   title,
   description,
   backHref,
@@ -40,26 +49,30 @@ export function PageHero({
   children,
 }: PageHeroProps) {
   return (
-    <section className="relative mb-10 border-b border-white/[0.07] pb-8 pt-2 sm:pb-10 lg:mb-12">
+    <section className="relative mb-8 border-b border-white/[0.07] pb-7 pt-1 sm:pb-8 lg:mb-10">
       <div>
         {backHref && (
           <Link
             href={backHref}
-            className="mb-7 inline-flex items-center gap-2 text-xs font-bold text-white/40 transition hover:text-white"
+            className="mb-5 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 transition hover:text-white"
           >
-            <ArrowLeft size={15} />
+            <ArrowLeft size={14} />
             {backLabel}
           </Link>
         )}
-        <div className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.22em] text-primary-light">
-          <Icon size={13} />
-          {eyebrow}
-        </div>
-        <h1 className="max-w-5xl font-display text-[clamp(2.35rem,5vw,4.75rem)] font-black leading-[0.96] tracking-[-0.055em] text-white text-balance">
+        {eyebrow && (
+          <div className="mb-2.5 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#FF8A54]">
+            <Icon size={13} />
+            <span>{eyebrow}</span>
+          </div>
+        )}
+        <h1 className="max-w-4xl font-display text-3xl font-black leading-[1.08] tracking-tight text-white sm:text-4xl lg:text-5xl">
           {title}
         </h1>
         {description && (
-          <p className="mt-4 max-w-2xl text-sm leading-6 text-white/48 sm:text-base">{description}</p>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400 sm:text-[15px]">
+            {description}
+          </p>
         )}
         {children && <div className="mt-6">{children}</div>}
       </div>
@@ -75,16 +88,25 @@ interface EmptyStateProps {
   icon?: LucideIcon;
 }
 
-export function EmptyState({ title, description, actionHref, actionLabel, icon: Icon = Sparkles }: EmptyStateProps) {
+export function EmptyState({
+  title,
+  description,
+  actionHref,
+  actionLabel,
+  icon: Icon = Sparkles,
+}: EmptyStateProps) {
   return (
-    <div className="mx-auto my-14 max-w-md rounded-2xl border border-white/[0.08] bg-[#111827] p-8 text-center">
-      <div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-full bg-white/[0.06] text-primary-light">
-        <Icon size={26} />
+    <div className="mx-auto my-14 max-w-md rounded-2xl border border-white/[0.08] bg-[#1E222A] p-8 text-center">
+      <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-full bg-[#FF6D2E]/15 text-[#FF8A54]">
+        <Icon size={22} />
       </div>
-      <p className="font-display text-xl font-black text-white">{title}</p>
-      {description && <p className="mt-2 text-sm leading-6 text-desc-text">{description}</p>}
+      <p className="font-display text-lg font-bold text-white">{title}</p>
+      {description && <p className="mt-2 text-sm leading-6 text-zinc-400">{description}</p>}
       {actionHref && actionLabel && (
-        <Link href={actionHref} className="btn-primary mt-6 rounded-full px-6 py-3 text-sm">
+        <Link
+          href={actionHref}
+          className="mt-6 inline-flex h-11 items-center justify-center rounded-full bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] px-6 text-sm font-bold text-white transition hover:brightness-110"
+        >
           {actionLabel}
         </Link>
       )}
@@ -92,9 +114,20 @@ export function EmptyState({ title, description, actionHref, actionLabel, icon: 
   );
 }
 
-export function GlassPanel({ children, className }: { children: React.ReactNode; className?: string }) {
+export function GlassPanel({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <div className={cn('rounded-xl border border-white/[0.08] bg-[#111827] p-5 sm:p-6', className)}>
+    <div
+      className={cn(
+        'rounded-2xl border border-white/[0.08] bg-[#1E222A]/90 p-5 backdrop-blur-xl sm:p-6',
+        className,
+      )}
+    >
       {children}
     </div>
   );

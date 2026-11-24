@@ -10,6 +10,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Tv, Search, Bell } from 'lucide-react-native';
 import { NotificationService } from '../services/notificationService';
+import { SettingsService } from '../services/settingsService';
+import { AppConfig } from '../core/config';
 
 interface OttTopBarProps {
   title?: string;
@@ -26,7 +28,7 @@ export const OttTopBar: React.FC<OttTopBarProps> = ({
   title,
   transparent = false,
   floating = false,
-  brandText = 'MaxxPixels',
+  brandText,
   onSearchPress,
   onNotificationsPress,
   onCastPress,
@@ -34,6 +36,12 @@ export const OttTopBar: React.FC<OttTopBarProps> = ({
 }) => {
   const insets = useSafeAreaInsets();
   const [unreadCount, setUnreadCount] = useState(NotificationService.unreadCount);
+  const [logoError, setLogoError] = useState(false);
+
+  const brand = SettingsService.getBrandIdentity();
+  const resolvedBrandText = brandText && brandText !== 'MaxxPixels' ? brandText : brand.shortName;
+  const rawRemoteLogo = brand.darkLogoUrl || brand.logoUrl;
+  const remoteLogoUri = rawRemoteLogo ? AppConfig.normalizeMediaUrl(rawRemoteLogo) : '';
 
   useEffect(() => {
     const unsub = NotificationService.subscribeCount((c) => setUnreadCount(c));
@@ -56,13 +64,18 @@ export const OttTopBar: React.FC<OttTopBarProps> = ({
         style={styles.brandRow}
       >
         <Image
-          source={require('../assets/images/logo.png')}
+          source={
+            remoteLogoUri && !logoError
+              ? { uri: remoteLogoUri }
+              : require('../assets/images/logo.png')
+          }
+          onError={() => setLogoError(true)}
           style={styles.logo}
           resizeMode="contain"
         />
         <View style={styles.brandTextContainer}>
           <Text style={styles.brandText} numberOfLines={1}>
-            {brandText}
+            {resolvedBrandText}
           </Text>
           {title ? (
             <Text style={styles.subTitle} numberOfLines={1}>

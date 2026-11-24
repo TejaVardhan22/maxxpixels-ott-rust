@@ -144,14 +144,16 @@ type ContentImageItem = {
 };
 
 const LANDSCAPE_IMAGE_KEYS: (keyof ContentImageItem)[] = [
-  'landscape',
-  'landscape_image_url',
-  'landscapeImageUrl',
-  'banner',
-  'banner_url',
+  'bannerImageUrl',
+  'banner_image_url',
   'bannerUrl',
-  'backdrop_url',
+  'banner_url',
+  'banner',
+  'landscapeImageUrl',
+  'landscape_image_url',
+  'landscape',
   'backdropUrl',
+  'backdrop_url',
 ];
 
 const PORTRAIT_IMAGE_KEYS: (keyof ContentImageItem)[] = [

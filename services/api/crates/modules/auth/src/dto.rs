@@ -40,6 +40,14 @@ pub struct RegisterRequest {
         alias = "ref"
     )]
     pub agent_code: Option<String>,
+    #[serde(
+        alias = "recaptcha_token",
+        alias = "recaptchaToken",
+        alias = "captcha_token",
+        alias = "captchaToken",
+        alias = "g-recaptcha-response"
+    )]
+    pub recaptcha_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -83,6 +91,14 @@ pub struct SendOtpRequest {
         alias = "ref"
     )]
     pub agent_code: Option<String>,
+    #[serde(
+        alias = "recaptcha_token",
+        alias = "recaptchaToken",
+        alias = "captcha_token",
+        alias = "captchaToken",
+        alias = "g-recaptcha-response"
+    )]
+    pub recaptcha_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -120,6 +136,14 @@ pub struct VerifyOtpRequest {
         alias = "ref"
     )]
     pub agent_code: Option<String>,
+    #[serde(
+        alias = "recaptcha_token",
+        alias = "recaptchaToken",
+        alias = "captcha_token",
+        alias = "captchaToken",
+        alias = "g-recaptcha-response"
+    )]
+    pub recaptcha_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -235,6 +259,38 @@ pub struct AuthResponse {
     pub is_buy: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub package_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GenerateTvCodeRequest {
+    #[serde(alias = "device_id")]
+    pub device_id: Option<String>,
+    #[serde(alias = "device_name")]
+    pub device_name: Option<String>,
+    pub platform: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivateTvCodeRequest {
+    #[serde(alias = "unique_code", alias = "uniqueCode", alias = "tv_code", alias = "tvCode")]
+    pub code: Option<String>,
+    #[serde(alias = "device_name")]
+    pub device_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TvPairSession {
+    pub code: String,
+    pub device_id: String,
+    pub device_name: String,
+    pub platform: String,
+    pub status: String,
+    pub user_id: Option<i64>,
+    pub auth: Option<AuthResponse>,
+    pub created_at: String,
 }
 
 impl Validatable for RegisterRequest {

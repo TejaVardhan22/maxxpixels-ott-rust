@@ -15,7 +15,9 @@ type Props = {
 
 function getYoutubeEmbedUrl(url: string): string {
   if (url.includes('/embed/')) return url;
-  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
+  const match = url.match(
+    /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/,
+  );
   if (match && match[1]) {
     return `https://www.youtube.com/embed/${match[1]}?autoplay=1`;
   }
@@ -25,7 +27,13 @@ function getYoutubeEmbedUrl(url: string): string {
 /**
  * Fetches trailer payload from GET /api/video/{id}/trailer (no subscription required).
  */
-export default function TrailerPlayerModal({ open, onClose, videoId, videoType, subVideoType = 0 }: Props) {
+export default function TrailerPlayerModal({
+  open,
+  onClose,
+  videoId,
+  videoType,
+  subVideoType = 0,
+}: Props) {
   const [trailerUrl, setTrailerUrl] = useState('');
   const [trailerType, setTrailerType] = useState('');
   const [poster, setPoster] = useState<string | undefined>();
@@ -67,38 +75,64 @@ export default function TrailerPlayerModal({ open, onClose, videoId, videoType, 
   if (!open) return null;
 
   const kind = normalizeTrailerType(trailerType);
-  const yt = trailerUrl.includes('youtube.com') || trailerUrl.includes('youtu.be') || kind === 'youtube';
+  const yt =
+    trailerUrl.includes('youtube.com') || trailerUrl.includes('youtu.be') || kind === 'youtube';
 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
-      <button type="button" className="absolute inset-0 bg-black/80" aria-label="Close" onClick={onClose} />
-      <div className="relative z-[91] w-full max-w-4xl rounded-2xl border border-ott-border bg-black overflow-hidden shadow-2xl">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-ott-border">
-          <span className="text-sm font-semibold">Trailer</span>
-          <button type="button" onClick={onClose} className="p-2 rounded-full hover:bg-white/10">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/85 backdrop-blur-sm"
+        aria-label="Close"
+        onClick={onClose}
+      />
+      <div className="relative z-[91] w-full max-w-4xl overflow-hidden rounded-2xl border border-white/10 bg-[#141414] shadow-2xl">
+        <div className="flex items-center justify-between border-b border-white/10 px-5 py-3.5">
+          <span className="text-sm font-bold text-white">Official Trailer</span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-1.5 text-zinc-400 transition hover:bg-white/10 hover:text-white"
+          >
             <X size={18} />
           </button>
         </div>
-        <div className="aspect-video bg-black flex items-center justify-center">
-          {loading && <div className="text-desc-text text-sm">Loading…</div>}
-          {err && <div className="text-red-400 text-sm px-4 text-center">{err}</div>}
+        <div className="flex aspect-video items-center justify-center bg-[#0A0A0A]">
+          {loading && <div className="text-sm text-zinc-400">Loading trailer…</div>}
+          {err && <div className="px-4 text-center text-sm text-[#FFB088]">{err}</div>}
           {!loading && !err && trailerUrl && yt && (
             <iframe
               title="Trailer"
               src={getYoutubeEmbedUrl(trailerUrl)}
-              className="w-full h-full"
+              className="h-full w-full"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
             />
           )}
-          {!loading && !err && trailerUrl && !yt && (kind === 'hls' || trailerUrl.includes('.m3u8')) && (
-            <div className="w-full h-full">
-              <VideoPlayer src={trailerUrl} poster={poster} autoPlay title="Trailer" />
-            </div>
-          )}
-          {!loading && !err && trailerUrl && !yt && kind !== 'hls' && !trailerUrl.includes('.m3u8') && (
-            <video src={trailerUrl} poster={poster} controls autoPlay playsInline className="w-full h-full" />
-          )}
+          {!loading &&
+            !err &&
+            trailerUrl &&
+            !yt &&
+            (kind === 'hls' || trailerUrl.includes('.m3u8')) && (
+              <div className="h-full w-full">
+                <VideoPlayer src={trailerUrl} poster={poster} autoPlay title="Trailer" />
+              </div>
+            )}
+          {!loading &&
+            !err &&
+            trailerUrl &&
+            !yt &&
+            kind !== 'hls' &&
+            !trailerUrl.includes('.m3u8') && (
+              <video
+                src={trailerUrl}
+                poster={poster}
+                controls
+                autoPlay
+                playsInline
+                className="h-full w-full"
+              />
+            )}
         </div>
       </div>
     </div>

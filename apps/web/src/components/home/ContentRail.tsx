@@ -13,25 +13,33 @@ export interface TabOption {
 }
 
 interface Props {
-  title:        string;
-  items:        ContentItem[];
-  seeAllHref?:  string;
-  landscape?:   boolean;
-  tabs?:        TabOption[];
-  activeTab?:   string;
+  title: string;
+  items: ContentItem[];
+  seeAllHref?: string;
+  landscape?: boolean;
+  tabs?: TabOption[];
+  activeTab?: string;
   onTabChange?: (value: string) => void;
-  resume?:      boolean;
+  resume?: boolean;
 }
 
 export default function ContentRail({
-  title, items, seeAllHref, landscape, tabs, activeTab, onTabChange, resume,
+  title,
+  items,
+  seeAllHref,
+  landscape,
+  tabs,
+  activeTab,
+  onTabChange,
+  resume,
 }: Props) {
-  const railRef                             = useRef<HTMLDivElement>(null);
-  const [canScrollLeft,  setCanScrollLeft]  = useState(false);
+  const railRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
 
-  const CARD_W     = landscape ? 280 : 174;
-  const SCROLL_AMT = CARD_W * 3 + 36;
+  const useLandscape = Boolean(resume);
+  const CARD_W = useLandscape ? 300 : 196;
+  const SCROLL_AMT = CARD_W * 4;
 
   const updateArrows = useCallback(() => {
     const el = railRef.current;
@@ -43,17 +51,18 @@ export default function ContentRail({
   useEffect(() => {
     const el = railRef.current;
     if (!el) return;
-
     updateArrows();
     const observer = new ResizeObserver(updateArrows);
     observer.observe(el);
     Array.from(el.children).forEach((child) => observer.observe(child));
-
     return () => observer.disconnect();
   }, [items.length, landscape, updateArrows]);
 
   const scroll = (dir: 'left' | 'right') => {
-    railRef.current?.scrollBy({ left: dir === 'right' ? SCROLL_AMT : -SCROLL_AMT, behavior: 'smooth' });
+    railRef.current?.scrollBy({
+      left: dir === 'right' ? SCROLL_AMT : -SCROLL_AMT,
+      behavior: 'smooth',
+    });
     setTimeout(updateArrows, 350);
   };
 
@@ -61,30 +70,33 @@ export default function ContentRail({
 
   return (
     <section
-      className="group/rail relative mt-12 lg:mt-16"
+      className="group/rail relative"
       aria-labelledby={`rail-${title.replace(/\s+/g, '-').toLowerCase()}`}
     >
-      {/* Header */}
-      <div className="mb-5 flex items-end justify-between px-4 sm:px-6 lg:px-12">
-        {/* Left: title with accent border + optional tabs */}
-        <div className="flex items-center gap-4 flex-1 min-w-0">
-          <div className="min-w-0">
+      {/* Editorial Rail Header */}
+      <div className="mb-2 flex items-center justify-between px-4 sm:px-6 lg:px-12">
+        <div className="flex min-w-0 flex-1 items-center gap-3.5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="h-5 w-1 shrink-0 rounded-full bg-gradient-to-b from-[#FF6D2E] to-[#FF5500] shadow-[0_0_10px_rgba(255,109,46,0.6)]" />
             <h2
               id={`rail-${title.replace(/\s+/g, '-').toLowerCase()}`}
-              className="truncate text-[clamp(1.2rem,2vw,1.7rem)] font-black tracking-[-0.035em] text-white"
+              className="truncate text-lg font-extrabold tracking-tight text-white sm:text-xl lg:text-[22px]"
             >
               {title}
             </h2>
           </div>
 
-          {/* Tab toggles */}
           {tabs && tabs.length > 0 && (
-            <div className="tab-toggle-group flex-shrink-0 hidden sm:flex">
+            <div className="hidden flex-shrink-0 items-center gap-1 rounded-full border border-white/10 bg-white/[0.05] p-0.5 backdrop-blur-md sm:flex">
               {tabs.map((tab) => (
                 <button
                   key={tab.value}
                   onClick={() => onTabChange?.(tab.value)}
-                  className={activeTab === tab.value ? 'tab-toggle tab-toggle-active' : 'tab-toggle'}
+                  className={
+                    activeTab === tab.value
+                      ? 'rounded-full bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] px-3.5 py-1 text-xs font-bold text-white shadow-[0_2px_12px_rgba(255,109,46,0.45)]'
+                      : 'rounded-full px-3.5 py-1 text-xs font-medium text-white/65 transition hover:text-white'
+                  }
                 >
                   {tab.label}
                 </button>
@@ -93,26 +105,34 @@ export default function ContentRail({
           )}
         </div>
 
-        {/* See All — always visible */}
         {seeAllHref && (
           <Link
             href={seeAllHref}
-            className="ml-3 flex min-h-9 flex-shrink-0 items-center gap-1 rounded-full border border-white/10 bg-white/[0.05] px-3.5 py-1.5 text-xs font-bold text-white/72 transition hover:border-gold/35 hover:bg-gold/10 hover:text-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/70"
+            className="group/more ml-3 inline-flex flex-shrink-0 items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-white/80 backdrop-blur-sm transition-all duration-200 hover:border-[#FF6D2E]/60 hover:bg-[#FF6D2E]/15 hover:text-[#FF8A54]"
           >
-            See all <ChevronRight size={13} strokeWidth={2.5} />
+            <span>Explore All</span>
+            <ChevronRight
+              size={14}
+              strokeWidth={2.5}
+              className="transition-transform duration-200 group-hover/more:translate-x-0.5"
+            />
           </Link>
         )}
       </div>
 
       {/* Mobile tab toggles */}
       {tabs && tabs.length > 0 && (
-        <div className="flex sm:hidden px-4 sm:px-6 mb-3">
-          <div className="tab-toggle-group">
+        <div className="mb-2 flex px-4 sm:hidden">
+          <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.05] p-0.5">
             {tabs.map((tab) => (
               <button
                 key={tab.value}
                 onClick={() => onTabChange?.(tab.value)}
-                className={activeTab === tab.value ? 'tab-toggle tab-toggle-active' : 'tab-toggle'}
+                className={
+                  activeTab === tab.value
+                    ? 'rounded-full bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] px-3 py-1 text-xs font-bold text-white'
+                    : 'rounded-full px-3 py-1 text-xs font-medium text-white/65'
+                }
               >
                 {tab.label}
               </button>
@@ -121,43 +141,44 @@ export default function ContentRail({
         </div>
       )}
 
-      {/* Rail wrapper */}
+      {/* Horizontal Carousel */}
       <div className="relative">
-        {/* Left arrow */}
         {canScrollLeft && (
           <button
             onClick={() => scroll('left')}
-            className="absolute bottom-0 left-0 top-0 z-20 hidden w-16 items-center justify-center bg-gradient-to-r from-app-bg via-app-bg/85 to-transparent opacity-0 transition-all group-hover/rail:opacity-100 focus:opacity-100 md:flex"
+            className="absolute inset-y-0 left-0 z-30 hidden w-14 items-center justify-start bg-gradient-to-r from-[#0A0A0A] via-[#0A0A0A]/75 to-transparent pl-3 md:flex"
             aria-label="Scroll left"
           >
-            <div className="w-9 h-9 rounded-full bg-black/70 border border-white/15 backdrop-blur flex items-center justify-center hover:bg-gold/20 hover:border-gold/50 transition-colors">
-              <ChevronLeft size={16} className="text-white" strokeWidth={2.5} />
-            </div>
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-black/60 text-white/90 backdrop-blur-md">
+              <ChevronLeft size={20} strokeWidth={2.5} />
+            </span>
           </button>
         )}
 
-        {/* Right arrow */}
         {canScrollRight && (
           <button
             onClick={() => scroll('right')}
-            className="absolute bottom-0 right-0 top-0 z-20 hidden w-16 items-center justify-center bg-gradient-to-l from-app-bg via-app-bg/85 to-transparent opacity-0 transition-all group-hover/rail:opacity-100 focus:opacity-100 md:flex"
+            className="absolute inset-y-0 right-0 z-30 hidden w-14 items-center justify-end bg-gradient-to-l from-[#0A0A0A] via-[#0A0A0A]/75 to-transparent pr-3 md:flex"
             aria-label="Scroll right"
           >
-            <div className="w-9 h-9 rounded-full bg-black/70 border border-white/15 backdrop-blur flex items-center justify-center hover:bg-gold/20 hover:border-gold/50 transition-colors">
-              <ChevronRight size={16} className="text-white" strokeWidth={2.5} />
-            </div>
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-black/60 text-white/90 backdrop-blur-md">
+              <ChevronRight size={20} strokeWidth={2.5} />
+            </span>
           </button>
         )}
 
-        {/* Scrollable row */}
         <div
           ref={railRef}
           onScroll={updateArrows}
-          className="flex snap-x snap-mandatory gap-3.5 overflow-x-auto px-4 pb-5 pt-1 scrollbar-hide sm:px-6 lg:snap-none lg:px-12"
+          className="flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 py-1 scrollbar-hide sm:gap-2.5 sm:px-6 lg:snap-none lg:px-12"
         >
           {items.map((item, idx) => (
             <div className="snap-start" key={item.id ?? `item-${idx}`}>
-              {landscape ? <LandscapeCard item={item} variant={resume ? 'resume' : 'default'} /> : <ContentCard item={item} />}
+              {useLandscape ? (
+                <LandscapeCard item={item} variant="resume" />
+              ) : (
+                <ContentCard item={item} />
+              )}
             </div>
           ))}
         </div>

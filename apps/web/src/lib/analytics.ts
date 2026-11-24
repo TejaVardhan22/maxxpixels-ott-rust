@@ -11,11 +11,13 @@
 declare global {
   interface Window {
     fbq?: (...args: unknown[]) => void;
+    dataLayer?: unknown[];
+    gtag?: (...args: unknown[]) => void;
   }
 }
 
 /**
- * Log a GA4 event.
+ * Log a GA4 / GTM event.
  *
  * @param name Event name, preferably from the EVENTS constants.
  * @param params Optional key/value parameters attached to the event.
@@ -25,6 +27,16 @@ export function trackEvent(
   params?: Record<string, string | number | boolean | null | undefined>,
 ): void {
   if (typeof window === 'undefined') return;
+
+  try {
+    if (typeof window.gtag === 'function') {
+      window.gtag('event', name, params ?? {});
+    } else if (Array.isArray(window.dataLayer)) {
+      window.dataLayer.push({ event: name, ...(params ?? {}) });
+    }
+  } catch {
+    // ignore
+  }
 
   Promise.all([
     import('firebase/analytics'),

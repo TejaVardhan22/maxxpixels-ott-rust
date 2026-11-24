@@ -23,9 +23,11 @@ function getMessagingInstance() {
   }
 }
 
+let lastKnownFcmToken: string | null = null;
+
 /**
  * Request push notification permission and register the FCM device token
- * with the backend. Triggers native Android 13+ OS permission dialog.
+ * with the backend when authenticated. Triggers native Android 13+ OS permission dialog.
  */
 export async function setupPushNotifications(_authToken?: string): Promise<void> {
   try {
@@ -59,37 +61,51 @@ export async function setupPushNotifications(_authToken?: string): Promise<void>
       console.warn('[FCM Mobile] Could not get FCM token.');
       return;
     }
+    lastKnownFcmToken = fcmToken;
 
     console.log('[FCM Mobile] FCM Token acquired (length: ' + fcmToken.length + ')');
 
-    // Register token with backend (authenticated). Try auth endpoint first, then notifications alias for compatibility.
-    const devicePayload = {
-      fcmToken,
-      deviceToken: fcmToken,
-      token: fcmToken,
-      platform: Platform.OS.toUpperCase(),
-      deviceId: Platform.OS === 'android' ? 'android-mobile' : 'ios-mobile',
-      deviceName: Platform.OS === 'android' ? 'Android Mobile' : 'iOS Mobile',
-    };
-
-    try {
-      await ApiClient.postApi('auth/device-token', devicePayload);
-    } catch (err) {
-      console.warn('[FCM Mobile] auth/device-token failed, trying notifications/device-token:', err);
-      await ApiClient.postApi('notifications/device-token', devicePayload).catch((err2) =>
-        console.warn('[FCM Mobile] Backend token registration failed:', err2),
-      );
-    }
-
-    console.log('[FCM Mobile] FCM token registered with backend.');
-
-    // Auto-subscribe client to default broadcast topics
+    // Auto-subscribe client to default broadcast topics (best-effort)
     await subscribeToTopic('all_users');
     await subscribeToTopic('new_releases');
+
+    // Register token with backend only when authenticated
+    const authToken = _authToken || ApiClient.getUserToken();
+    if (!authToken) {
+      console.log('[FCM Mobile] No auth session yet; FCM token will be registered after login.');
+      return;
+    }
+
+    await registerFcmTokenWithBackend(fcmToken);
 
   } catch (err) {
     console.warn('[FCM Mobile] Push notification setup error (non-fatal):', err);
   }
+}
+
+async function registerFcmTokenWithBackend(fcmToken: string): Promise<void> {
+  const authToken = ApiClient.getUserToken();
+  if (!authToken) return;
+
+  const devicePayload = {
+    fcmToken,
+    deviceToken: fcmToken,
+    token: fcmToken,
+    platform: Platform.OS.toUpperCase(),
+    deviceId: Platform.OS === 'android' ? 'android-mobile' : 'ios-mobile',
+    deviceName: Platform.OS === 'android' ? 'Android Mobile' : 'iOS Mobile',
+  };
+
+  try {
+    await ApiClient.postApi('auth/device-token', devicePayload);
+  } catch (err) {
+    console.warn('[FCM Mobile] auth/device-token failed, trying notifications/device-token:', err);
+    await ApiClient.postApi('notifications/device-token', devicePayload).catch((err2) =>
+      console.warn('[FCM Mobile] Backend token registration failed:', err2),
+    );
+  }
+
+  console.log('[FCM Mobile] FCM token registered with backend.');
 }
 
 /**

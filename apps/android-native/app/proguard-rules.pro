@@ -1,0 +1,4 @@
+-keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
+-keep class com.maxxpixels.data.model.** { *; }
+-keep class com.razorpay.** { *; }
+-dontwarn com.razorpay.**

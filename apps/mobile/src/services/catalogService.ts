@@ -29,9 +29,11 @@ export class CatalogService {
     if (lang) {
       queryParams.language = lang;
     }
-    const read = async (path: string): Promise<any[]> => {
+    const read = async (path: string, extraParams?: Record<string, any>): Promise<any[]> => {
       try {
-        const result = await ApiClient.getApi(path, { queryParams });
+        const result = await ApiClient.getApi(path, {
+          queryParams: { ...queryParams, ...(extraParams || {}) },
+        });
         if (!Array.isArray(result)) throw new Error('Invalid catalog response');
         return result;
       } catch (error: any) {
@@ -41,7 +43,7 @@ export class CatalogService {
     };
 
     const [bannerRows, sectionRows, categoryRows, typeRows] = await Promise.all([
-      read('cms/banners'),
+      read('cms/banners', { platform: 'MOBILE' }),
       read('cms/sections'),
       read('categories'),
       read('content-types').catch(() => []),
@@ -55,12 +57,25 @@ export class CatalogService {
       return item.typeId === typeId || item.videoType === typeId;
     };
     let banners = bannerRows
-      .map((row) =>
-        this.mapContentToCatalogItem({
+      .map((row) => {
+        const mobileArt = row.mobileImageUrl || row.imageUrl || row.bannerUrl || row.landscapeImageUrl;
+        const mapped = this.mapContentToCatalogItem({
           ...row,
           id: row.contentId || row.content_id || row.id,
-        })
-      )
+          landscape: mobileArt,
+          landscapeImageUrl: mobileArt,
+          bannerUrl: mobileArt,
+          thumbnail: mobileArt || row.posterUrl,
+          image: mobileArt || row.posterUrl,
+        });
+        return {
+          ...mapped,
+          platform: row.platform || row.placement || 'ALL',
+          pageSlug: row.pageSlug || row.page_slug || 'all',
+          displayOrder: Number(row.displayOrder ?? row.display_order ?? 0),
+          isAdminBanner: true,
+        } as any;
+      })
       .filter(matchesType);
 
     const isContinueWatchingSection = (s: any) => {

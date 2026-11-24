@@ -62,6 +62,11 @@ pub const MIGRATIONS: &[MigrationDef] = &[
         name: "intro_video_and_portal_banners",
         sql: include_str!("../../../migrations/0007_intro_video_and_portal_banners.sql"),
     },
+    MigrationDef {
+        version: "0008",
+        name: "user_referrals",
+        sql: include_str!("../../../migrations/0008_user_referrals.sql"),
+    },
 ];
 
 pub struct MigrationRunner;

@@ -302,13 +302,24 @@ impl PaymentService {
 
         let tax_val = (ord_final_amount.to_f64().unwrap_or(0.0) * 18.0 / 118.0 * 100.0).round()
             / 100.0;
+        let effective_pay_id = if provider_payment_id.trim().is_empty() {
+            format!(
+                "free_pay_{}_{}",
+                Utc::now().timestamp_millis(),
+                &Uuid::new_v4().simple().to_string()[..6]
+            )
+        } else {
+            provider_payment_id.to_string()
+        };
         let pay_am = payment::ActiveModel {
             user_id: Set(Some(effective_user_id)),
+            payment_id: Set(Some(effective_pay_id.clone())),
+            order_id: Set(ord_provider_order_id.clone()),
             payment_order_id: Set(ord_id),
             provider: Set(Some(ord_provider)),
             provider_order_id: Set(ord_provider_order_id.clone()),
-            transaction_id: Set(if provider_payment_id.trim().is_empty() { format!("free_pay_{}_{}", Utc::now().timestamp_millis(), &Uuid::new_v4().simple().to_string()[..6]) } else { provider_payment_id.to_string() }),
-            provider_payment_id: Set(Some(if provider_payment_id.trim().is_empty() { format!("free_pay_{}_{}", Utc::now().timestamp_millis(), &Uuid::new_v4().simple().to_string()[..6]) } else { provider_payment_id.to_string() })),
+            transaction_id: Set(effective_pay_id.clone()),
+            provider_payment_id: Set(Some(effective_pay_id)),
             provider_signature: Set(if signature.is_empty() {
                 None
             } else {
@@ -444,6 +455,80 @@ impl PaymentService {
         }
 
         txn.commit().await?;
+
+        // Best-effort: if this subscriber was referred by another user, credit the referrer's VIP days.
+        if subscription_result.is_some() {
+            let db_clone = state.db.clone();
+            tokio::spawn(async move {
+                let rewarded = db_clone
+                    .query_one(Statement::from_sql_and_values(
+                        DatabaseBackend::Postgres,
+                        "UPDATE user_referrals \
+                         SET status = 'REWARDED', credited_at = NOW(), updated_at = NOW() \
+                         WHERE referred_user_id = $1 AND status = 'SIGNED_UP' \
+                         RETURNING referrer_user_id, reward_days",
+                        vec![effective_user_id.into()],
+                    ))
+                    .await
+                    .ok()
+                    .flatten();
+
+                if let Some(row) = rewarded {
+                    let referrer_id: i64 = row.try_get("", "referrer_user_id").unwrap_or(0);
+                    let reward_days: i32 = row.try_get("", "reward_days").unwrap_or(7).max(1);
+                    if referrer_id > 0 {
+                        // Extend existing active subscription if present
+                        let extended = db_clone
+                            .execute(Statement::from_sql_and_values(
+                                DatabaseBackend::Postgres,
+                                "UPDATE subscriptions \
+                                 SET end_date = COALESCE(end_date, NOW()) + ($1 || ' days')::interval, \
+                                     expires_at = COALESCE(expires_at, NOW()) + ($1 || ' days')::interval, \
+                                     updated_at = NOW() \
+                                 WHERE id = ( \
+                                     SELECT id FROM subscriptions \
+                                     WHERE user_id = $2 AND status = 'ACTIVE' \
+                                     ORDER BY COALESCE(end_date, expires_at) DESC NULLS LAST \
+                                     LIMIT 1 \
+                                 )",
+                                vec![reward_days.to_string().into(), referrer_id.into()],
+                            ))
+                            .await
+                            .map(|r| r.rows_affected())
+                            .unwrap_or(0);
+
+                        if extended == 0 {
+                            let _ = db_clone
+                                .execute(Statement::from_sql_and_values(
+                                    DatabaseBackend::Postgres,
+                                    "INSERT INTO subscriptions (user_id, plan_id, status, start_date, end_date, expires_at, created_at, updated_at) \
+                                     SELECT $1, id, 'ACTIVE', NOW(), NOW() + ($2 || ' days')::interval, NOW() + ($2 || ' days')::interval, NOW(), NOW() \
+                                     FROM plans WHERE is_active = TRUE ORDER BY price ASC LIMIT 1",
+                                    vec![referrer_id.into(), reward_days.to_string().into()],
+                                ))
+                                .await;
+                        }
+
+                        // Send in-app notification to referrer
+                        let _ = db_clone
+                            .execute(Statement::from_sql_and_values(
+                                DatabaseBackend::Postgres,
+                                "INSERT INTO notifications (user_id, title, message, type, is_read, created_at) \
+                                 VALUES ($1, 'Referral Reward Unlocked!', $2, 'REWARD', FALSE, NOW())",
+                                vec![
+                                    referrer_id.into(),
+                                    format!(
+                                        "Your friend just subscribed! {} free VIP days have been added to your account.",
+                                        reward_days
+                                    )
+                                    .into(),
+                                ],
+                            ))
+                            .await;
+                    }
+                }
+            });
+        }
 
         Ok(json!({
             "verified": true,

@@ -35,9 +35,9 @@ export default function EpisodeList({ seasons, showId, session, user, onPlayEpis
   if (seasons.length === 0) return null;
 
   return (
-    <section className="mt-10">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
-        <h3 className="text-xl font-bold text-white">Episodes</h3>
+    <section>
+      <div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+        <h3 className="text-xl font-bold tracking-tight text-white">Episodes</h3>
 
         {seasons.length > 1 && (
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
@@ -47,10 +47,10 @@ export default function EpisodeList({ seasons, showId, session, user, onPlayEpis
                 type="button"
                 onClick={() => setActive(i)}
                 className={clsx(
-                  'flex-shrink-0 px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all duration-200',
+                  'flex-shrink-0 whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-bold transition-all duration-200',
                   i === active
-                    ? 'bg-[#E50914] text-white shadow-[0_0_15px_rgba(229,9,20,0.4)]'
-                    : 'bg-surface border border-ott-border text-desc-text hover:text-white hover:border-white/20',
+                    ? 'bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] text-white shadow-[0_6px_18px_rgba(255,109,46,0.35)]'
+                    : 'border border-white/10 bg-[#141414] text-white/70 hover:border-white/25 hover:text-white',
                 )}
               >
                 {s.name || `Season ${i + 1}`}
@@ -60,15 +60,15 @@ export default function EpisodeList({ seasons, showId, session, user, onPlayEpis
         )}
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         {episodesQ.isLoading &&
           Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="flex gap-4 bg-surface rounded-xl p-3 animate-pulse">
-              <div className="w-40 aspect-video bg-shimmer rounded-lg flex-shrink-0" />
+            <div key={i} className="flex animate-pulse gap-4 rounded-xl bg-[#141414] p-3">
+              <div className="aspect-video w-40 flex-shrink-0 rounded-lg bg-white/[0.06]" />
               <div className="flex-1 space-y-2 pt-1">
-                <div className="h-4 bg-shimmer rounded w-2/3" />
-                <div className="h-3 bg-shimmer rounded w-1/4" />
-                <div className="h-3 bg-shimmer rounded w-full" />
+                <div className="h-4 w-2/3 rounded bg-white/[0.06]" />
+                <div className="h-3 w-1/4 rounded bg-white/[0.06]" />
+                <div className="h-3 w-full rounded bg-white/[0.06]" />
               </div>
             </div>
           ))}
@@ -76,42 +76,44 @@ export default function EpisodeList({ seasons, showId, session, user, onPlayEpis
         {episodes.map((ep, idx) => (
           <div
             key={ep.id}
-            className="group flex gap-4 bg-surface hover:bg-surface-hover rounded-xl p-3 transition-all duration-200 hover:ring-1 hover:ring-white/10"
+            className="group flex items-center gap-4 rounded-xl border border-white/[0.08] bg-[#141414] p-3 transition-colors duration-200 hover:bg-[#1A1A1A]"
           >
-            <div className="hidden sm:flex w-8 items-center justify-center text-muted-text text-sm font-medium flex-shrink-0">
+            <div className="hidden w-7 flex-shrink-0 items-center justify-center text-sm font-bold text-white/40 sm:flex">
               {idx + 1}
             </div>
 
-            <div className="relative flex-shrink-0 w-36 sm:w-44 aspect-video rounded-lg overflow-hidden bg-shimmer">
+            <div className="relative aspect-video w-36 flex-shrink-0 overflow-hidden rounded-lg bg-[#0A0A0A] sm:w-44">
               <img
                 src={resolveImageUrl(ep.landscape || ep.image || ep.thumbnail)}
                 alt={firstText(ep.name)}
-                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                className="h-full w-full object-cover"
                 loading="lazy"
               />
               {ep.is_premium === 1 && (
-                <span className="absolute top-1.5 left-1.5 text-[8px] font-black bg-gold text-black px-1.5 py-0.5 rounded uppercase tracking-wide">
-                  Premium
+                <span className="absolute left-1.5 top-1.5 rounded bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-white">
+                  VIP
                 </span>
               )}
             </div>
 
-            <div className="flex-1 min-w-0 py-0.5">
+            <div className="min-w-0 flex-1 py-0.5">
               <div className="flex items-start justify-between gap-2">
-                <h4 className="font-semibold text-sm text-white truncate group-hover:text-primary transition-colors">
+                <h4 className="truncate text-sm font-semibold text-white">
                   {firstText(ep.name)}
                 </h4>
                 {ep.video_duration && (
-                  <span className="flex items-center gap-1 text-[11px] text-muted-text flex-shrink-0 mt-0.5">
-                    <Clock size={10} strokeWidth={2} />
+                  <span className="mt-0.5 flex flex-shrink-0 items-center gap-1 text-[11px] font-medium text-white/45">
+                    <Clock size={11} strokeWidth={2} />
                     {formatDuration(ep.video_duration)}
                   </span>
                 )}
               </div>
-              <p className="text-xs text-muted-text mt-1 line-clamp-2 leading-relaxed">{firstText(ep.description)}</p>
+              <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-white/55">
+                {firstText(ep.description)}
+              </p>
             </div>
 
-            <div className="flex items-center flex-shrink-0">
+            <div className="flex flex-shrink-0 items-center">
               <PlayButtonGuard
                 user={user}
                 isPremium={ep.is_premium === 1}

@@ -208,6 +208,12 @@ export const routes: Routes = [
         loadComponent: () => import('./features/home-content/intro-video.page').then(m => m.IntroVideoPage)
       },
       {
+        path: 'banners',
+        canActivate: [permissionGuard],
+        data: { permissions: ['CONTENT_UPDATE'] },
+        loadComponent: () => import('./features/home-content/hero-banners.page').then(m => m.HeroBannersPage)
+      },
+      {
         path: 'portal-banners',
         canActivate: [permissionGuard],
         data: { permissions: ['CONTENT_UPDATE'] },

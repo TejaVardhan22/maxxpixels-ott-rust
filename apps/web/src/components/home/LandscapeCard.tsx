@@ -5,13 +5,22 @@ import Image from 'next/image';
 import { Clapperboard, Play } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type MouseEvent } from 'react';
-import { resolveImageCandidates, progressPercent, getContentImageCandidates, resolveSecurePlayback, getContentUrl, getWatchUrl } from '@ott/shared';
+import {
+  resolveImageCandidates,
+  progressPercent,
+  getContentImageCandidates,
+  resolveSecurePlayback,
+  getContentUrl,
+  getWatchUrl,
+} from '@ott/shared';
 import type { ContentItem } from '@ott/shared';
 import { setPendingPlayback } from '@/lib/playbackSession';
+import { useStoredUser } from '@/lib/auth';
 
 interface Props {
   item: ContentItem;
   variant?: 'default' | 'resume';
+  fluid?: boolean;
 }
 
 function asPositiveSeconds(value: unknown): number {
@@ -39,37 +48,66 @@ function extractNumericId(...candidates: unknown[]): number {
   return 0;
 }
 
-export default function LandscapeCard({ item, variant = 'default' }: Props) {
+export default function LandscapeCard({ item, variant = 'default', fluid = false }: Props) {
   const router = useRouter();
+  const { user } = useStoredUser();
   const rawItem = (item ?? {}) as Record<string, any>;
   const contentId = extractNumericId(
-    item.video_id,
-    item.id,
+    rawItem.contentId,
     rawItem.content_id,
-    rawItem.resource_id,
+    item.video_id,
     rawItem.videoId,
     rawItem.content?.id,
     rawItem.content?.video_id,
+    item.id,
+    rawItem.resource_id,
   );
-  const href = getContentUrl(item as any);
+  const normalizedItem = { ...item, id: contentId || item.id, video_id: contentId || item.video_id };
+  const href = getContentUrl(normalizedItem as any);
   const imageCandidates = resolveImageCandidates(getContentImageCandidates(item, 'landscape'));
   const imageCandidateKey = imageCandidates.join('|');
   const [imageIndex, setImageIndex] = useState(0);
   const safeImageIndex = Math.min(imageIndex, imageCandidates.length);
   const imgSrc = imageCandidates[safeImageIndex] || '';
   const imageFailed = !imgSrc;
-  const progress = progressPercent(item.stop_time, item.video_duration);
-  const resumeAt = asPositiveSeconds(item.stop_time);
-  const isResume = variant === 'resume' || progress > 0;
+  const resumeAt = asPositiveSeconds(
+    item.stop_time ??
+      rawItem.positionSeconds ??
+      rawItem.position_seconds ??
+      rawItem.watchedSeconds ??
+      rawItem.watched_seconds,
+  );
+  const durationSec = asPositiveSeconds(
+    item.video_duration ??
+      rawItem.durationSeconds ??
+      rawItem.duration_seconds ??
+      rawItem.totalDurationSeconds,
+  );
+  const rawPct = Number(rawItem.percentage ?? 0);
+  const progress =
+    Number.isFinite(rawPct) && rawPct > 0
+      ? Math.min(100, rawPct)
+      : progressPercent(resumeAt, durationSec);
+  const isResume = variant === 'resume' || progress > 0 || resumeAt > 0;
 
   useEffect(() => {
     setImageIndex(0);
   }, [contentId, imageCandidateKey]);
 
   const startResumePlayback = async (event: MouseEvent<HTMLAnchorElement>) => {
-    if (!contentId || resumeAt <= 0) return;
+    if (!contentId || !isResume) return;
 
     event.preventDefault();
+
+    if (!user?.id || !user?.auth_token) {
+      router.push(`/login?redirect=${encodeURIComponent(getWatchUrl(normalizedItem as any, undefined, resumeAt > 0 ? resumeAt : undefined))}`);
+      return;
+    }
+
+    if (Number(user.is_buy ?? 0) !== 1 && Number(item.rent_buy ?? 0) !== 1) {
+      router.push('/subscription');
+      return;
+    }
 
     try {
       const pb = await resolveSecurePlayback({
@@ -86,17 +124,16 @@ export default function LandscapeCard({ item, variant = 'default' }: Props) {
         videoType: Number(item.video_type ?? 1),
         typeId: Number(item.type_id ?? 1),
         categoryId: firstCategoryId(item),
-        resumeAt,
-        title: String(item.name ?? ''),
+        resumeAt: resumeAt > 0 ? resumeAt : undefined,
+        title: String(item.name || rawItem.title || ''),
         poster: imgSrc,
         sessionToken: pb.sessionToken,
         showAds: pb.showAds,
         vastTagUrl: pb.vastTagUrl,
       });
-      const watchUrl = getWatchUrl(item as any, undefined, resumeAt);
-      router.push(watchUrl);
+      router.push(getWatchUrl(normalizedItem as any, undefined, resumeAt > 0 ? resumeAt : undefined));
     } catch {
-      router.push(getWatchUrl(item as any, undefined, resumeAt));
+      router.push(getWatchUrl(normalizedItem as any, undefined, resumeAt > 0 ? resumeAt : undefined));
     }
   };
 
@@ -104,84 +141,44 @@ export default function LandscapeCard({ item, variant = 'default' }: Props) {
     <Link
       href={href}
       onClick={startResumePlayback}
-      className="group block w-[250px] flex-shrink-0 focus-visible:outline-none sm:w-[290px] lg:w-[330px]"
+      className={`block focus-visible:outline-none ${
+        fluid ? 'w-full' : 'w-[240px] flex-shrink-0 sm:w-[276px] lg:w-[310px]'
+      }`}
     >
-      <div className="relative aspect-video overflow-hidden rounded-xl bg-surface ring-1 ring-white/10 transition duration-300 group-hover:-translate-y-1 group-hover:ring-white/25 group-focus-visible:ring-2 group-focus-visible:ring-primary">
+      <div className="relative aspect-video overflow-hidden rounded-lg bg-[#141414]">
         {imgSrc && !imageFailed ? (
-          <>
-            <Image
-              src={imgSrc}
-              alt=""
-              fill
-              sizes="(max-width: 640px) 250px, (max-width: 1024px) 290px, 330px"
-              className="scale-110 object-cover opacity-45 blur-xl"
-              loading="lazy"
-              unoptimized
-              aria-hidden
-            />
-            <Image
-              src={imgSrc}
-              alt={item.name ?? ''}
-              fill
-              sizes="(max-width: 640px) 250px, (max-width: 1024px) 290px, 330px"
-              className="object-cover transition duration-500 group-hover:scale-105"
-              loading="lazy"
-              unoptimized
-              onError={() => setImageIndex((current) => Math.min(current + 1, imageCandidates.length))}
-            />
-          </>
+          <Image
+            src={imgSrc}
+            alt={item.name ?? ''}
+            fill
+            sizes="(max-width: 640px) 240px, (max-width: 1024px) 276px, 310px"
+            className="object-cover"
+            loading="lazy"
+            unoptimized
+            onError={() =>
+              setImageIndex((current) => Math.min(current + 1, imageCandidates.length))
+            }
+          />
         ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#172235] px-5 text-center">
-            <Clapperboard className="mb-2 h-7 w-7 text-white/28" strokeWidth={1.5} />
-            <span className="line-clamp-1 text-xs font-bold text-white/55">{item.name ?? 'Artwork unavailable'}</span>
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#141414] px-5 text-center">
+            <Clapperboard className="h-7 w-7 text-white/25" strokeWidth={1.5} />
           </div>
         )}
 
-        <div className="absolute inset-0 bg-black/10 transition group-hover:bg-black/25" />
-
-        {isResume ? (
-          <span className="absolute bottom-4 left-3 inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-black text-black shadow-lg">
-            <Play size={13} fill="currentColor" /> Resume
-          </span>
-        ) : (
-          <span className="absolute inset-0 grid place-items-center opacity-0 transition group-hover:opacity-100">
-            <span className="grid h-11 w-11 place-items-center rounded-full bg-white text-black shadow-xl">
-              <Play size={16} fill="currentColor" className="ml-0.5" />
-            </span>
+        {isResume && (
+          <span className="absolute bottom-3 left-2.5 inline-flex items-center gap-1.5 rounded bg-black/75 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-white shadow-sm backdrop-blur-sm">
+            <Play size={11} fill="currentColor" /> Resume
           </span>
         )}
 
-        {/* Continue-watching progress bar */}
         {progress > 0 && (
-          <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/15">
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/25">
             <div
-              className="h-full rounded-r-full bg-primary transition-all duration-300"
+              className="h-full bg-gradient-to-r from-[#FF6D2E] to-[#FF5500]"
               style={{ width: `${progress}%` }}
             />
           </div>
         )}
-
-        {/* Duration label */}
-        {item.video_duration && progress === 0 && (
-          <span className="absolute right-2.5 top-2.5 rounded bg-black/70 px-2 py-1 text-[10px] font-semibold text-white/75">
-            {typeof item.video_duration === 'number'
-              ? `${Math.floor(item.video_duration / 60)}m`
-              : item.video_duration}
-          </span>
-        )}
-      </div>
-
-      <div className="mt-3 px-0.5">
-        <p className="truncate text-sm font-bold text-white/88 transition group-hover:text-white">{item.name}</p>
-        <div className="mt-1 flex items-center gap-2 text-[11px] text-white/38">
-          <span>{item.video_type === 2 ? 'Series' : 'Movie'}</span>
-          {progress > 0 && (
-            <>
-              <span className="h-1 w-1 rounded-full bg-white/25" />
-              <span>{Math.round(progress)}% watched</span>
-            </>
-          )}
-        </div>
       </div>
     </Link>
   );

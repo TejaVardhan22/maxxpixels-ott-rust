@@ -125,10 +125,10 @@ export type HomeInitialData = {
 export async function fetchHomeInitialData(): Promise<HomeInitialData> {
   try {
     const [banners, sections, categories, latest] = await Promise.all([
-      serverPostJson<ApiListResponse<Banner[]>>('cms/banners'),
+      serverPostJson<ApiListResponse<Banner[]>>('cms/banners', { platform: 'WEB' }),
       serverPostJson<ApiListResponse<Section[]>>('cms/sections'),
       serverPostJson<ApiListResponse<Category[]>>('categories'),
-      serverPostJson<ApiListResponse<ContentItem[]>>('search', { q: '' }),
+      serverPostJson<ApiListResponse<ContentItem[]>>('search', { q: '', size: 100 }),
     ]);
     return { banners, sections, categories, latest };
   } catch (e: any) {

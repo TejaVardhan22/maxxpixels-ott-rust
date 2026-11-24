@@ -420,6 +420,14 @@ pub async fn serve_upload_handler(
     Path((folder, file_name)): Path<(String, String)>,
 ) -> Response {
     let s = svc(&state);
+    if let Some((bytes, mime)) = s.read_local_upload(&folder, &file_name).await {
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, mime)
+            .header(header::CACHE_CONTROL, "public, max-age=86400")
+            .body(Body::from(bytes))
+            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+    }
     if let Some((bytes, mime)) = s.bunny_storage.download_file(&folder, &file_name).await {
         return Response::builder()
             .status(StatusCode::OK)

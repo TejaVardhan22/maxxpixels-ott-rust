@@ -31,6 +31,7 @@ export function useBanners(
     queryKey: [...queryKeys.banners(isHomeScreen, typeId), ctx?.userId ?? 0, ctx?.deviceId ?? 'web'],
     queryFn: () => catalogApi.getBanner(payload.banner(isHomeScreen, typeId, ctx)),
     staleTime: 2 * 60_000,
+    placeholderData: (prev) => prev,
     initialData: opts?.initialData,
   });
 }
@@ -68,6 +69,7 @@ export function useSections(
     getNextPageParam: (last, _all, lastPage) =>
       last.more_page ? (lastPage as number) + 1 : undefined,
     staleTime: 2 * 60_000,
+    placeholderData: (prev) => prev,
     initialData: opts?.initialData
       ? { pages: [opts.initialData], pageParams: [1] }
       : undefined,

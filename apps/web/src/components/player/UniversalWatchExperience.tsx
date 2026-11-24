@@ -2,20 +2,28 @@
 
 import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Clapperboard, Radio } from 'lucide-react';
+import { Clapperboard, Crown } from 'lucide-react';
 import Link from 'next/link';
 import VideoPlayer from '@/components/player/VideoPlayer';
 import AdAwareVideoPlayer from '@/components/player/AdAwareVideoPlayer';
 import GoogleImaAdPlayer from '@/components/player/GoogleImaAdPlayer';
 import { isVideoAdsEnabled } from '@/components/player/ads/config/ad.config';
 import type { SubtitleTrack } from '@/components/player/VideoPlayer';
-import { trackEvent } from '@/lib/analytics';
-import { EVENTS, useAddContinueWatching, resolveSecurePlayback, getContentImagePath, resolveImageUrl, catalogApi, payload } from '@ott/shared';
+import { trackEvent, trackFbEvent } from '@/lib/analytics';
+import {
+  EVENTS,
+  getUserToken,
+  resolveSecurePlayback,
+  getContentImagePath,
+  resolveImageUrl,
+  catalogApi,
+  payload,
+  queryKeys,
+} from '@ott/shared';
 import { consumePendingPlayback, type PendingPlayback } from '@/lib/playbackSession';
 import { usePlaybackTracking } from '@/lib/usePlaybackTracking';
 import { useStoredUser } from '@/lib/auth';
-import { useQuery } from '@tanstack/react-query';
-import { GoogleAdBanner } from '@/components/ads';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 function normalizePlaybackUrl(rawUrl: string | null | undefined): string {
   const value = (rawUrl ?? '').trim();
@@ -44,7 +52,7 @@ export interface UniversalWatchExperienceProps {
 
 export default function UniversalWatchExperience(props: UniversalWatchExperienceProps) {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-black" />}>
+    <Suspense fallback={<div className="min-h-screen bg-[#0A0A0A]" />}>
       <WatchExperienceContent {...props} />
     </Suspense>
   );
@@ -59,9 +67,14 @@ function WatchExperienceContent({
   const params = useParams<{ slug?: string; id?: string; videoId?: string }>();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { session } = useStoredUser();
-  const continueMut = useAddContinueWatching();
+  const { user, session, isLoggedIn } = useStoredUser();
+  const queryClient = useQueryClient();
   const lastProgressSyncAt = useRef(0);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  useEffect(() => {
+    setAuthChecked(true);
+  }, []);
 
   const rawSlug = explicitSlug || params?.slug || '';
   const isSlugNumeric = !isNaN(Number(rawSlug)) && Number(rawSlug) > 0;
@@ -72,11 +85,15 @@ function WatchExperienceContent({
     parsePositiveNumber(params?.id) ??
     parsePositiveNumber(params?.videoId) ??
     (isSlugNumeric ? parsePositiveNumber(rawSlug) : undefined) ??
-    parsePositiveNumber(searchParams.get('id') ?? searchParams.get('videoId') ?? searchParams.get('video_id'));
+    parsePositiveNumber(
+      searchParams.get('id') ?? searchParams.get('videoId') ?? searchParams.get('video_id'),
+    );
 
   const episodeIdParam =
     explicitEpisodeId ??
-    parsePositiveNumber(searchParams.get('ep') ?? searchParams.get('episode_id') ?? searchParams.get('episodeId'));
+    parsePositiveNumber(
+      searchParams.get('ep') ?? searchParams.get('episode_id') ?? searchParams.get('episodeId'),
+    );
 
   const resumeParam = parsePositiveNumber(
     searchParams.get('t') ?? searchParams.get('resume_at') ?? searchParams.get('resumeAt'),
@@ -120,13 +137,21 @@ function WatchExperienceContent({
         // Fallback search
         const cleanSearch = slug.replace(/[-_]+/g, ' ').trim();
         const res = await catalogApi.searchContent(
-          payload.search({ userId: session?.userId ?? 0, deviceId: session?.deviceId ?? 'web' }, cleanSearch, 1),
+          payload.search(
+            { userId: session?.userId ?? 0, deviceId: session?.deviceId ?? 'web' },
+            cleanSearch,
+            1,
+          ),
         );
         const items = (Array.isArray(res?.result) ? res.result : (res as any)?.data) ?? [];
         const normSlug = slug.toLowerCase().replace(/[^a-z0-9]+/g, '');
         const match = items.find((it: any) => {
-          const itTitle = String(it.title || it.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
-          const itSlug = String(it.slug || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+          const itTitle = String(it.title || it.name || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '');
+          const itSlug = String(it.slug || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '');
           return (
             itTitle.includes(normSlug) ||
             normSlug.includes(itTitle) ||
@@ -145,7 +170,8 @@ function WatchExperienceContent({
 
   const content = contentQuery.data;
   const contentId = resolvedId ?? parsePositiveNumber(String(content?.video_id ?? content?.id ?? ''));
-  const determinedVideoType = parsePositiveNumber(String(content?.video_type ?? '')) ?? (contentType === 'series' ? 2 : 1);
+  const determinedVideoType =
+    parsePositiveNumber(String(content?.video_type ?? '')) ?? (contentType === 'series' ? 2 : 1);
 
   // Resolve secure playback if pending playback is not set
   const playbackQuery = useQuery({
@@ -160,12 +186,14 @@ function WatchExperienceContent({
         contentId,
       });
     },
-    enabled: !pending?.url && Boolean((episodeIdParam && episodeIdParam > 0) || (contentId && contentId > 0)),
+    enabled:
+      !pending?.url && Boolean((episodeIdParam && episodeIdParam > 0) || (contentId && contentId > 0)),
     staleTime: 30_000,
   });
 
   const title = pending?.title || content?.name || content?.title || slug.replace(/-/g, ' ');
-  const poster = pending?.poster || (content ? resolveImageUrl(getContentImagePath(content, 'landscape')) : undefined);
+  const poster =
+    pending?.poster || (content ? resolveImageUrl(getContentImagePath(content, 'landscape')) : undefined);
   const streamUrl = normalizePlaybackUrl(
     pending?.url ||
       playbackQuery.data?.streamUrl ||
@@ -176,17 +204,60 @@ function WatchExperienceContent({
       content?.movie?.videoAssetId ||
       content?.master_playlist_url,
   );
-  const fallbackUrl = normalizePlaybackUrl(pending?.fallbackUrl || playbackQuery.data?.fallbackUrl);
   const subtitles = (pending?.subtitles || playbackQuery.data?.subtitles || []) as SubtitleTrack[];
   const isHlsUrl = /\.m3u8($|[?#])|manifest/i.test(streamUrl);
-  const resumeAt = pending?.resumeAt ?? resumeParam ?? 0;
   const activeVideoId = pending?.videoId ?? episodeIdParam ?? contentId ?? 0;
+
+  // Fetch saved resume position directly from backend continue-watching if not already supplied
+  const savedResumeQuery = useQuery<number>({
+    queryKey: ['watchSavedResume', contentId ?? activeVideoId],
+    queryFn: async () => {
+      const token = getUserToken();
+      const targetContentId = contentId ?? activeVideoId;
+      if (!token || !targetContentId || targetContentId <= 0) return 0;
+      try {
+        const res = await fetch('/api/v1/watch/continue-watching', {
+          headers: {
+            Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+          },
+        });
+        if (!res.ok) return 0;
+        const json = await res.json();
+        const list = Array.isArray(json?.data)
+          ? json.data
+          : Array.isArray(json?.result)
+          ? json.result
+          : Array.isArray(json)
+          ? json
+          : [];
+        const match = list.find(
+          (row: any) =>
+            Number(row?.contentId ?? row?.content_id ?? row?.video_id ?? 0) === targetContentId &&
+            !row?.completed &&
+            !row?.is_completed,
+        );
+        const pos = Number(match?.positionSeconds ?? match?.position_seconds ?? match?.stop_time ?? 0);
+        return Number.isFinite(pos) && pos > 0 ? Math.floor(pos) : 0;
+      } catch {
+        return 0;
+      }
+    },
+    enabled: !pending?.resumeAt && !resumeParam && Boolean(contentId || activeVideoId),
+    staleTime: 0,
+  });
+
+  const serverResumeAt = parsePositiveNumber(
+    (playbackQuery.data as any)?.resumePositionSeconds ??
+      (playbackQuery.data as any)?.resume_position_seconds ??
+      savedResumeQuery.data,
+  );
+  const resumeAt = pending?.resumeAt ?? resumeParam ?? serverResumeAt ?? 0;
   const activeVideoType = pending?.videoType ?? (episodeIdParam ? 2 : determinedVideoType);
   const categoryId = pending?.categoryId?.toString() || content?.category_id?.toString();
 
   const playbackSessionToken = pending?.sessionToken ?? playbackQuery.data?.sessionToken;
   const trackingEpisodeId = episodeIdParam ?? (activeVideoType === 2 ? activeVideoId : undefined);
-  const { reportProgress } = usePlaybackTracking({
+  const { reportProgress, reportCompleted } = usePlaybackTracking({
     contentId,
     episodeId: trackingEpisodeId,
     sessionToken: playbackSessionToken,
@@ -195,30 +266,99 @@ function WatchExperienceContent({
   });
 
   useEffect(() => {
-    if (title) {
+    if (title && streamUrl) {
       trackEvent(EVENTS.VIDEO_PLAY, {
+        content_id: contentId ?? activeVideoId,
         video_title: title,
         video_provider: 'hls',
       });
+      trackFbEvent('ViewContent', {
+        content_ids: [String(contentId ?? activeVideoId)],
+        content_name: title,
+        content_type: 'video_play',
+      });
     }
-  }, [title]);
+  }, [activeVideoId, contentId, streamUrl, title]);
+
+  const latestProgressRef = useRef<{ pos: number; dur: number }>({ pos: 0, dur: 0 });
 
   const syncContinueWatching = useCallback(
-    (seconds: number) => {
-      reportProgress(seconds);
+    (seconds: number, duration?: number) => {
+      reportProgress(seconds, duration);
       if (!activeVideoId || seconds <= 0) return;
+
+      const pos = Math.floor(seconds);
+      const dur = duration && Number.isFinite(duration) && duration > 0 ? Math.floor(duration) : 0;
+      latestProgressRef.current = { pos, dur };
+      const isCompleted = dur > 0 && pos >= Math.floor(dur * 0.92);
+
       const now = Date.now();
-      if (now - lastProgressSyncAt.current < 10_000) return;
+      if (!isCompleted && now - lastProgressSyncAt.current < 10_000) return;
       lastProgressSyncAt.current = now;
 
-      continueMut.mutate({
-        video_id: activeVideoId,
-        video_type: activeVideoType,
-        stop_time: Math.floor(seconds),
-      });
+      const token = getUserToken();
+      if (!token) return;
+      void fetch('/api/v1/watch/history', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          contentId: contentId ?? activeVideoId,
+          episodeId: trackingEpisodeId,
+          positionSeconds: pos,
+          durationSeconds: dur,
+          completed: isCompleted,
+        }),
+      })
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: queryKeys.continueWatching });
+        })
+        .catch(() => {});
     },
-    [activeVideoId, activeVideoType, continueMut, reportProgress],
+    [activeVideoId, contentId, queryClient, reportProgress, trackingEpisodeId],
   );
+
+  // Flush final position & refresh Continue Watching cache whenever leaving the player
+  const flushProgressOnExit = useCallback(() => {
+    const { pos, dur } = latestProgressRef.current;
+    const targetId = contentId ?? activeVideoId;
+    const token = getUserToken();
+    if (!token || !targetId || pos <= 0) {
+      queryClient.invalidateQueries({ queryKey: queryKeys.continueWatching });
+      return;
+    }
+    const isCompleted = dur > 0 && pos >= Math.floor(dur * 0.92);
+    void fetch('/api/v1/watch/history', {
+      method: 'POST',
+      keepalive: true,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        contentId: targetId,
+        episodeId: trackingEpisodeId,
+        positionSeconds: pos,
+        durationSeconds: dur,
+        completed: isCompleted,
+      }),
+    }).finally(() => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.continueWatching });
+    });
+  }, [activeVideoId, contentId, queryClient, trackingEpisodeId]);
+
+  useEffect(() => {
+    return () => {
+      flushProgressOnExit();
+    };
+  }, [flushProgressOnExit]);
+
+  const handlePlaybackCompleted = useCallback(() => {
+    reportCompleted();
+    queryClient.invalidateQueries({ queryKey: queryKeys.continueWatching });
+  }, [queryClient, reportCompleted]);
 
   const detailPageHref = (() => {
     const s = slug || rawSlug;
@@ -231,128 +371,192 @@ function WatchExperienceContent({
     return contentId ? `/title/${s || contentId}/${contentId}` : `/title/${s || 'watch'}`;
   })();
 
-  const handleBack = () => {
-    if (window.history.length > 1) {
+  const handleBack = useCallback(() => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
       router.back();
     } else {
       router.push(detailPageHref);
     }
-  };
+  }, [detailPageHref, router]);
+
+  const [replayKey, setReplayKey] = useState(0);
+
+  const isResolvingStream =
+    !streamUrl && (pending === undefined || contentQuery.isLoading || playbackQuery.isLoading);
+
+  // Format genre / category for the player's top-left subtitle line ("Comedy Drama • FHD • 2h 22m")
+  const genreLabel = (() => {
+    if (Array.isArray(content?.genres) && content.genres.length > 0) {
+      return content.genres
+        .slice(0, 2)
+        .map((g: any) => (typeof g === 'string' ? g : g?.name || g?.title))
+        .filter(Boolean)
+        .join(' ');
+    }
+    return (
+      content?.category_name ||
+      content?.categoryName ||
+      content?.genre ||
+      content?.originalLanguage ||
+      content?.language_name ||
+      (activeVideoType === 2 ? 'Series' : 'Movie')
+    );
+  })();
+
+  const hasActiveSubscription =
+    Boolean(user?.id && user?.auth_token) &&
+    (Number(user?.is_buy ?? 0) === 1 ||
+      Number((content as any)?.rent_buy ?? (content as any)?.is_rented ?? 0) === 1);
 
   return (
-    <main className="min-h-screen bg-black text-white">
-      {/* Cinema Theatre Header */}
-      <header className="relative z-10 mx-auto flex max-w-[1600px] items-center justify-between border-b border-white/10 px-4 py-4 sm:px-6 lg:px-12">
-        <div className="flex items-center gap-4 min-w-0">
-          <button
-            type="button"
-            onClick={handleBack}
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.08] text-white transition hover:border-primary-light hover:bg-primary-light/20"
-            aria-label="Back to details"
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-primary-light">
-              MaxxPixels Stream
-            </p>
-            <h1 className="truncate font-display text-base font-black sm:text-xl capitalize">
-              {title || 'Now Playing'}
-            </h1>
+    <main className="relative flex h-[100dvh] w-screen flex-col overflow-hidden bg-[#0A0A0A] text-white select-none">
+      {/* Full-Viewport Immersive Player Stage */}
+      <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-[#0A0A0A]">
+        {!authChecked ? (
+          <div className="flex flex-col items-center justify-center gap-3 px-6 text-center">
+            <div className="h-11 w-11 animate-spin rounded-full border-[3px] border-white/15 border-t-[#FF6D2E]" />
+            <p className="text-xs font-semibold text-zinc-400">Verifying subscription…</p>
           </div>
-        </div>
-        <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-2 text-xs font-bold text-white/80 backdrop-blur md:flex">
-          <Radio size={14} className="text-primary-light" />
-          Ultra-HD 4K Secure Playback
-        </div>
-      </header>
-
-      {/* Main Theatre Screen */}
-      <div className="relative z-10 mx-auto flex max-w-[1600px] items-start justify-center px-4 py-5 sm:px-6 lg:px-12 lg:py-7">
-        <section className="w-full max-w-[min(100%,calc((100vh-175px)*16/9))]">
-          <div className="w-full overflow-hidden rounded-2xl border border-white/[0.08] bg-black shadow-2xl shadow-black/40">
-            {streamUrl ? (
-              <div className="bg-black">
-                {isVideoAdsEnabled() ? (
-                  <GoogleImaAdPlayer
-                    contentSrc={streamUrl}
-                    poster={poster}
-                    title={title}
-                    subtitles={subtitles}
-                    autoPlay
-                    forceHls={isHlsUrl}
-                    resumeAt={resumeAt}
-                    onPlaybackProgress={syncContinueWatching}
-                    adConfig={{
-                      enabled: pending?.showAds ?? playbackQuery.data?.showAds ?? true,
-                      adTagUrl: pending?.vastTagUrl ?? playbackQuery.data?.vastTagUrl ?? undefined,
-                      contentTitle: title,
-                      videoId: activeVideoId,
-                      categoryId,
-                    }}
-                  />
-                ) : activeVideoId ? (
-                  <AdAwareVideoPlayer
-                    contentSrc={streamUrl}
-                    poster={poster}
-                    title={title}
-                    videoId={activeVideoId}
-                    categoryId={categoryId}
-                    subtitles={subtitles}
-                    forceHls={isHlsUrl}
-                    onPlaybackProgress={syncContinueWatching}
-                    initialResumeAt={resumeAt}
-                  />
-                ) : (
-                  <VideoPlayer
-                    src={streamUrl}
-                    poster={poster}
-                    title={title}
-                    subtitles={subtitles}
-                    autoPlay
-                    forceHls={isHlsUrl}
-                    onTimeUpdate={syncContinueWatching}
-                    resumeAt={resumeAt}
-                  />
-                )}
-              </div>
+        ) : !isLoggedIn ? (
+          <div className="mx-4 max-w-md rounded-2xl border border-white/10 bg-[#141414] p-7 text-center shadow-2xl">
+            <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-full bg-[#FF6D2E]/15 text-[#FF6D2E]">
+              <Crown size={22} />
+            </div>
+            <p className="text-lg font-bold text-white">Sign in required</p>
+            <p className="mt-2 text-xs leading-relaxed text-zinc-400">
+              Please sign in with an active subscription to stream {title ? `"${title}"` : 'this title'}.
+            </p>
+            <div className="mt-6 flex items-center justify-center gap-2.5">
+              <button
+                type="button"
+                onClick={handleBack}
+                className="inline-flex h-10 items-center rounded-full border border-white/15 bg-white/[0.06] px-5 text-xs font-semibold text-white transition hover:bg-white/15"
+              >
+                Go Back
+              </button>
+              <Link
+                href="/login"
+                className="inline-flex h-10 items-center rounded-full bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] px-6 text-xs font-bold text-white transition hover:brightness-110"
+              >
+                Sign In
+              </Link>
+            </div>
+          </div>
+        ) : !hasActiveSubscription ? (
+          <div className="mx-4 max-w-md rounded-2xl border border-white/10 bg-[#141414] p-7 text-center shadow-2xl">
+            <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-full bg-[#FF6D2E]/15 text-[#FF6D2E]">
+              <Crown size={22} />
+            </div>
+            <p className="text-lg font-bold text-white">Active Subscription Required</p>
+            <p className="mt-2 text-xs leading-relaxed text-zinc-400">
+              An active VIP subscription is required to stream {title ? `"${title}"` : 'titles on MaxxPixels'}. Choose a plan to start watching immediately.
+            </p>
+            <div className="mt-6 flex items-center justify-center gap-2.5">
+              <button
+                type="button"
+                onClick={handleBack}
+                className="inline-flex h-10 items-center rounded-full border border-white/15 bg-white/[0.06] px-5 text-xs font-semibold text-white transition hover:bg-white/15"
+              >
+                Go Back
+              </button>
+              <Link
+                href="/subscription"
+                className="inline-flex h-10 items-center rounded-full bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] px-6 text-xs font-bold text-white shadow-[0_8px_24px_rgba(255,109,46,0.4)] transition hover:brightness-110"
+              >
+                Subscribe Now
+              </Link>
+            </div>
+          </div>
+        ) : streamUrl ? (
+          <div className="h-full w-full bg-[#0A0A0A]">
+            {isVideoAdsEnabled() ? (
+              <GoogleImaAdPlayer
+                contentSrc={streamUrl}
+                poster={poster}
+                title={title}
+                metaSubtitle={genreLabel}
+                onBack={handleBack}
+                subtitles={subtitles}
+                autoPlay
+                forceHls={isHlsUrl}
+                resumeAt={resumeAt}
+                onPlaybackProgress={syncContinueWatching}
+                fullViewport
+                adConfig={{
+                  enabled: pending?.showAds ?? playbackQuery.data?.showAds ?? true,
+                  adTagUrl: pending?.vastTagUrl ?? playbackQuery.data?.vastTagUrl ?? undefined,
+                  contentTitle: title,
+                  videoId: activeVideoId,
+                  categoryId,
+                }}
+              />
+            ) : activeVideoId ? (
+              <AdAwareVideoPlayer
+                key={replayKey}
+                contentSrc={streamUrl}
+                poster={poster}
+                title={title}
+                metaSubtitle={genreLabel}
+                onBack={handleBack}
+                videoId={activeVideoId}
+                categoryId={categoryId}
+                subtitles={subtitles}
+                forceHls={isHlsUrl}
+                onPlaybackProgress={syncContinueWatching}
+                initialResumeAt={replayKey > 0 ? 0 : resumeAt}
+                onReplay={() => setReplayKey((k) => k + 1)}
+                onCompleted={handlePlaybackCompleted}
+                backHref={detailPageHref}
+                fullViewport
+              />
             ) : (
-              <div className="flex aspect-video items-center justify-center bg-black px-6 text-center">
-                <div className="max-w-md rounded-2xl border border-white/10 bg-white/[0.04] p-6">
-                  <Clapperboard className="mx-auto mb-3 text-primary-light" size={34} />
-                  <p className="text-sm font-bold text-white">Playback stream could not be loaded.</p>
-                  <p className="mt-2 text-xs leading-5 text-white/55">
-                    Please make sure you have an active network connection or check if this title requires VIP membership.
-                  </p>
-                  <Link
-                    href={detailPageHref}
-                    className="btn-primary mt-6 inline-flex rounded-full px-6 py-2.5 text-xs font-black uppercase tracking-wider"
-                  >
-                    View Details
-                  </Link>
-                </div>
-              </div>
+              <VideoPlayer
+                src={streamUrl}
+                poster={poster}
+                title={title}
+                metaSubtitle={genreLabel}
+                onBack={handleBack}
+                subtitles={subtitles}
+                autoPlay
+                forceHls={isHlsUrl}
+                onTimeUpdate={syncContinueWatching}
+                onEnded={handlePlaybackCompleted}
+                resumeAt={replayKey > 0 ? 0 : resumeAt}
+                fullViewport
+              />
             )}
           </div>
-          <div className="mt-4 flex items-center justify-between gap-4 px-1">
-            <div className="min-w-0">
-              <p className="truncate font-display text-base font-black text-white sm:text-lg capitalize">
-                {title}
-              </p>
-              <p className="mt-1 text-xs text-white/40">Powered by MaxxPixels Multi-bitrate HLS Streaming Engine</p>
+        ) : isResolvingStream ? (
+          <div className="flex flex-col items-center justify-center gap-3 px-6 text-center">
+            <div className="h-11 w-11 animate-spin rounded-full border-[3px] border-white/15 border-t-[#FF6D2E]" />
+            <p className="text-xs font-semibold text-zinc-400">Preparing stream…</p>
+          </div>
+        ) : (
+          <div className="mx-4 max-w-md rounded-2xl border border-white/10 bg-[#141414] p-7 text-center shadow-2xl">
+            <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-full bg-[#FF6D2E]/15 text-[#FF6D2E]">
+              <Clapperboard size={22} />
             </div>
-            <Link
-              href={detailPageHref}
-              className="shrink-0 rounded-full border border-white/10 bg-[#111827] px-4 py-2 text-xs font-bold text-white/70 transition hover:border-primary/40 hover:text-white"
-            >
-              Back to Details
-            </Link>
+            <p className="text-base font-bold text-white">Stream unavailable</p>
+            <p className="mt-2 text-xs leading-relaxed text-zinc-400">
+              Please check your connection or verify your subscription access for this title.
+            </p>
+            <div className="mt-6 flex items-center justify-center gap-2.5">
+              <button
+                type="button"
+                onClick={handleBack}
+                className="inline-flex h-10 items-center rounded-full border border-white/15 bg-white/[0.06] px-5 text-xs font-semibold text-white transition hover:bg-white/15"
+              >
+                Go Back
+              </button>
+              <Link
+                href={detailPageHref}
+                className="inline-flex h-10 items-center rounded-full bg-gradient-to-r from-[#FF6D2E] to-[#FF5500] px-6 text-xs font-bold text-white transition hover:brightness-110"
+              >
+                View Details
+              </Link>
+            </div>
           </div>
-
-          <div className="mt-6">
-            <GoogleAdBanner slot="watch-bottom-banner" contentId={activeVideoId} />
-          </div>
-        </section>
+        )}
       </div>
     </main>
   );

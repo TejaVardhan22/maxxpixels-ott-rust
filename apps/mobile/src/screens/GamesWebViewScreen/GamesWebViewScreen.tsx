@@ -328,6 +328,7 @@ export const GamesWebViewScreen: React.FC = () => {
         <WebView
           ref={webViewRef}
           source={{ uri: launchUrl }}
+          cacheMode="LOAD_DEFAULT"
           style={styles.webview}
           javaScriptEnabled
           domStorageEnabled

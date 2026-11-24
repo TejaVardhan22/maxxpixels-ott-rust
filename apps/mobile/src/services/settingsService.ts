@@ -79,6 +79,37 @@ export class SettingsService {
     return String(value);
   }
 
+  public static getBrandIdentity(): {
+    name: string;
+    shortName: string;
+    logoUrl: string;
+    darkLogoUrl: string;
+    description: string;
+    supportEmail: string;
+    supportPhone: string;
+  } {
+    const pick = (...keys: string[]): string => {
+      for (const k of keys) {
+        const v = this.getRemoteSetting(k);
+        if (v) return v;
+      }
+      return '';
+    };
+    const shortName = pick('app_short_name', 'appShortName', 'app_name', 'appName', 'platform_name') || 'MaxxPixels';
+    const name = pick('app_name', 'appName', 'platform_name', 'app_short_name', 'appShortName') || shortName;
+    const darkLogoUrl = pick('dark_logo_url', 'darkLogoUrl', 'logo_url', 'logoUrl', 'app_logo');
+    const logoUrl = pick('logo_url', 'logoUrl', 'dark_logo_url', 'darkLogoUrl', 'app_logo');
+    return {
+      name,
+      shortName,
+      logoUrl,
+      darkLogoUrl,
+      description: pick('seo_description', 'seoDescription', 'app_description'),
+      supportEmail: pick('support_email', 'supportEmail'),
+      supportPhone: pick('support_phone', 'supportPhone'),
+    };
+  }
+
   public static async setWifiOnly(val: boolean): Promise<void> {
     this._wifiOnly = val;
     await AsyncStorage.setItem(this.KEY_WIFI_ONLY, String(val));

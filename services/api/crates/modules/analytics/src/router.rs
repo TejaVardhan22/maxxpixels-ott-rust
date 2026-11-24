@@ -18,6 +18,7 @@ pub fn analytics_routes() -> Router<AppState> {
 
     let public_router = Router::new()
         .route("/event", post(record_event_handler))
+        .route("/events", post(record_event_handler))
         .route("/track", post(record_event_handler))
         .route("/interaction", post(record_event_handler));
 

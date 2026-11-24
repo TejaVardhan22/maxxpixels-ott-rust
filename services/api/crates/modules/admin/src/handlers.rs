@@ -8,6 +8,7 @@ use maxx_common::security::Claims;
 use maxx_core::AppState;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 
 type AppResult<T> = Result<T, AppError>;
 
@@ -195,16 +196,22 @@ pub async fn test_stripe_handler(
     Ok(ApiResponse::ok_response(data))
 }
 
-pub async fn list_public_banners_handler(State(state): State<AppState>) -> AppResult<Response> {
-    let data = AdminService::list_banners(&state, true).await?;
+pub async fn list_public_banners_handler(
+    State(state): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
+) -> AppResult<Response> {
+    let platform = params.get("platform").map(|s| s.as_str());
+    let data = AdminService::list_banners_with_platform(&state, true, platform).await?;
     Ok(ApiResponse::ok_response(data))
 }
 
 pub async fn admin_list_banners_handler(
     State(state): State<AppState>,
     _claims: Claims,
+    Query(params): Query<HashMap<String, String>>,
 ) -> AppResult<Response> {
-    let data = AdminService::list_banners(&state, false).await?;
+    let platform = params.get("platform").map(|s| s.as_str());
+    let data = AdminService::list_banners_with_platform(&state, false, platform).await?;
     Ok(ApiResponse::ok_response(data))
 }
 
