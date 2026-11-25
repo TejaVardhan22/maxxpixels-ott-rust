@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
@@ -81,6 +82,7 @@ fun ProfileScreen(
     onOpenDetails: (Long) -> Unit,
     onOpenSubscription: () -> Unit,
     onOpenAccount: () -> Unit,
+    onOpenWatchlist: () -> Unit = {},
     onOpenRentals: () -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenStorage: () -> Unit,
@@ -268,12 +270,25 @@ fun ProfileScreen(
             if (watchlist.isNotEmpty()) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            text = "My Watchlist",
-                            color = Color.White,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "My Watchlist",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "See All",
+                                color = MaxxColors.Primary,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clickable(onClick = onOpenWatchlist)
+                            )
+                        }
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             items(watchlist, key = { "wl_${it.id}" }) { item ->
                                 PortraitPosterCard(
@@ -297,6 +312,14 @@ fun ProfileScreen(
                         title = if (isVip) "Plan: $planName" else "Subscription",
                         subtitle = if (isVip) "Active Membership" else "Manage your active membership plan",
                         onClick = onOpenSubscription
+                    )
+                    MenuDivider()
+                    ProfileMenuItem(
+                        icon = Icons.Rounded.Bookmark,
+                        iconTint = Color(0xFFFB7185),
+                        title = "My Watchlist & Favorites",
+                        subtitle = if (watchlist.isNotEmpty()) "${watchlist.size} saved title${if (watchlist.size > 1) "s" else ""}" else "View your saved movies & shows",
+                        onClick = onOpenWatchlist
                     )
                     MenuDivider()
                     ProfileMenuItem(

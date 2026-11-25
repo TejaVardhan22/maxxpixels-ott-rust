@@ -2,6 +2,7 @@ package com.maxxpixels.ui.screens.profile
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,7 +29,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.DoneAll
@@ -358,6 +361,161 @@ fun NotificationsScreen(
                                     )
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Dedicated Frosted-Glass Watchlist / Favorites Screen (routed from My Space / Profile).
+ */
+@Composable
+fun WatchlistScreen(
+    repository: MaxxRepository,
+    onBack: () -> Unit,
+    onOpenDetails: (Long) -> Unit,
+    onExplore: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var items by remember { mutableStateOf<List<CatalogItem>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        items = repository.getWatchlist()
+        loading = false
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaxxColors.AmbientScreenBackground)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                color = Color.White.copy(alpha = 0.09f),
+                shape = CircleShape,
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+                modifier = Modifier
+                    .size(40.dp)
+                    .clickable(onClick = onBack)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Text("My Watchlist", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+            if (items.isNotEmpty()) {
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(MaxxColors.BrandGradient)
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text("${items.size}", color = MaxxColors.OnPrimaryDark, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                }
+            }
+        }
+
+        if (loading) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = MaxxColors.Primary)
+            }
+        } else if (items.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Surface(
+                    color = Color.White.copy(alpha = 0.06f),
+                    shape = RoundedCornerShape(24.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+                    modifier = Modifier.padding(24.dp)
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(28.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(60.dp)
+                                .clip(CircleShape)
+                                .background(Color(0x28FB7185)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.Bookmark, null, tint = Color(0xFFFB7185), modifier = Modifier.size(30.dp))
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        Text("Your Watchlist is Empty", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Tap + on any movie, series, or show to save your favorites here.",
+                            color = MaxxColors.TextSecondary,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(Modifier.height(22.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(MaxxColors.BrandGradient)
+                                .clickable(onClick = onExplore)
+                                .padding(horizontal = 26.dp, vertical = 12.dp)
+                        ) {
+                            Text(
+                                text = "Explore Titles",
+                                color = MaxxColors.OnPrimaryDark,
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                contentPadding = PaddingValues(18.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                items(items, key = { "wl_scr_${it.id}" }) { item ->
+                    Box {
+                        PortraitPosterCard(
+                            item = item,
+                            onClick = { onOpenDetails(item.id) },
+                            showTitleBelow = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(6.dp)
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.72f))
+                                .clickable {
+                                    items = items.filterNot { it.id == item.id }
+                                    Toast.makeText(context, "Removed from Watchlist", Toast.LENGTH_SHORT).show()
+                                    scope.launch { repository.toggleWatchlist(item.id, item.title, false) }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(14.dp))
                         }
                     }
                 }

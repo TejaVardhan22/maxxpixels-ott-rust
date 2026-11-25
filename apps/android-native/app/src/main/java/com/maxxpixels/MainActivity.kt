@@ -88,6 +88,7 @@ import com.maxxpixels.ui.screens.profile.ProfileScreen
 import com.maxxpixels.ui.screens.profile.RentalsScreen
 import com.maxxpixels.ui.screens.profile.SettingsScreen
 import com.maxxpixels.ui.screens.profile.StorageScreen
+import com.maxxpixels.ui.screens.profile.WatchlistScreen
 import com.maxxpixels.ui.screens.search.SearchScreen
 import com.maxxpixels.ui.screens.splash.SplashScreen
 import com.maxxpixels.ui.screens.subscription.SubscriptionScreen
@@ -598,6 +599,7 @@ private fun MaxxPixelsApp(
                         onOpenGames = { navController.navigate("games") },
                         onOpenSubscription = { navController.navigate("subscription") },
                         onOpenAccount = { navController.navigate("account") },
+                        onOpenWatchlist = { navController.navigate("watchlist") },
                         onOpenRentals = { navController.navigate("rentals") },
                         onOpenDownloads = { navController.navigate("downloads") },
                         onOpenStorage = { navController.navigate("storage") },
@@ -619,6 +621,15 @@ private fun MaxxPixelsApp(
 
                 composable("notifications") {
                     NotificationsScreen(repository = app.repository, onBack = { navController.popBackStack() })
+                }
+
+                composable("watchlist") {
+                    WatchlistScreen(
+                        repository = app.repository,
+                        onBack = { navController.popBackStack() },
+                        onOpenDetails = { id -> navController.navigate("details/$id") },
+                        onExplore = { navController.popBackStack() }
+                    )
                 }
 
                 composable("rentals") {
@@ -735,6 +746,7 @@ private fun RnMainTabsShell(
     onOpenGames: () -> Unit,
     onOpenSubscription: () -> Unit,
     onOpenAccount: () -> Unit,
+    onOpenWatchlist: () -> Unit,
     onOpenRentals: () -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenStorage: () -> Unit,
@@ -781,6 +793,7 @@ private fun RnMainTabsShell(
                 onOpenDetails = onOpenDetails,
                 onOpenSubscription = onOpenSubscription,
                 onOpenAccount = onOpenAccount,
+                onOpenWatchlist = onOpenWatchlist,
                 onOpenRentals = onOpenRentals,
                 onOpenDownloads = onOpenDownloads,
                 onOpenStorage = onOpenStorage,

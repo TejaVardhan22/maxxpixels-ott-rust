@@ -1,9 +1,11 @@
 package com.maxxpixels.ui.screens.home
 
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -319,20 +321,20 @@ fun HomeScreen(
                 }
             }
 
-            // 3. Large Rounded Hero Billboard Card (Reference Screen 2 Centerpiece)
+            // 3. Hotstar-Style Full-Width Hero Carousel
             item {
                 if (loading && banners.isEmpty()) {
                     ShimmerBox(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 18.dp)
-                            .aspectRatio(0.76f),
-                        shape = RoundedCornerShape(28.dp)
+                            .aspectRatio(0.95f),
+                        shape = RoundedCornerShape(0.dp)
                     )
                 } else if (banners.isNotEmpty()) {
                     val pagerState = rememberPagerState(pageCount = { banners.size })
-                    LaunchedEffect(banners.size) {
-                        if (banners.size > 1) {
+                    val isDragged by pagerState.interactionSource.collectIsDraggedAsState()
+                    LaunchedEffect(banners.size, isDragged) {
+                        if (banners.size > 1 && !isDragged) {
                             while (true) {
                                 delay(5000)
                                 val next = (pagerState.currentPage + 1) % banners.size
@@ -344,8 +346,9 @@ fun HomeScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         HorizontalPager(
                             state = pagerState,
-                            contentPadding = PaddingValues(horizontal = 18.dp),
-                            pageSpacing = 14.dp,
+                            contentPadding = PaddingValues(0.dp),
+                            pageSpacing = 0.dp,
+                            beyondViewportPageCount = 1,
                             modifier = Modifier.fillMaxWidth()
                         ) { page ->
                             val item = banners[page]
@@ -363,21 +366,29 @@ fun HomeScreen(
                         }
 
                         if (banners.size > 1) {
-                            Spacer(Modifier.height(12.dp))
+                            Spacer(Modifier.height(10.dp))
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                repeat(banners.size.coerceAtMost(7)) { idx ->
+                                val count = banners.size.coerceAtMost(8)
+                                repeat(count) { idx ->
                                     val active = pagerState.currentPage % banners.size == idx
+                                    val dotWidth by animateDpAsState(
+                                        targetValue = if (active) 22.dp else 6.dp,
+                                        label = "hotstarDot"
+                                    )
                                     Box(
                                         modifier = Modifier
                                             .height(5.dp)
-                                            .width(if (active) 22.dp else 6.dp)
+                                            .width(dotWidth)
                                             .clip(CircleShape)
                                             .background(
-                                                if (active) MaxxColors.Primary else Color.White.copy(alpha = 0.25f)
+                                                if (active) MaxxColors.Primary else Color.White.copy(alpha = 0.28f)
                                             )
+                                            .clickable {
+                                                scope.launch { pagerState.animateScrollToPage(idx) }
+                                            }
                                     )
                                 }
                             }
@@ -549,106 +560,163 @@ private fun HeroCinemaPosterCard(
     onWatchNow: () -> Unit,
     onToggleWatchlist: () -> Unit
 ) {
-    Surface(
-        shape = RoundedCornerShape(28.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
-        shadowElevation = 20.dp,
+    val badgeText = when {
+        item.isNewlyAdded -> "NEWLY ADDED"
+        item.isRent -> if (item.rentPrice > 0) "RENT ₹${item.rentPrice.toInt()}" else "RENT"
+        item.isPremium -> "MAXXPIXELS VIP"
+        else -> ""
+    }
+    val meta = listOfNotNull(
+        item.releaseYear.takeIf { it.isNotBlank() },
+        item.language.takeIf { it.isNotBlank() },
+        item.durationLabel.takeIf { it.isNotBlank() },
+        item.genres.firstOrNull()?.takeIf { it.isNotBlank() }
+    ).joinToString(" • ")
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(0.76f)
-            .bounceClick(onClick = onWatchNow)
+            .aspectRatio(0.92f)
+            .background(MaxxColors.CinemaBlack)
+            .clickable(onClick = onWatchNow)
     ) {
-        Box(modifier = Modifier.fillMaxSize().background(MaxxColors.SurfaceDark)) {
-            AsyncImage(
-                model = item.posterUrl.ifBlank { item.landscapeUrl },
-                contentDescription = item.title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
+        AsyncImage(
+            model = item.posterUrl.ifBlank { item.landscapeUrl },
+            contentDescription = item.title,
+            contentScale = ContentScale.Crop,
+            alignment = Alignment.TopCenter,
+            modifier = Modifier.fillMaxSize()
+        )
 
-            // Bottom cinema vignette
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(210.dp)
-                    .align(Alignment.BottomCenter)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                Color(0xBB0A090E),
-                                Color(0xF50A090E)
-                            )
+        // Subtle top fade for smooth blend under category pills
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp)
+                .align(Alignment.TopCenter)
+                .background(
+                    Brush.verticalGradient(listOf(Color(0x991A1219), Color.Transparent))
+                )
+        )
+
+        // Hotstar-style deep bottom vignette fading smoothly into the screen
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(235.dp)
+                .align(Alignment.BottomCenter)
+                .background(
+                    Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0.0f to Color.Transparent,
+                            0.45f to Color(0xCC0E0C12),
+                            0.82f to Color(0xF50A090E),
+                            1.0f to MaxxColors.CinemaBlack
                         )
                     )
-            )
-
-            // Top-right Watchlist frosted circle
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(14.dp)
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.45f))
-                    .clickable(onClick = onToggleWatchlist),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = if (isSaved) Icons.Rounded.Check else Icons.Rounded.Add,
-                    contentDescription = "My List",
-                    tint = if (isSaved) MaxxColors.Primary else Color.White,
-                    modifier = Modifier.size(20.dp)
                 )
-            }
+        )
 
-            // Bottom centered title + golden "Watch Now" pill button
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 22.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = item.title.uppercase(),
-                    color = Color.White,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 1.sp,
-                    textAlign = TextAlign.Center,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                val meta = listOfNotNull(
-                    item.releaseYear.takeIf { it.isNotBlank() },
-                    item.language.takeIf { it.isNotBlank() },
-                    item.durationLabel.takeIf { it.isNotBlank() }
-                ).joinToString(" • ")
-                if (meta.isNotBlank()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = meta,
-                        color = Color.White.copy(alpha = 0.78f),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-                Spacer(Modifier.height(14.dp))
+        // Centered Hotstar-style Bottom Info Stack + Watch Now & + My List CTA Row
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 22.dp, vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (badgeText.isNotBlank()) {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(999.dp))
-                        .background(MaxxColors.BrandGradient)
-                        .clickable(onClick = onWatchNow)
-                        .padding(horizontal = 32.dp, vertical = 12.dp),
-                    contentAlignment = Alignment.Center
+                        .background(MaxxColors.PrimaryTint)
+                        .padding(horizontal = 10.dp, vertical = 3.dp)
                 ) {
                     Text(
-                        text = "Watch Now",
-                        color = MaxxColors.OnPrimaryDark,
-                        fontSize = 14.5.sp,
-                        fontWeight = FontWeight.ExtraBold
+                        text = badgeText,
+                        color = MaxxColors.PrimaryLight,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.sp
                     )
+                }
+                Spacer(Modifier.height(7.dp))
+            }
+
+            Text(
+                text = item.title,
+                color = Color.White,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            if (meta.isNotBlank()) {
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    text = meta,
+                    color = Color.White.copy(alpha = 0.80f),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            // Hotstar CTA Row: Golden Watch Now + Frosted + My List button
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .height(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaxxColors.BrandGradient)
+                        .clickable(onClick = onWatchNow)
+                        .padding(horizontal = 28.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.PlayArrow,
+                            contentDescription = null,
+                            tint = MaxxColors.OnPrimaryDark,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "Watch Now",
+                            color = MaxxColors.OnPrimaryDark,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+
+                Surface(
+                    color = Color.White.copy(alpha = 0.14f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.20f)),
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clickable(onClick = onToggleWatchlist)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (isSaved) Icons.Rounded.Check else Icons.Rounded.Add,
+                            contentDescription = "My List",
+                            tint = if (isSaved) MaxxColors.Primary else Color.White,
+                            modifier = Modifier.size(21.dp)
+                        )
+                    }
                 }
             }
         }
