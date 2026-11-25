@@ -36,11 +36,15 @@ import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlayCircleOutline
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material.icons.rounded.WorkspacePremium
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -64,6 +68,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.maxxpixels.data.model.CatalogItem
+import com.maxxpixels.data.model.CreatedOrder
 import com.maxxpixels.data.model.EpisodeItem
 import com.maxxpixels.data.repository.ApiResult
 import com.maxxpixels.data.repository.MaxxRepository
@@ -116,7 +121,8 @@ fun DetailsScreen(
     onBack: () -> Unit,
     onOpenDetails: (Long) -> Unit,
     onPlay: (contentId: Long, episodeId: Long?, title: String) -> Unit,
-    onRequireSubscription: () -> Unit
+    onRequireSubscription: () -> Unit,
+    onLaunchTvodRazorpay: (CreatedOrder, CatalogItem, onUnlocked: () -> Unit) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
     val session by repository.sessionManager.session.collectAsState()
@@ -133,6 +139,12 @@ fun DetailsScreen(
     var activeTab by remember { mutableIntStateOf(0) }
     var activeSeasonIdx by remember { mutableIntStateOf(0) }
     var episodes by remember { mutableStateOf<List<EpisodeItem>>(emptyList()) }
+
+    // TVOD Rental Sheet State
+    var showTvodDialog by remember { mutableStateOf(false) }
+    var tvodLoading by remember { mutableStateOf(false) }
+    var tvodError by remember { mutableStateOf("") }
+    var rentUnlocked by remember { mutableStateOf(false) }
 
     fun load() {
         loading = true
@@ -196,11 +208,144 @@ fun DetailsScreen(
     val hasResume = content.progressPercent > 0.02f
 
     fun triggerPlay(episodeId: Long? = null, titleOverride: String = content.title) {
-        if (session?.hasActiveSubscription == true) {
+        if (content.isRent && !rentUnlocked) {
+            tvodError = ""
+            showTvodDialog = true
+            return
+        }
+        if (session?.hasActiveSubscription == true || rentUnlocked || !content.isPremium) {
             onPlay(content.id, episodeId, titleOverride)
         } else {
             onRequireSubscription()
         }
+    }
+
+    // TVOD Pay-Per-View Rental Flow Dialog (shown when a TVOD title is active)
+    if (showTvodDialog) {
+        val priceInt = if (content.rentPrice > 0) content.rentPrice.toInt() else 99
+        AlertDialog(
+            onDismissRequest = { if (!tvodLoading) showTvodDialog = false },
+            containerColor = Color(0xFF1A151E),
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Column {
+                    Surface(
+                        color = MaxxColors.PrimaryTint,
+                        shape = RoundedCornerShape(999.dp),
+                        border = BorderStroke(1.dp, MaxxColors.Primary.copy(alpha = 0.5f))
+                    ) {
+                        Text(
+                            text = "PAY-PER-VIEW RENTAL (TVOD)",
+                            color = MaxxColors.PrimaryLight,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 0.8.sp,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = "Rent ${content.title}",
+                        color = Color.White,
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Unlock instant Full HD access to this title for ₹$priceInt. Once playback starts, you have 48 hours to finish watching.",
+                        color = MaxxColors.TextSecondary,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp
+                    )
+                    Surface(
+                        color = Color.White.copy(alpha = 0.06f),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Rental Price", color = MaxxColors.TextMuted, fontSize = 11.sp)
+                                Text("₹$priceInt", color = MaxxColors.Primary, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Rounded.VerifiedUser, null, tint = MaxxColors.Success, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.width(5.dp))
+                                Text("Razorpay Instant", color = MaxxColors.TextSecondary, fontSize = 11.5.sp)
+                            }
+                        }
+                    }
+                    if (tvodError.isNotBlank()) {
+                        Text(tvodError, color = MaxxColors.ErrorSoft, fontSize = 12.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(MaxxColors.BrandGradient)
+                        .clickable(enabled = !tvodLoading) {
+                            tvodLoading = true
+                            tvodError = ""
+                            scope.launch {
+                                when (val orderRes = repository.createTvodOrder(content.id, priceInt.toDouble())) {
+                                    is ApiResult.Success -> {
+                                        tvodLoading = false
+                                        val order = orderRes.data
+                                        if (order.isFree) {
+                                            rentUnlocked = true
+                                            showTvodDialog = false
+                                            onPlay(content.id, null, content.title)
+                                        } else {
+                                            showTvodDialog = false
+                                            onLaunchTvodRazorpay(order, content) {
+                                                rentUnlocked = true
+                                                onPlay(content.id, null, content.title)
+                                            }
+                                        }
+                                    }
+                                    is ApiResult.Error -> {
+                                        tvodLoading = false
+                                        tvodError = orderRes.message
+                                    }
+                                }
+                            }
+                        }
+                        .padding(horizontal = 20.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (tvodLoading) {
+                        CircularProgressIndicator(
+                            color = MaxxColors.OnPrimaryDark,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    } else {
+                        Text(
+                            text = "Pay ₹$priceInt & Watch",
+                            color = MaxxColors.OnPrimaryDark,
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { if (!tvodLoading) showTvodDialog = false }
+                ) {
+                    Text("Cancel", color = MaxxColors.TextSecondary, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
     }
 
     fun shareTitle() {

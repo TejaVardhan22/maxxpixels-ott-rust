@@ -23,6 +23,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import retrofit2.HttpException
 import java.io.IOException
 
@@ -433,7 +436,11 @@ class MaxxRepository(
         runCatching { api.markNotificationRead(id, buildJsonObject {}) }
     }
 
-    suspend fun updateProfile(fullName: String, email: String): ApiResult<UserSession> {
+    suspend fun updateProfile(
+        fullName: String,
+        email: String,
+        avatarUrl: String? = null
+    ): ApiResult<UserSession> {
         return try {
             val parts = fullName.trim().split(" ", limit = 2)
             val body = buildJsonObject {
@@ -443,15 +450,46 @@ class MaxxRepository(
                 put("firstName", parts.firstOrNull().orEmpty())
                 if (parts.size > 1) put("lastName", parts[1])
                 if (email.isNotBlank()) put("email", email.trim())
+                if (!avatarUrl.isNullOrBlank()) {
+                    put("avatarUrl", avatarUrl.trim())
+                    put("avatar_url", avatarUrl.trim())
+                }
             }
             api.updateProfile(body)
             val current = sessionManager.session.value
             val updated = (current ?: UserSession()).copy(
                 fullName = fullName.trim(),
-                email = email.trim()
+                email = email.trim(),
+                avatarUrl = avatarUrl?.takeIf { it.isNotBlank() }?.let { MediaUrlNormalizer.normalize(it) }
+                    ?: current?.avatarUrl.orEmpty()
             )
             sessionManager.saveSession(updated)
             ApiResult.Success(updated)
+        } catch (e: Throwable) {
+            extractError(e)
+        }
+    }
+
+    suspend fun uploadAvatar(bytes: ByteArray, fileName: String, mimeType: String): ApiResult<String> {
+        return try {
+            val mediaType = mimeType.ifBlank { "image/jpeg" }.toMediaTypeOrNull()
+            val part = MultipartBody.Part.createFormData(
+                name = "file",
+                filename = fileName.ifBlank { "avatar.jpg" },
+                body = bytes.toRequestBody(mediaType)
+            )
+            val folderBody = "avatars".toRequestBody("text/plain".toMediaTypeOrNull())
+            val res = api.uploadFile(part, folderBody)
+            checkEnvelopeError(res)?.let { return ApiResult.Error(it) }
+            val obj = JsonParsers.unwrapObject(res)
+            val rawUrl = JsonParsers.str(obj, "url", "fileUrl", "file_url", "avatarUrl")
+            if (rawUrl.isBlank()) return ApiResult.Error("Upload succeeded but no image URL returned.")
+            val normalized = MediaUrlNormalizer.normalize(rawUrl)
+            val current = sessionManager.session.value
+            if (current != null) {
+                updateProfile(current.fullName, current.email, normalized)
+            }
+            ApiResult.Success(normalized)
         } catch (e: Throwable) {
             extractError(e)
         }
@@ -585,6 +623,74 @@ class MaxxRepository(
             }
             api.verifyPayment(body)
             sessionManager.updateSubscription(1, planName)
+            ApiResult.Success(true)
+        } catch (e: Throwable) {
+            extractError(e)
+        }
+    }
+
+    suspend fun createTvodOrder(contentId: Long, priceInr: Double): ApiResult<CreatedOrder> {
+        return try {
+            val user = sessionManager.session.value
+            val body = buildJsonObject {
+                put("contentId", contentId)
+                put("content_id", contentId)
+                put("video_id", contentId)
+                put("type", "RENT")
+                put("orderType", "TVOD")
+                if (priceInr > 0.0) put("amount", priceInr)
+                put("provider", "RAZORPAY")
+                put("gateway", "RAZORPAY")
+                if (user != null) {
+                    put("userId", user.id)
+                    put("email", user.email)
+                    put("phone", user.phoneNumber)
+                    put("full_name", user.fullName)
+                }
+            }
+            val res = api.createOrder(body)
+            checkEnvelopeError(res)?.let { return ApiResult.Error(it) }
+            val obj = JsonParsers.unwrapObject(res) ?: return ApiResult.Error("Unable to start rental checkout.")
+            val orderId = JsonParsers.str(obj, "gatewayOrderId", "razorpayOrderId", "orderId", "order_id", "id")
+            val keyId = JsonParsers.str(obj, "keyId", "key_id", "key", "razorpay_key")
+            val amountPaise = JsonParsers.long(obj, "amount").let {
+                if (it > 0L) it else (priceInr * 100).toLong()
+            }
+            val isFree = JsonParsers.bool(obj, "isFree") || amountPaise <= 0L ||
+                JsonParsers.str(obj, "status").equals("SUCCESS", true)
+            ApiResult.Success(
+                CreatedOrder(
+                    orderId = orderId,
+                    gatewayOrderId = orderId.takeIf { it.startsWith("order_") },
+                    keyId = keyId,
+                    amountPaise = amountPaise,
+                    currency = JsonParsers.str(obj, "currency").ifBlank { "INR" },
+                    isFree = isFree,
+                    status = JsonParsers.str(obj, "status").ifBlank { "CREATED" }
+                )
+            )
+        } catch (e: Throwable) {
+            extractError(e)
+        }
+    }
+
+    suspend fun verifyTvodPayment(
+        orderId: String,
+        paymentId: String,
+        signature: String
+    ): ApiResult<Boolean> {
+        return try {
+            val body = buildJsonObject {
+                put("order_id", orderId)
+                put("orderId", orderId)
+                put("razorpay_order_id", orderId)
+                put("razorpay_payment_id", paymentId)
+                put("paymentId", paymentId)
+                put("razorpay_signature", signature)
+                put("signature", signature)
+            }
+            val res = api.verifyPayment(body)
+            checkEnvelopeError(res)?.let { return ApiResult.Error(it) }
             ApiResult.Success(true)
         } catch (e: Throwable) {
             extractError(e)

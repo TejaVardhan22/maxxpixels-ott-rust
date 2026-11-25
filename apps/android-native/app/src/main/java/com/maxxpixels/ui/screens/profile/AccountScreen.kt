@@ -1,5 +1,8 @@
 package com.maxxpixels.ui.screens.profile
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.CircularProgressIndicator
@@ -43,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -50,7 +55,9 @@ import coil.compose.AsyncImage
 import com.maxxpixels.data.repository.ApiResult
 import com.maxxpixels.data.repository.MaxxRepository
 import com.maxxpixels.ui.theme.MaxxColors
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Modern Frosted-Glass AccountScreen with live PUT /api/v1/profile integration.
@@ -60,6 +67,7 @@ fun AccountScreen(
     repository: MaxxRepository,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
     val session by repository.sessionManager.session.collectAsState()
     val scope = rememberCoroutineScope()
 
@@ -68,8 +76,43 @@ fun AccountScreen(
     val phone = session?.phoneNumber.orEmpty()
 
     var saving by remember { mutableStateOf(false) }
+    var uploadingAvatar by remember { mutableStateOf(false) }
     var statusMsg by remember { mutableStateOf("") }
     var isError by remember { mutableStateOf(false) }
+
+    val photoPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        uploadingAvatar = true
+        statusMsg = ""
+        scope.launch {
+            val mimeType = context.contentResolver.getType(uri) ?: "image/jpeg"
+            val bytes = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                }.getOrNull()
+            }
+            if (bytes == null || bytes.isEmpty()) {
+                isError = true
+                statusMsg = "Could not read selected image."
+                uploadingAvatar = false
+                return@launch
+            }
+            val ext = if (mimeType.contains("png", true)) "png" else "jpg"
+            when (val res = repository.uploadAvatar(bytes, "avatar_${System.currentTimeMillis()}.$ext", mimeType)) {
+                is ApiResult.Success -> {
+                    isError = false
+                    statusMsg = "Profile photo updated!"
+                }
+                is ApiResult.Error -> {
+                    isError = true
+                    statusMsg = res.message
+                }
+            }
+            uploadingAvatar = false
+        }
+    }
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = MaxxColors.Primary,
@@ -99,26 +142,73 @@ fun AccountScreen(
                 .padding(horizontal = 18.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            // Centered Avatar with Golden Ring
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .size(88.dp)
-                    .clip(CircleShape)
-                    .border(2.dp, MaxxColors.Primary, CircleShape)
-                    .background(MaxxColors.SurfaceElevated),
-                contentAlignment = Alignment.Center
+            // Centered Avatar with Golden Ring & Photo Upload Badge
+            Column(
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                if (!session?.avatarUrl.isNullOrBlank()) {
-                    AsyncImage(
-                        model = session?.avatarUrl,
-                        contentDescription = fullName,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Icon(Icons.Rounded.Person, null, tint = MaxxColors.Primary, modifier = Modifier.size(42.dp))
+                Box(
+                    contentAlignment = Alignment.BottomEnd,
+                    modifier = Modifier.clickable(enabled = !uploadingAvatar) { photoPicker.launch("image/*") }
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(92.dp)
+                            .clip(CircleShape)
+                            .border(2.dp, MaxxColors.Primary, CircleShape)
+                            .background(MaxxColors.SurfaceElevated),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (!session?.avatarUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = session?.avatarUrl,
+                                contentDescription = fullName,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Icon(Icons.Rounded.Person, null, tint = MaxxColors.Primary, modifier = Modifier.size(42.dp))
+                        }
+                        if (uploadingAvatar) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.55f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    color = MaxxColors.Primary,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(CircleShape)
+                            .background(MaxxColors.BrandGradient)
+                            .border(2.dp, MaxxColors.CinemaBlack, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Rounded.CameraAlt,
+                            contentDescription = "Upload Photo",
+                            tint = MaxxColors.OnPrimaryDark,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
                 }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = if (uploadingAvatar) "Uploading photo..." else "Tap photo to upload",
+                    color = MaxxColors.PrimaryLight,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clickable(enabled = !uploadingAvatar) { photoPicker.launch("image/*") }
+                )
             }
 
             // Frosted Glass Form Card

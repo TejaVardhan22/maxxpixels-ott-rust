@@ -61,6 +61,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import coil.compose.AsyncImage
+import com.maxxpixels.data.model.CatalogItem
 import com.maxxpixels.data.model.CoinOrderData
 import com.maxxpixels.data.model.CoinPackItem
 import com.maxxpixels.data.model.CreatedOrder
@@ -108,6 +109,9 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
     private var pendingCoinOrder: Pair<CoinOrderData, CoinPackItem>? = null
     private var onCoinPaymentSuccessCallback: (() -> Unit)? = null
 
+    private var pendingTvodOrder: Pair<CreatedOrder, CatalogItem>? = null
+    private var onTvodPaymentSuccessCallback: (() -> Unit)? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -121,18 +125,58 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                     app = app,
                     onStartRazorpay = { order, plan, onActivated ->
                         pendingCoinOrder = null
+                        pendingTvodOrder = null
                         pendingOrder = order to plan
                         onPaymentSuccessCallback = onActivated
                         launchRazorpayCheckout(order, plan, app)
                     },
                     onStartCoinRazorpay = { order, pack, onCredited ->
                         pendingOrder = null
+                        pendingTvodOrder = null
                         pendingCoinOrder = order to pack
                         onCoinPaymentSuccessCallback = onCredited
                         launchCoinRazorpayCheckout(order, pack, app)
+                    },
+                    onStartTvodRazorpay = { order, item, onUnlocked ->
+                        pendingOrder = null
+                        pendingCoinOrder = null
+                        pendingTvodOrder = order to item
+                        onTvodPaymentSuccessCallback = onUnlocked
+                        launchTvodRazorpayCheckout(order, item, app)
                     }
                 )
             }
+        }
+    }
+
+    private fun launchTvodRazorpayCheckout(
+        order: CreatedOrder,
+        item: CatalogItem,
+        app: MaxxPixelsApplication
+    ) {
+        try {
+            val checkout = Checkout()
+            checkout.setKeyID(order.keyId)
+            val user = app.sessionManager.session.value
+            val options = JSONObject().apply {
+                put("name", "MaxxPixels")
+                put("description", "Rent: ${item.title}")
+                put("currency", order.currency)
+                put("amount", order.amountPaise)
+                if (!order.gatewayOrderId.isNullOrBlank()) {
+                    put("order_id", order.gatewayOrderId)
+                }
+                put("theme", JSONObject().put("color", "#FFB52E"))
+                put("prefill", JSONObject().apply {
+                    put("name", user?.fullName.orEmpty())
+                    put("email", user?.email.orEmpty())
+                    put("contact", user?.phoneNumber.orEmpty())
+                })
+            }
+            checkout.open(this, options)
+        } catch (e: Exception) {
+            pendingTvodOrder = null
+            Toast.makeText(this, e.message ?: "Unable to launch Razorpay", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -229,7 +273,27 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
             return
         }
 
-        // 2. OTT Subscription callback
+        // 2. TVOD Rental callback
+        val tvodPair = pendingTvodOrder
+        if (tvodPair != null) {
+            pendingTvodOrder = null
+            val (order, item) = tvodPair
+            val orderId = paymentData?.orderId?.takeIf { it.isNotBlank() } ?: order.orderId
+            lifecycleScope.launch {
+                when (val res = app.repository.verifyTvodPayment(orderId, paymentId, signature)) {
+                    is ApiResult.Success -> {
+                        Toast.makeText(this@MainActivity, "${item.title} unlocked!", Toast.LENGTH_SHORT).show()
+                        onTvodPaymentSuccessCallback?.invoke()
+                    }
+                    is ApiResult.Error -> {
+                        Toast.makeText(this@MainActivity, res.message, Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            return
+        }
+
+        // 3. OTT Subscription callback
         val pair = pendingOrder ?: return
         pendingOrder = null
         val (order, plan) = pair
@@ -253,6 +317,7 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
     override fun onPaymentError(code: Int, description: String?, paymentData: PaymentData?) {
         pendingOrder = null
         pendingCoinOrder = null
+        pendingTvodOrder = null
         Toast.makeText(this, description ?: "Payment cancelled", Toast.LENGTH_SHORT).show()
     }
 }
@@ -261,7 +326,8 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
 private fun MaxxPixelsApp(
     app: MaxxPixelsApplication,
     onStartRazorpay: (CreatedOrder, SubscriptionPlan, () -> Unit) -> Unit,
-    onStartCoinRazorpay: (CoinOrderData, CoinPackItem, () -> Unit) -> Unit
+    onStartCoinRazorpay: (CoinOrderData, CoinPackItem, () -> Unit) -> Unit,
+    onStartTvodRazorpay: (CreatedOrder, CatalogItem, () -> Unit) -> Unit
 ) {
     val navController = rememberNavController()
     val isOnline by app.networkMonitor.isOnline.collectAsState()
@@ -621,7 +687,10 @@ private fun MaxxPixelsApp(
                             val encoded = URLEncoder.encode(title, "UTF-8")
                             navController.navigate("player/$cid/${epId ?: 0L}/$encoded")
                         },
-                        onRequireSubscription = { navController.navigate("subscription") }
+                        onRequireSubscription = { navController.navigate("subscription") },
+                        onLaunchTvodRazorpay = { order, item, onUnlocked ->
+                            onStartTvodRazorpay(order, item, onUnlocked)
+                        }
                     )
                 }
 
