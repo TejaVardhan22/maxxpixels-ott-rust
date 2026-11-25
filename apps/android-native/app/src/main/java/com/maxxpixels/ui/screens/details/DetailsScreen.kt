@@ -167,7 +167,10 @@ fun DetailsScreen(
                 is ApiResult.Success -> {
                     val detail = res.data
                     item = detail
-                    inWatchlist = detail.isBookmarked
+                    val savedInList = if (session?.isLoggedIn == true) {
+                        runCatching { repository.getWatchlist().any { it.id == contentId } }.getOrDefault(false)
+                    } else false
+                    inWatchlist = detail.isBookmarked || savedInList
                     rentUnlocked = detail.isPurchased
                     detail.seasons.firstOrNull()?.let { s ->
                         episodes = repository.getSeasonEpisodes(s.id)

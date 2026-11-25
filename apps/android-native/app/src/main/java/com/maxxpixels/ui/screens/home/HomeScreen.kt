@@ -676,6 +676,18 @@ fun PortraitPosterCard(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
+            if (item.isNewlyAdded) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(7.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(MaxxColors.BrandGradient)
+                        .padding(horizontal = 7.dp, vertical = 2.dp)
+                ) {
+                    Text("NEW", color = MaxxColors.OnPrimaryDark, fontSize = 8.5.sp, fontWeight = FontWeight.Black)
+                }
+            }
             if (item.isRent) {
                 Box(
                     modifier = Modifier

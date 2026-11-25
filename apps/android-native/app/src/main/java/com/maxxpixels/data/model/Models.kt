@@ -77,7 +77,22 @@ data class CatalogItem(
     val creatorName: String = "",
     val cast: List<CastMember> = emptyList(),
     val seasons: List<SeasonItem> = emptyList()
-)
+) {
+    val isNewlyAdded: Boolean
+        get() {
+            if (isUpcoming) return false
+            val raw = releaseDate.ifBlank { createdAt }.trim().take(10)
+            if (raw.length < 10) return false
+            val dateMs = runCatching {
+                java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                    .apply { isLenient = false }
+                    .parse(raw)?.time
+            }.getOrNull() ?: return false
+            val nowMs = System.currentTimeMillis()
+            val fifteenDaysMs = 15L * 24L * 60L * 60L * 1000L
+            return dateMs <= nowMs && (nowMs - dateMs) <= fifteenDaysMs
+        }
+}
 
 @Serializable
 data class CastMember(
