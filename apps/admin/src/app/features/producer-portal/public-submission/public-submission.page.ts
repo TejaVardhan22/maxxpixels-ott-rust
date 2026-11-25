@@ -224,7 +224,7 @@ import { resolveAdminImageUrl } from '../../../core/services/movie-api.service';
               <mat-form-field appearance="outline" class="full-width">
                 <mat-label>Full Content Link (Google Drive / Cloud) *</mat-label>
                 <input matInput type="url" formControlName="googleDriveLink" placeholder="https://drive.google.com/file/d/..." required>
-                <mat-hint>Ensure viewer access is shared with {{ driveShareEmail() }}</mat-hint>
+                <mat-hint>{{ driveShareEmail() ? ('Ensure viewer access is shared with ' + driveShareEmail()) : 'Ensure viewer access is enabled on your link' }}</mat-hint>
                 <mat-error *ngIf="form.get('googleDriveLink')?.hasError('required')">Google Drive / video link is required</mat-error>
                 <mat-error *ngIf="form.get('googleDriveLink')?.hasError('pattern')">Enter a valid https:// URL</mat-error>
               </mat-form-field>
@@ -612,29 +612,17 @@ export class PublicSubmissionPage implements OnInit {
   submitting = signal(false);
   submitted = signal(false);
   submissionId = signal<string | null>(null);
-  brandName = signal('MaxxPixels OTT');
+  brandName = signal('');
   brandLogo = signal('');
-  driveShareEmail = signal('maxxpixelsofficial@gmail.com');
+  driveShareEmail = signal('');
 
-  contentTypes = signal<{ label: string; value: string }[]>([
-    { label: 'Movie', value: 'MOVIE' },
-    { label: 'Short Film', value: 'SHORT_FILM' },
-    { label: 'Micro-Drama', value: 'MICRODRAMA' },
-    { label: 'Web Series', value: 'SERIES' },
-    { label: 'Music & Album', value: 'ALBUM' },
-    { label: 'Documentary', value: 'DOCUMENTARY' },
-    { label: 'Stage Drama', value: 'STAGE_DRAMA' },
-    { label: 'Podcast', value: 'PODCAST' }
-  ]);
-
-  languages = signal<string[]>([
-    'Kannada', 'Tamil', 'Telugu', 'Hindi', 'Malayalam', 'Marathi', 'Bengali', 'Punjabi', 'Gujarati', 'English', 'Other'
-  ]);
+  contentTypes = signal<{ label: string; value: string }[]>([]);
+  languages = signal<string[]>([]);
 
   form = this.fb.group({
-    contentType: ['MOVIE', Validators.required],
+    contentType: ['', Validators.required],
     title: ['', Validators.required],
-    language: ['Kannada', Validators.required],
+    language: ['', Validators.required],
     oneLineBrief: ['', Validators.required],
     poster1Url: ['', Validators.required],
     poster2Url: [''],
@@ -684,11 +672,20 @@ export class PublicSubmissionPage implements OnInit {
       next: (res) => {
         const d = res?.data ?? res?.result ?? res;
         if (d && typeof d === 'object') {
-          const name = d.appName || d.APP_NAME;
+          const name = d.appName || d.APP_NAME || d.appShortName || d.APP_SHORT_NAME;
           if (name) this.brandName.set(String(name));
           const logo = d.logoUrl || d.APP_LOGO_URL || d.darkLogoUrl;
           if (logo && !String(logo).startsWith('assets/')) {
             this.brandLogo.set(resolveAdminImageUrl(String(logo)));
+          }
+          const shareEmail =
+            d.driveShareEmail ||
+            d.PRODUCER_DRIVE_EMAIL ||
+            d.producerDriveEmail ||
+            d.supportEmail ||
+            d.SUPPORT_EMAIL;
+          if (shareEmail) {
+            this.driveShareEmail.set(String(shareEmail));
           }
         }
       },
@@ -709,6 +706,9 @@ export class PublicSubmissionPage implements OnInit {
           }
           if (mapped.length > 0) {
             this.contentTypes.set(mapped);
+            if (!this.form.get('contentType')?.value) {
+              this.form.patchValue({ contentType: mapped[0].value });
+            }
           }
         }
       },
@@ -720,8 +720,11 @@ export class PublicSubmissionPage implements OnInit {
         const rows = res?.data ?? res?.result ?? res;
         if (Array.isArray(rows) && rows.length > 0) {
           const fromApi = rows.map((l: any) => (l.name || l.code || '').trim()).filter(Boolean);
-          const merged = [...new Set([...fromApi, ...this.languages()])];
-          this.languages.set(merged);
+          const unique = [...new Set(fromApi)];
+          this.languages.set(unique);
+          if (!this.form.get('language')?.value && unique.length > 0) {
+            this.form.patchValue({ language: unique[0] });
+          }
         }
       },
       error: () => {}
@@ -789,8 +792,8 @@ export class PublicSubmissionPage implements OnInit {
     this.submitted.set(false);
     this.submissionId.set(null);
     this.form.reset({
-      contentType: 'MOVIE',
-      language: 'Kannada'
+      contentType: this.contentTypes()[0]?.value || '',
+      language: this.languages()[0] || ''
     });
   }
 }
