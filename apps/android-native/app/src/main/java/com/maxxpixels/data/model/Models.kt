@@ -64,6 +64,8 @@ data class CatalogItem(
     val isPremium: Boolean = false,
     val isRent: Boolean = false,
     val rentPrice: Double = 0.0,
+    val purchasePrice: Double = 0.0,
+    val isPurchased: Boolean = false,
     val isBookmarked: Boolean = false,
     val isLiked: Boolean = false,
     val resumeSeconds: Int = 0,
@@ -430,7 +432,9 @@ object JsonParsers {
 
         val monetization = str(contentObj, "monetization", "accessType", "access_type").uppercase()
         val rentPrice = double(contentObj, "rent_price", "rentPrice", "price")
-        val isRent = bool(contentObj, "is_rent", "isRent") || monetization == "TVOD"
+        val purchasePrice = double(contentObj, "purchase_price", "purchasePrice", "buy_price", "buyPrice")
+        val isPurchased = bool(contentObj, "is_purchased", "isPurchased", "hasPurchased", "has_purchased")
+        val isRent = bool(contentObj, "is_rent", "isRent") || monetization == "TVOD" || monetization == "RENT" || rentPrice > 0.0 || purchasePrice > 0.0
         val isPremium = !isRent && (bool(contentObj, "is_premium", "isPremium") || monetization == "SVOD")
 
         val resumeSec = int(obj, "positionSeconds", "position_seconds", "stop_time", "watchedSeconds")
@@ -474,6 +478,8 @@ object JsonParsers {
             isPremium = isPremium,
             isRent = isRent,
             rentPrice = rentPrice,
+            purchasePrice = purchasePrice,
+            isPurchased = isPurchased,
             isBookmarked = bool(contentObj, "is_bookmark", "isBookmarked"),
             isLiked = bool(contentObj, "is_user_like", "is_like", "isLiked"),
             resumeSeconds = resumeSec,

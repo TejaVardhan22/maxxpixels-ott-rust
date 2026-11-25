@@ -27,14 +27,19 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.Email
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.WorkspacePremium
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -78,7 +83,10 @@ private fun stripHtml(raw: String): String =
         .trim()
 
 /**
- * Frosted-Glass NotificationsScreen with live GET /notifications & POST /notifications/:id/read.
+ * Theme-Synced Frosted-Glass NotificationsScreen:
+ * - Warm ambient backdrop + Header with Unread count pill & "Mark all read" action
+ * - Golden/Frosted filter pills (All | Unread)
+ * - Rich frosted notification cards with smart icons / thumbnails, golden unread dot & timestamps
  */
 @Composable
 fun NotificationsScreen(
@@ -88,11 +96,15 @@ fun NotificationsScreen(
     val scope = rememberCoroutineScope()
     var list by remember { mutableStateOf<List<NotificationEntry>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    var filterTab by remember { mutableIntStateOf(0) } // 0 = All, 1 = Unread
 
     LaunchedEffect(Unit) {
         list = repository.getNotifications()
         loading = false
     }
+
+    val unreadCount = list.count { !it.isRead }
+    val visibleList = if (filterTab == 1) list.filter { !it.isRead } else list
 
     Column(
         modifier = Modifier
@@ -101,13 +113,117 @@ fun NotificationsScreen(
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
-        ScreenTopHeader(title = "Notifications", onBack = onBack)
+        // Custom Header with Back, Title + Unread Pill, and Mark All Read
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    color = Color.White.copy(alpha = 0.09f),
+                    shape = CircleShape,
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clickable(onClick = onBack)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Back",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Text("Notifications", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                if (unreadCount > 0) {
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(MaxxColors.BrandGradient)
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text("$unreadCount", color = MaxxColors.OnPrimaryDark, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                    }
+                }
+            }
+
+            if (unreadCount > 0) {
+                Surface(
+                    color = Color.White.copy(alpha = 0.08f),
+                    shape = RoundedCornerShape(999.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+                    modifier = Modifier.clickable {
+                        val unreadIds = list.filter { !it.isRead }.map { it.id }
+                        list = list.map { it.copy(isRead = true) }
+                        scope.launch {
+                            unreadIds.forEach { repository.markNotificationRead(it) }
+                        }
+                    }
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Rounded.DoneAll, null, tint = MaxxColors.Primary, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Read all", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // Golden / Frosted Filter Pills
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            listOf("All (${list.size})", "Unread ($unreadCount)").forEachIndexed { idx, label ->
+                val active = filterTab == idx
+                if (active) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(MaxxColors.BrandGradient)
+                            .clickable { filterTab = idx }
+                            .padding(horizontal = 18.dp, vertical = 9.dp)
+                    ) {
+                        Text(label, color = MaxxColors.OnPrimaryDark, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                    }
+                } else {
+                    Surface(
+                        color = Color.White.copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(999.dp),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+                        modifier = Modifier.clickable { filterTab = idx }
+                    ) {
+                        Text(
+                            text = label,
+                            color = Color.White.copy(alpha = 0.85f),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 9.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
 
         if (loading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = MaxxColors.Primary)
             }
-        } else if (list.isEmpty()) {
+        } else if (visibleList.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Surface(
                     color = Color.White.copy(alpha = 0.06f),
@@ -121,18 +237,23 @@ fun NotificationsScreen(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(56.dp)
+                                .size(60.dp)
                                 .clip(CircleShape)
                                 .background(MaxxColors.PrimaryTint),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Rounded.Notifications, null, tint = MaxxColors.Primary, modifier = Modifier.size(28.dp))
+                            Icon(Icons.Rounded.Notifications, null, tint = MaxxColors.Primary, modifier = Modifier.size(30.dp))
                         }
                         Spacer(Modifier.height(14.dp))
-                        Text("No notifications yet", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (filterTab == 1) "All caught up!" else "No notifications yet",
+                            color = Color.White,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "New releases and membership alerts will appear here.",
+                            text = if (filterTab == 1) "You have no unread alerts." else "New releases, rental unlocks, and membership alerts will appear here.",
                             color = MaxxColors.TextSecondary,
                             fontSize = 13.sp,
                             textAlign = TextAlign.Center
@@ -145,10 +266,19 @@ fun NotificationsScreen(
                 contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(list, key = { it.id }) { n ->
+                items(visibleList, key = { it.id }) { n ->
+                    val titleLower = n.title.lowercase()
+                    val (icon, tint) = when {
+                        titleLower.contains("vip") || titleLower.contains("plan") || titleLower.contains("sub") ->
+                            Icons.Rounded.WorkspacePremium to MaxxColors.Primary
+                        titleLower.contains("movie") || titleLower.contains("release") || titleLower.contains("watch") ->
+                            Icons.Rounded.Movie to Color(0xFFC084FC)
+                        else -> Icons.Rounded.Notifications to MaxxColors.Primary
+                    }
+
                     Surface(
                         color = if (n.isRead) Color.White.copy(alpha = 0.05f) else Color.White.copy(alpha = 0.10f),
-                        shape = RoundedCornerShape(18.dp),
+                        shape = RoundedCornerShape(20.dp),
                         border = BorderStroke(
                             1.dp,
                             if (n.isRead) Color.White.copy(alpha = 0.10f) else MaxxColors.Primary.copy(alpha = 0.45f)
@@ -162,20 +292,70 @@ fun NotificationsScreen(
                                 }
                             }
                     ) {
-                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
                             Box(
                                 modifier = Modifier
-                                    .padding(top = 5.dp)
-                                    .size(8.dp)
+                                    .size(44.dp)
                                     .clip(CircleShape)
-                                    .background(if (n.isRead) Color.Transparent else MaxxColors.Primary)
-                            )
-                            Spacer(Modifier.width(10.dp))
+                                    .background(tint.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (n.imageUrl.isNotBlank()) {
+                                    AsyncImage(
+                                        model = n.imageUrl,
+                                        contentDescription = n.title,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Icon(icon, null, tint = tint, modifier = Modifier.size(22.dp))
+                                }
+                            }
+
+                            Spacer(Modifier.width(12.dp))
+
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(n.title, color = Color.White, fontSize = 14.5.sp, fontWeight = FontWeight.Bold)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = n.title,
+                                        color = Color.White,
+                                        fontSize = 14.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (!n.isRead) {
+                                        Spacer(Modifier.width(8.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .clip(CircleShape)
+                                                .background(MaxxColors.Primary)
+                                        )
+                                    }
+                                }
                                 if (n.message.isNotBlank()) {
                                     Spacer(Modifier.height(4.dp))
-                                    Text(n.message, color = MaxxColors.TextSecondary, fontSize = 12.5.sp, lineHeight = 18.sp)
+                                    Text(
+                                        text = n.message,
+                                        color = MaxxColors.TextSecondary,
+                                        fontSize = 12.5.sp,
+                                        lineHeight = 18.sp
+                                    )
+                                }
+                                if (n.createdAt.isNotBlank()) {
+                                    Spacer(Modifier.height(6.dp))
+                                    Text(
+                                        text = n.createdAt.take(16).replace("T", " "),
+                                        color = MaxxColors.TextMuted,
+                                        fontSize = 11.sp
+                                    )
                                 }
                             }
                         }
@@ -187,7 +367,7 @@ fun NotificationsScreen(
 }
 
 /**
- * Frosted-Glass RentalsScreen (Available to Rent + My Rentals pill tabs).
+ * Frosted-Glass RentalsScreen (Available to Rent + My Rentals live from /tvod/purchases).
  */
 @Composable
 fun RentalsScreen(
@@ -197,14 +377,16 @@ fun RentalsScreen(
 ) {
     var activeTab by remember { mutableIntStateOf(0) }
     var available by remember { mutableStateOf<List<CatalogItem>>(emptyList()) }
+    var myRentals by remember { mutableStateOf<List<CatalogItem>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
         available = repository.getRentableContent()
+        myRentals = repository.getMyRentals()
         loading = false
     }
 
-    val currentList = if (activeTab == 0) available else emptyList()
+    val currentList = if (activeTab == 0) available else myRentals
 
     Column(
         modifier = Modifier
@@ -221,7 +403,7 @@ fun RentalsScreen(
                 .padding(horizontal = 18.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            listOf("Available to Rent", "My Rentals (0)").forEachIndexed { idx, label ->
+            listOf("Available to Rent", "My Rentals (${myRentals.size})").forEachIndexed { idx, label ->
                 val selected = activeTab == idx
                 if (selected) {
                     Box(

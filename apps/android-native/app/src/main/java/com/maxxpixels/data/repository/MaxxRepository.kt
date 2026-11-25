@@ -520,11 +520,20 @@ class MaxxRepository(
 
     suspend fun getRentableContent(): List<CatalogItem> {
         return runCatching {
+            val tvodList = runCatching {
+                JsonParsers.unwrapArray(api.getTvodProducts()).map(JsonParsers::parseCatalogItem)
+            }.getOrDefault(emptyList())
             val home = loadHomeCatalog(typeId = 0, language = "kannada")
-            val all = if (home is ApiResult.Success) {
-                (home.data.banners + home.data.sections.flatMap { it.items }).distinctBy { it.id }
-            } else getTrending()
-            all.filter { it.isRent }
+            val homeRent = if (home is ApiResult.Success) {
+                (home.data.banners + home.data.sections.flatMap { it.items }).filter { it.isRent }
+            } else emptyList()
+            (tvodList + homeRent).distinctBy { it.id }
+        }.getOrDefault(emptyList())
+    }
+
+    suspend fun getMyRentals(): List<CatalogItem> {
+        return runCatching {
+            JsonParsers.unwrapArray(api.getMyTvodPurchases()).map(JsonParsers::parseCatalogItem)
         }.getOrDefault(emptyList())
     }
 
@@ -629,14 +638,19 @@ class MaxxRepository(
         }
     }
 
-    suspend fun createTvodOrder(contentId: Long, priceInr: Double): ApiResult<CreatedOrder> {
+    suspend fun createTvodOrder(
+        contentId: Long,
+        priceInr: Double,
+        purchaseType: String = "RENT"
+    ): ApiResult<CreatedOrder> {
         return try {
             val user = sessionManager.session.value
             val body = buildJsonObject {
                 put("contentId", contentId)
                 put("content_id", contentId)
                 put("video_id", contentId)
-                put("type", "RENT")
+                put("type", purchaseType.uppercase())
+                put("purchaseType", purchaseType.uppercase())
                 put("orderType", "TVOD")
                 if (priceInr > 0.0) put("amount", priceInr)
                 put("provider", "RAZORPAY")

@@ -98,7 +98,7 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
-    implementation("com.razorpay:checkout:1.6.40")
+    implementation("com.razorpay:checkout:1.6.41")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

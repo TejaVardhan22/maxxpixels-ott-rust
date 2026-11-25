@@ -173,6 +173,12 @@ interface MaxxApiService {
         @Query("provider") provider: String = "RAZORPAY"
     ): JsonElement
 
+    @GET("tvod/products")
+    suspend fun getTvodProducts(): JsonElement
+
+    @GET("tvod/purchases")
+    suspend fun getMyTvodPurchases(): JsonElement
+
     // ── Super-App Portal Banners & Games Arena (PlayforFun + Coin Wallet) ───
     @GET("cms/portal-banners")
     suspend fun getPortalBanners(@Query("portalKey") portalKey: String = "all"): JsonElement

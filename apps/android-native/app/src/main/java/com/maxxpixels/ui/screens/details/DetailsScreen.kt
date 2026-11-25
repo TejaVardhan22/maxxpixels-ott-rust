@@ -123,8 +123,9 @@ fun DetailsScreen(
     var activeSeasonIdx by remember { mutableIntStateOf(0) }
     var episodes by remember { mutableStateOf<List<EpisodeItem>>(emptyList()) }
 
-    // TVOD Rental Sheet State
+    // TVOD Rental / Purchase Sheet State
     var showTvodDialog by remember { mutableStateOf(false) }
+    var tvodMode by remember { mutableStateOf("RENT") } // "RENT" | "PURCHASE"
     var tvodLoading by remember { mutableStateOf(false) }
     var tvodError by remember { mutableStateOf("") }
     var rentUnlocked by remember { mutableStateOf(false) }
@@ -138,6 +139,7 @@ fun DetailsScreen(
                     val detail = res.data
                     item = detail
                     inWatchlist = detail.isBookmarked
+                    rentUnlocked = detail.isPurchased
                     detail.seasons.firstOrNull()?.let { s ->
                         episodes = repository.getSeasonEpisodes(s.id)
                     }
@@ -200,9 +202,13 @@ fun DetailsScreen(
         }
     }
 
-    // TVOD Pay-Per-View Rental Modal
+    // TVOD Rent / Purchase Modal (choose Rent 48h or Buy Lifetime with exact ₹ amount)
     if (showTvodDialog) {
-        val priceInt = if (content.rentPrice > 0) content.rentPrice.toInt() else 99
+        val rentAmt = if (content.rentPrice > 0) content.rentPrice.toInt() else 99
+        val buyAmt = if (content.purchasePrice > 0) content.purchasePrice.toInt() else (rentAmt * 2)
+        val activeAmt = if (tvodMode == "PURCHASE") buyAmt else rentAmt
+        val activeLabel = if (tvodMode == "PURCHASE") "Buy" else "Rent"
+
         AlertDialog(
             onDismissRequest = { if (!tvodLoading) showTvodDialog = false },
             containerColor = Color(0xFF1A151E),
@@ -215,7 +221,7 @@ fun DetailsScreen(
                         border = BorderStroke(1.dp, MaxxColors.Primary.copy(alpha = 0.5f))
                     ) {
                         Text(
-                            text = "PAY-PER-VIEW RENTAL (TVOD)",
+                            text = "RENT OR PURCHASE (TVOD)",
                             color = MaxxColors.PrimaryLight,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Black,
@@ -225,7 +231,7 @@ fun DetailsScreen(
                     }
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        text = "Rent ${content.title}",
+                        text = content.title,
                         color = Color.White,
                         fontSize = 19.sp,
                         fontWeight = FontWeight.ExtraBold
@@ -234,34 +240,64 @@ fun DetailsScreen(
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = "Unlock instant Full HD access to this title for ₹$priceInt. Once playback starts, you have 48 hours to finish watching.",
-                        color = MaxxColors.TextSecondary,
-                        fontSize = 13.sp,
-                        lineHeight = 19.sp
-                    )
+                    // Option 1: Rent (48 Hours)
+                    val rentSelected = tvodMode == "RENT"
                     Surface(
-                        color = Color.White.copy(alpha = 0.06f),
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
-                        modifier = Modifier.fillMaxWidth()
+                        color = if (rentSelected) Color(0xFF281D1B) else Color.White.copy(alpha = 0.05f),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(
+                            if (rentSelected) 1.6.dp else 1.dp,
+                            if (rentSelected) MaxxColors.Primary else Color.White.copy(alpha = 0.12f)
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { tvodMode = "RENT"; tvodError = "" }
                     ) {
                         Row(
-                            modifier = Modifier.padding(12.dp),
+                            modifier = Modifier.padding(14.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
-                                Text("Rental Price", color = MaxxColors.TextMuted, fontSize = 11.sp)
-                                Text("₹$priceInt", color = MaxxColors.Primary, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Rent (48 Hours)", color = Color.White, fontSize = 14.5.sp, fontWeight = FontWeight.Bold)
+                                Text("Watch in Full HD within 48h of start", color = MaxxColors.TextSecondary, fontSize = 11.5.sp)
                             }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.VerifiedUser, null, tint = MaxxColors.Success, modifier = Modifier.size(15.dp))
-                                Spacer(Modifier.width(5.dp))
-                                Text("Razorpay Instant", color = MaxxColors.TextSecondary, fontSize = 11.5.sp)
-                            }
+                            Text("₹$rentAmt", color = MaxxColors.Primary, fontSize = 20.sp, fontWeight = FontWeight.Black)
                         }
                     }
+
+                    // Option 2: Purchase / Own Forever
+                    val buySelected = tvodMode == "PURCHASE"
+                    Surface(
+                        color = if (buySelected) Color(0xFF281D1B) else Color.White.copy(alpha = 0.05f),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(
+                            if (buySelected) 1.6.dp else 1.dp,
+                            if (buySelected) MaxxColors.Primary else Color.White.copy(alpha = 0.12f)
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { tvodMode = "PURCHASE"; tvodError = "" }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Purchase (Own Forever)", color = Color.White, fontSize = 14.5.sp, fontWeight = FontWeight.Bold)
+                                Text("Unlimited lifetime Full HD streaming", color = MaxxColors.TextSecondary, fontSize = 11.5.sp)
+                            }
+                            Text("₹$buyAmt", color = MaxxColors.Primary, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.VerifiedUser, null, tint = MaxxColors.Success, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Secured by Razorpay • Instant unlock", color = MaxxColors.TextMuted, fontSize = 11.sp)
+                    }
+
                     if (tvodError.isNotBlank()) {
                         Text(tvodError, color = MaxxColors.ErrorSoft, fontSize = 12.sp)
                     }
@@ -276,7 +312,7 @@ fun DetailsScreen(
                             tvodLoading = true
                             tvodError = ""
                             scope.launch {
-                                when (val orderRes = repository.createTvodOrder(content.id, priceInt.toDouble())) {
+                                when (val orderRes = repository.createTvodOrder(content.id, activeAmt.toDouble(), tvodMode)) {
                                     is ApiResult.Success -> {
                                         tvodLoading = false
                                         val order = orderRes.data
@@ -310,7 +346,7 @@ fun DetailsScreen(
                         )
                     } else {
                         Text(
-                            text = "Pay ₹$priceInt & Watch",
+                            text = "$activeLabel ₹$activeAmt & Watch",
                             color = MaxxColors.OnPrimaryDark,
                             fontSize = 13.5.sp,
                             fontWeight = FontWeight.ExtraBold
@@ -552,7 +588,7 @@ fun DetailsScreen(
                                     Spacer(Modifier.width(6.dp))
                                     Text(
                                         text = when {
-                                            content.isRent && !rentUnlocked -> "Rent ₹${if (content.rentPrice > 0) content.rentPrice.toInt() else 99}"
+                                            content.isRent && !rentUnlocked -> "Rent ₹${if (content.rentPrice > 0) content.rentPrice.toInt() else 99} / Buy"
                                             hasResume -> "Resume"
                                             else -> "Watch Now"
                                         },
