@@ -763,7 +763,8 @@ private fun RnMainTabsShell(
                 onOpenCategory = onOpenCategory,
                 onOpenSubscription = onOpenSubscription,
                 onOpenGames = onOpenGames,
-                onOpenPortalHub = onOpenPortalHub
+                onOpenPortalHub = onOpenPortalHub,
+                onOpenAccount = onOpenAccount
             )
             1 -> SearchScreen(
                 repository = app.repository,

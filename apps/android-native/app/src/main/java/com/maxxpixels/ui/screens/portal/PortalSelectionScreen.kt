@@ -11,14 +11,21 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -39,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -92,7 +100,8 @@ fun PortalSelectionScreen(
     if (showGamesDisclaimer) {
         AlertDialog(
             onDismissRequest = { showGamesDisclaimer = false },
-            containerColor = MaxxColors.SurfaceDark,
+            containerColor = Color(0xFF1A151E),
+            shape = RoundedCornerShape(24.dp),
             titleContentColor = Color.White,
             textContentColor = MaxxColors.TextSecondary,
             title = { Text("Disclaimer", fontWeight = FontWeight.ExtraBold) },
@@ -104,16 +113,22 @@ fun PortalSelectionScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
-                    showGamesDisclaimer = false
-                    onOpenGamesHub()
-                }) {
-                    Text("I Agree", color = MaxxColors.OrangeStart, fontWeight = FontWeight.Bold)
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(MaxxColors.BrandGradient)
+                        .clickable {
+                            showGamesDisclaimer = false
+                            onOpenGamesHub()
+                        }
+                        .padding(horizontal = 18.dp, vertical = 9.dp)
+                ) {
+                    Text("I Agree", color = MaxxColors.OnPrimaryDark, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showGamesDisclaimer = false }) {
-                    Text("Cancel", color = MaxxColors.TextSecondary)
+                    Text("Cancel", color = MaxxColors.TextSecondary, fontWeight = FontWeight.Bold)
                 }
             }
         )
@@ -122,12 +137,15 @@ fun PortalSelectionScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaxxColors.CinemaBlack)
-            .statusBarsPadding(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .background(MaxxColors.AmbientScreenBackground)
+            .windowInsetsPadding(
+                WindowInsets.statusBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top)
+            )
+            .navigationBarsPadding(),
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Header Branding (Matching PortalSelectionScreen.tsx + Aha/Hotstar VIP/Coin pills)
+        // Frosted Cinema Header Branding
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -135,28 +153,35 @@ fun PortalSelectionScreen(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Image(
-                        painter = painterResource(R.drawable.app_logo),
-                        contentDescription = "MaxxPixels",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .size(42.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                    )
-                    Spacer(Modifier.width(10.dp))
+                    Surface(
+                        color = Color.White.copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Image(
+                                painter = painterResource(R.drawable.app_logo),
+                                contentDescription = "MaxxPixels",
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.size(30.dp)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(12.dp))
                     Column {
                         Text(
                             text = "MAXXPIXELS",
                             color = Color.White,
                             fontSize = 19.sp,
                             fontWeight = FontWeight.Black,
-                            letterSpacing = 1.6.sp
+                            letterSpacing = 1.5.sp
                         )
                         Text(
                             text = "Next-Gen Digital Ecosystem",
                             color = MaxxColors.TextSecondary,
                             fontSize = 11.5.sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.Medium
                         )
                     }
                 }
@@ -165,47 +190,54 @@ fun PortalSelectionScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Gold Coin Wallet Pill
+                    // Frosted Gold Coin Wallet Pill
                     Surface(
-                        color = MaxxColors.SurfaceElevated,
-                        shape = RoundedCornerShape(99.dp),
-                        border = BorderStroke(1.dp, MaxxColors.VipGold.copy(alpha = 0.45f)),
+                        color = Color.White.copy(alpha = 0.09f),
+                        shape = RoundedCornerShape(999.dp),
+                        border = BorderStroke(1.dp, MaxxColors.Primary.copy(alpha = 0.45f)),
                         modifier = Modifier.clickable { showGamesDisclaimer = true }
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp)
                         ) {
-                            Icon(Icons.Rounded.MonetizationOn, null, tint = MaxxColors.VipGold, modifier = Modifier.size(15.dp))
+                            Icon(Icons.Rounded.MonetizationOn, null, tint = MaxxColors.Primary, modifier = Modifier.size(15.dp))
                             Spacer(Modifier.width(4.dp))
                             Text("${gamer.coins}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 
-                    // VIP / Subscribe Pill (Hotstar Gold Style)
-                    Surface(
-                        color = if (session?.hasActiveSubscription == true) MaxxColors.OrangeTint else MaxxColors.VipGold.copy(alpha = 0.16f),
-                        shape = RoundedCornerShape(99.dp),
-                        border = BorderStroke(1.dp, if (session?.hasActiveSubscription == true) MaxxColors.OrangeStart else MaxxColors.VipGold),
-                        modifier = Modifier.clickable(onClick = onOpenSubscription)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    // Golden VIP / Subscribe Pill
+                    val isVip = session?.hasActiveSubscription == true
+                    if (isVip) {
+                        Surface(
+                            color = MaxxColors.PrimaryTint,
+                            shape = RoundedCornerShape(999.dp),
+                            border = BorderStroke(1.dp, MaxxColors.Primary),
+                            modifier = Modifier.clickable(onClick = onOpenSubscription)
                         ) {
-                            Icon(
-                                Icons.Rounded.WorkspacePremium,
-                                null,
-                                tint = if (session?.hasActiveSubscription == true) MaxxColors.OrangeStart else MaxxColors.VipGold,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                text = if (session?.hasActiveSubscription == true) "VIP" else "Subscribe",
-                                color = if (session?.hasActiveSubscription == true) MaxxColors.OrangeStart else MaxxColors.VipGold,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp)
+                            ) {
+                                Icon(Icons.Rounded.WorkspacePremium, null, tint = MaxxColors.Primary, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("VIP", color = MaxxColors.Primary, fontSize = 11.5.sp, fontWeight = FontWeight.Black)
+                            }
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(MaxxColors.BrandGradient)
+                                .clickable(onClick = onOpenSubscription)
+                                .padding(horizontal = 12.dp, vertical = 7.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Rounded.WorkspacePremium, null, tint = MaxxColors.OnPrimaryDark, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Subscribe", color = MaxxColors.OnPrimaryDark, fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold)
+                            }
                         }
                     }
                 }
@@ -214,12 +246,12 @@ fun PortalSelectionScreen(
 
         item {
             Text(
-                text = "NEXT-GEN ECOSYSTEM",
-                color = MaxxColors.TextMuted,
+                text = "EXPLORE PORTALS",
+                color = MaxxColors.PrimaryLight.copy(alpha = 0.85f),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Black,
-                letterSpacing = 1.5.sp,
-                modifier = Modifier.padding(top = 4.dp)
+                letterSpacing = 1.6.sp,
+                modifier = Modifier.padding(top = 2.dp)
             )
         }
 
@@ -283,13 +315,13 @@ private fun PortalBannerCard(
     onClick: () -> Unit
 ) {
     Surface(
-        color = MaxxColors.SurfaceDark,
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, MaxxColors.BorderStrong),
-        shadowElevation = 6.dp,
+        color = MaxxColors.SurfaceGlass,
+        shape = RoundedCornerShape(24.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+        shadowElevation = 14.dp,
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(2.05f)
+            .aspectRatio(2.02f)
             .bounceClick(scaleDown = 0.98f, onClick = onClick)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -315,12 +347,16 @@ private fun PortalBannerCard(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color(0x8C050A15)),
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Color(0x331A1219), Color(0xCC0A090E))
+                            )
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(horizontal = 16.dp)
+                        modifier = Modifier.padding(horizontal = 18.dp)
                     ) {
                         if (title.isNotBlank()) {
                             Text(
@@ -335,7 +371,7 @@ private fun PortalBannerCard(
                             Spacer(Modifier.height(6.dp))
                             Text(
                                 text = subtitle,
-                                color = Color.White.copy(alpha = 0.9f),
+                                color = Color.White.copy(alpha = 0.88f),
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 textAlign = TextAlign.Center,
@@ -344,13 +380,20 @@ private fun PortalBannerCard(
                         }
                         if (ctaLabel.isNotBlank()) {
                             Spacer(Modifier.height(10.dp))
-                            Text(
-                                text = ctaLabel.uppercase(),
-                                color = MaxxColors.VipGold,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Black,
-                                letterSpacing = 0.8.sp
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(MaxxColors.BrandGradient)
+                                    .padding(horizontal = 14.dp, vertical = 5.dp)
+                            ) {
+                                Text(
+                                    text = ctaLabel.uppercase(),
+                                    color = MaxxColors.OnPrimaryDark,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Black,
+                                    letterSpacing = 0.8.sp
+                                )
+                            }
                         }
                     }
                 }

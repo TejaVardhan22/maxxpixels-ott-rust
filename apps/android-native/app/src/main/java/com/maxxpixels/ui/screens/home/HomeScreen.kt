@@ -92,7 +92,8 @@ fun HomeScreen(
     onOpenCategory: (title: String, typeId: Int, language: String) -> Unit,
     onOpenSubscription: () -> Unit,
     onOpenGames: () -> Unit,
-    onOpenPortalHub: () -> Unit
+    onOpenPortalHub: () -> Unit,
+    onOpenAccount: () -> Unit = {}
 ) {
     val session by repository.sessionManager.session.collectAsState()
     val scope = rememberCoroutineScope()
@@ -171,7 +172,7 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .weight(1f)
-                            .clickable(onClick = onOpenPortalHub)
+                            .clickable(onClick = onOpenAccount)
                     ) {
                         Box(
                             modifier = Modifier
