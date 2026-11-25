@@ -772,6 +772,7 @@ private fun RnMainTabsShell(
             )
             2 -> NewHotScreen(
                 repository = app.repository,
+                language = initialLanguage,
                 onOpenDetails = onOpenDetails,
                 onPlayItem = onPlay
             )

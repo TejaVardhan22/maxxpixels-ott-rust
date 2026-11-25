@@ -172,13 +172,14 @@ fun DetailsScreen(
                     detail.seasons.firstOrNull()?.let { s ->
                         episodes = repository.getSeasonEpisodes(s.id)
                     }
-                    val langParam = detail.language.trim().lowercase().ifBlank { "kannada" }
+                    val isKannada = repository.isKannadaItem(detail)
+                    val portalLang = if (isKannada) "kannada" else "all-indian"
                     val sameCategory = runCatching {
-                        repository.getCategoryItems(detail.typeId, langParam)
-                    }.getOrDefault(emptyList()).filter { it.id != contentId }
+                        repository.getCategoryItems(detail.typeId, portalLang)
+                    }.getOrDefault(emptyList()).filter { it.id != contentId && repository.matchesLanguagePortal(it, portalLang) }
                     val trendingFallback = runCatching {
                         repository.getTrending()
-                    }.getOrDefault(emptyList()).filter { it.id != contentId }
+                    }.getOrDefault(emptyList()).filter { it.id != contentId && repository.matchesLanguagePortal(it, portalLang) }
                     related = (sameCategory + trendingFallback).distinctBy { it.id }.take(15)
                 }
                 is ApiResult.Error -> errorMsg = res.message

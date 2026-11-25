@@ -212,34 +212,54 @@ class MaxxRepository(
         val fromCache: Boolean = false
     )
 
+    fun isKannadaItem(item: CatalogItem): Boolean {
+        val l = item.language.trim().lowercase()
+        return l == "kannada" || l == "kn" || l.startsWith("kannada")
+    }
+
+    fun matchesLanguagePortal(item: CatalogItem, portalLang: String?): Boolean {
+        val norm = portalLang?.trim()?.lowercase().orEmpty()
+        if (norm.isBlank()) return true
+        return when (norm) {
+            "kannada", "kn" -> isKannadaItem(item)
+            "non-kannada", "all-indian", "all_indian" -> item.language.isNotBlank() && !isKannadaItem(item)
+            else -> item.language.trim().lowercase() == norm
+        }
+    }
+
     suspend fun loadHomeCatalog(typeId: Int = 0, language: String? = null): ApiResult<HomeData> {
         return try {
+            val apiLang = if (language.equals("all-indian", true)) "non-kannada" else language
             val bannerRes = runCatching {
-                api.getBanners("MOBILE", typeId.takeIf { it > 0 }, language)
+                api.getBanners("MOBILE", typeId.takeIf { it > 0 }, apiLang)
             }.getOrNull()
             val sectionRes = runCatching {
-                api.getSections(typeId.takeIf { it > 0 }, language)
+                api.getSections(typeId.takeIf { it > 0 }, apiLang)
             }.getOrNull()
             val typesRes = runCatching { api.getContentTypes() }.getOrNull()
             val cwRes = if (sessionManager.getAuthToken() != null) {
                 runCatching { api.getContinueWatching() }.getOrNull()
             } else null
 
-            // Mirror React Native useHomeCatalog: also fetch language pool & trending so Home is populated even when cms/sections is empty
             val langPoolRes = runCatching {
-                if (language == "non-kannada" || language == "all-indian") {
+                if (apiLang == "non-kannada") {
                     api.getNonKannadaContent()
                 } else {
-                    api.getContentByLanguage(language?.ifBlank { "kannada" } ?: "kannada")
+                    api.getContentByLanguage(apiLang?.ifBlank { "kannada" } ?: "kannada")
                 }
             }.getOrNull()
             val trendingRes = runCatching { api.getTrending() }.getOrNull()
 
-            val banners = JsonParsers.unwrapArray(bannerRes).map(JsonParsers::parseCatalogItem)
+            // Strict language segregation: NEVER mix Kannada and All-Indian (non-Kannada) content
+            val banners = JsonParsers.unwrapArray(bannerRes)
+                .map(JsonParsers::parseCatalogItem)
+                .filter { matchesLanguagePortal(it, language) }
+
             val cmsSections = JsonParsers.unwrapArray(sectionRes).mapIndexedNotNull { idx, secObj ->
                 val rawItems = (secObj["items"] as? JsonArray ?: secObj["data"] as? JsonArray)
                     ?.mapNotNull { it as? JsonObject }
                     ?.map(JsonParsers::parseCatalogItem)
+                    ?.filter { matchesLanguagePortal(it, language) }
                     .orEmpty()
                 if (rawItems.isEmpty()) return@mapIndexedNotNull null
                 val title = JsonParsers.str(secObj, "title", "name").ifBlank { "Featured" }
@@ -253,8 +273,12 @@ class MaxxRepository(
                 )
             }
 
-            val langItems = JsonParsers.unwrapArray(langPoolRes).map(JsonParsers::parseCatalogItem)
-            val trendingItems = JsonParsers.unwrapArray(trendingRes).map(JsonParsers::parseCatalogItem)
+            val langItems = JsonParsers.unwrapArray(langPoolRes)
+                .map(JsonParsers::parseCatalogItem)
+                .filter { matchesLanguagePortal(it, language) }
+            val trendingItems = JsonParsers.unwrapArray(trendingRes)
+                .map(JsonParsers::parseCatalogItem)
+                .filter { matchesLanguagePortal(it, language) }
             val combinedPool = (langItems + trendingItems).distinctBy { it.id }
                 .filter { item -> typeId == 0 || item.typeId == typeId || item.videoType == typeId }
 
@@ -302,7 +326,9 @@ class MaxxRepository(
                 )
             }
 
-            val cw = JsonParsers.unwrapArray(cwRes).map(JsonParsers::parseCatalogItem)
+            val cw = JsonParsers.unwrapArray(cwRes)
+                .map(JsonParsers::parseCatalogItem)
+                .filter { matchesLanguagePortal(it, language) }
             val effectiveBanners = banners.ifEmpty { fallbackSections.firstOrNull()?.items?.take(6).orEmpty() }
 
             if (typeId == 0 && (language == null || language == "kannada") && fallbackSections.isNotEmpty()) {
@@ -311,9 +337,12 @@ class MaxxRepository(
 
             ApiResult.Success(HomeData(effectiveBanners, fallbackSections, types, cw, fromCache = false))
         } catch (e: Throwable) {
-            // Serve Room/EncryptedPrefs cached snapshot on API disconnect
-            val cachedBanners = sessionManager.loadCachedBanners()
-            val cachedSections = sessionManager.loadCachedSections()
+            // Serve cached snapshot ONLY when it matches the requested language portal
+            val cachedBanners = sessionManager.loadCachedBanners().filter { matchesLanguagePortal(it, language) }
+            val cachedSections = sessionManager.loadCachedSections().mapNotNull { sec ->
+                val filtered = sec.items.filter { matchesLanguagePortal(it, language) }
+                if (filtered.isEmpty()) null else sec.copy(items = filtered)
+            }
             if (cachedSections.isNotEmpty()) {
                 ApiResult.Success(
                     HomeData(
@@ -541,9 +570,26 @@ class MaxxRepository(
         return runCatching {
             val apiLang = if (language == "all-indian") "non-kannada" else language
             when (val res = loadHomeCatalog(typeId = typeId, language = apiLang)) {
-                is ApiResult.Success -> (res.data.banners + res.data.sections.flatMap { it.items }).distinctBy { it.id }
-                is ApiResult.Error -> getTrending()
+                is ApiResult.Success -> (res.data.banners + res.data.sections.flatMap { it.items })
+                    .filter { matchesLanguagePortal(it, language) }
+                    .distinctBy { it.id }
+                is ApiResult.Error -> getTrending().filter { matchesLanguagePortal(it, language) }
             }
+        }.getOrDefault(emptyList())
+    }
+
+    suspend fun getNewAndUpcoming(language: String? = null): List<CatalogItem> {
+        return runCatching {
+            val apiLang = if (language.equals("all-indian", true)) "non-kannada" else language
+            val poolRes = runCatching {
+                if (apiLang == "non-kannada") api.getNonKannadaContent()
+                else api.getContentByLanguage(apiLang?.ifBlank { "kannada" } ?: "kannada")
+            }.getOrNull()
+            val poolItems = JsonParsers.unwrapArray(poolRes).map(JsonParsers::parseCatalogItem)
+            val trendingItems = getTrending()
+            (poolItems + trendingItems)
+                .distinctBy { it.id }
+                .filter { matchesLanguagePortal(it, language) }
         }.getOrDefault(emptyList())
     }
 

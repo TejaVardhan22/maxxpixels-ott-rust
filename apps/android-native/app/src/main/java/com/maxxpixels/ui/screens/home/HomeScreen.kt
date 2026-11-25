@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Notifications
@@ -51,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -396,7 +398,8 @@ fun HomeScreen(
                             items(continueWatching, key = { "cw_${it.id}" }) { cwItem ->
                                 ContinueWatchingCard(
                                     item = cwItem,
-                                    onClick = { onPlayItem(cwItem.id, cwItem.title) }
+                                    onPlay = { onPlayItem(cwItem.id, cwItem.title) },
+                                    onOpenDetails = { onOpenDetails(cwItem.id) }
                                 )
                             }
                         }
@@ -714,15 +717,23 @@ fun PortraitPosterCard(
 @Composable
 private fun ContinueWatchingCard(
     item: CatalogItem,
-    onClick: () -> Unit
+    onPlay: () -> Unit,
+    onOpenDetails: () -> Unit
 ) {
+    val pct = (item.progressPercent.coerceIn(0.05f, 1f) * 100).toInt()
+    val subtitle = listOfNotNull(
+        item.durationLabel.takeIf { it.isNotBlank() },
+        item.language.takeIf { it.isNotBlank() }
+    ).joinToString(" • ").ifBlank { "$pct% watched" }
+
     Surface(
-        color = MaxxColors.SurfaceDark,
-        shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, MaxxColors.BorderSubtle),
+        color = MaxxColors.SurfaceGlass,
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+        shadowElevation = 10.dp,
         modifier = Modifier
-            .width(204.dp)
-            .bounceClick(onClick = onClick)
+            .width(244.dp)
+            .bounceClick(onClick = onPlay)
     ) {
         Column {
             Box(
@@ -734,37 +745,120 @@ private fun ContinueWatchingCard(
                     model = item.landscapeUrl.ifBlank { item.posterUrl },
                     contentDescription = item.title,
                     contentScale = ContentScale.Crop,
+                    alignment = Alignment.TopCenter,
                     modifier = Modifier.fillMaxSize()
                 )
                 Box(
                     modifier = Modifier
-                        .align(Alignment.Center)
-                        .size(38.dp)
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(listOf(Color.Transparent, Color(0xDD0B0A10)))
+                        )
+                )
+
+                // Top-left frosted % watched badge
+                Surface(
+                    color = Color.Black.copy(alpha = 0.62f),
+                    shape = RoundedCornerShape(999.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(MaxxColors.Primary)
+                        )
+                        Text("$pct% watched", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // Top-right frosted Info circle
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(10.dp)
+                        .size(30.dp)
                         .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.6f)),
+                        .background(Color.Black.copy(alpha = 0.56f))
+                        .clickable(onClick = onOpenDetails),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Rounded.PlayArrow, null, tint = MaxxColors.Primary, modifier = Modifier.size(22.dp))
+                    Icon(Icons.Rounded.Info, contentDescription = "Details", tint = Color.White, modifier = Modifier.size(16.dp))
                 }
+
+                // Bottom-right golden Play button
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 10.dp, bottom = 12.dp)
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(MaxxColors.BrandGradient)
+                        .clickable(onClick = onPlay),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.PlayArrow, null, tint = MaxxColors.OnPrimaryDark, modifier = Modifier.size(21.dp))
+                }
+
+                // Rounded amber progress bar (no stop dot)
                 LinearProgressIndicator(
                     progress = { item.progressPercent.coerceIn(0.05f, 1f) },
                     color = MaxxColors.Primary,
-                    trackColor = Color.White.copy(alpha = 0.25f),
+                    trackColor = Color.White.copy(alpha = 0.22f),
+                    strokeCap = StrokeCap.Round,
+                    drawStopIndicator = {},
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(3.dp)
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                        .height(4.dp)
                         .align(Alignment.BottomCenter)
                 )
             }
-            Text(
-                text = item.title,
-                color = Color.White,
-                fontSize = 12.5.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)
-            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 13.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = item.title,
+                        color = Color.White,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = subtitle,
+                        color = MaxxColors.TextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "Resume",
+                    color = MaxxColors.Primary,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
         }
     }
 }

@@ -142,8 +142,8 @@ fun PortalSelectionScreen(
                 WindowInsets.statusBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top)
             )
             .navigationBarsPadding(),
-        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically)
     ) {
         // 1. MAXX MOVIES & ENTERTAINMENT (KANNADA OTT)
         item {

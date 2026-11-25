@@ -57,6 +57,9 @@ data class CatalogItem(
     val typeId: Int = 1,
     val language: String = "Kannada",
     val releaseYear: String = "",
+    val releaseDate: String = "",
+    val createdAt: String = "",
+    val isUpcoming: Boolean = false,
     val durationLabel: String = "",
     val durationSeconds: Int = 0,
     val maturityRating: String = "U/A 13+",
@@ -448,12 +451,40 @@ object JsonParsers {
                 )
             } ?: emptyList()
 
-        val monetization = str(contentObj, "monetization", "accessType", "access_type").uppercase()
-        val rentPrice = double(contentObj, "rent_price", "rentPrice", "price")
+        val monetization = str(
+            contentObj,
+            "monetization", "monetizationType", "monetization_type",
+            "accessType", "access_type", "pricingModel", "pricing_model"
+        ).uppercase()
+        val explicitRentPrice = double(contentObj, "rent_price", "rentPrice")
+        val genericPrice = double(contentObj, "price")
         val purchasePrice = double(contentObj, "purchase_price", "purchasePrice", "buy_price", "buyPrice")
         val isPurchased = bool(contentObj, "is_purchased", "isPurchased", "hasPurchased", "has_purchased")
-        val isRent = bool(contentObj, "is_rent", "isRent") || monetization == "TVOD" || monetization == "RENT" || rentPrice > 0.0 || purchasePrice > 0.0
-        val isPremium = !isRent && (bool(contentObj, "is_premium", "isPremium") || monetization == "SVOD")
+
+        // Strict monetization precedence: AVOD/FREE is NEVER TVOD or Premium; SVOD is NEVER TVOD
+        val isRent = when {
+            monetization == "AVOD" || monetization == "FREE" || monetization == "SVOD" -> false
+            monetization == "TVOD" || monetization == "RENT" -> true
+            else -> bool(contentObj, "is_rent", "isRent") || explicitRentPrice > 0.0 || purchasePrice > 0.0
+        }
+        val rentPrice = if (isRent) {
+            if (explicitRentPrice > 0.0) explicitRentPrice else genericPrice
+        } else 0.0
+        val effectivePurchasePrice = if (isRent) purchasePrice else 0.0
+        val isPremium = when {
+            monetization == "AVOD" || monetization == "FREE" -> false
+            isRent -> false
+            monetization == "SVOD" -> true
+            else -> bool(contentObj, "is_premium", "isPremium")
+        }
+
+        val releaseDateStr = str(contentObj, "releaseDate", "release_date", "publishDate", "publish_date")
+            .ifBlank { str(obj, "releaseDate", "release_date") }
+        val createdAtStr = str(contentObj, "createdAt", "created_at", "publishedAt", "published_at")
+            .ifBlank { str(obj, "createdAt", "created_at") }
+        val statusStr = str(contentObj, "status", "releaseStatus", "release_status").uppercase()
+        val isUpcomingFlag = bool(contentObj, "isUpcoming", "is_upcoming", "comingSoon", "coming_soon") ||
+            statusStr == "UPCOMING" || statusStr == "COMING_SOON" || statusStr == "SCHEDULED"
 
         val resumeSec = int(obj, "positionSeconds", "position_seconds", "stop_time", "watchedSeconds")
         val rawPct = double(obj, "percentage").toFloat()
@@ -503,8 +534,12 @@ object JsonParsers {
             contentType = ctRaw,
             videoType = int(contentObj, "video_type", "videoType").let { if (it > 0) it else inferredTypeId },
             typeId = inferredTypeId,
-            language = str(contentObj, "originalLanguage", "language", "language_name").ifBlank { "Kannada" },
-            releaseYear = str(contentObj, "releaseYear", "release_year").take(4),
+            language = str(contentObj, "originalLanguage", "original_language", "language", "language_name", "lang")
+                .ifBlank { str(obj, "originalLanguage", "language", "language_name") },
+            releaseYear = str(contentObj, "releaseYear", "release_year").ifBlank { releaseDateStr }.take(4),
+            releaseDate = releaseDateStr,
+            createdAt = createdAtStr,
+            isUpcoming = isUpcomingFlag,
             durationLabel = durationLabel,
             durationSeconds = durationSec,
             maturityRating = str(contentObj, "ageRating", "maturity_rating", "age_rating", "certification").ifBlank { "U/A 13+" },
@@ -512,7 +547,7 @@ object JsonParsers {
             isPremium = isPremium,
             isRent = isRent,
             rentPrice = rentPrice,
-            purchasePrice = purchasePrice,
+            purchasePrice = effectivePurchasePrice,
             isPurchased = isPurchased,
             isBookmarked = bool(contentObj, "is_bookmark", "isBookmarked"),
             isLiked = bool(contentObj, "is_user_like", "is_like", "isLiked"),
