@@ -49,9 +49,48 @@ export function ConditionalChrome({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { isLoggedIn } = useStoredUser();
   const [authReady, setAuthReady] = useState(false);
+  const [maintenanceState, setMaintenanceState] = useState<{
+    active: boolean;
+    message: string;
+    appName: string;
+    logoUrl: string;
+  }>({
+    active: false,
+    message: '',
+    appName: 'MaxxPixels',
+    logoUrl: '',
+  });
+  const [checkingMaintenance, setCheckingMaintenance] = useState(false);
+
+  const checkMaintenanceMode = async () => {
+    setCheckingMaintenance(true);
+    try {
+      const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL || '/api/v1').replace(/\/$/, '');
+      const res = await fetch(`${apiBase}/settings`, { cache: 'no-store' });
+      if (!res.ok) return;
+      const json = await res.json().catch(() => ({}));
+      const s = json?.data ?? json?.result ?? {};
+      const rawMode = s.maintenanceMode ?? s.maintenance_mode ?? s.maintenance_mode_enabled;
+      const active =
+        rawMode === true ||
+        String(rawMode || '').trim().toLowerCase() === 'true' ||
+        String(rawMode || '').trim() === '1';
+      const message =
+        String(s.maintenanceMessage || s.maintenance_message || '').trim() ||
+        'We are currently performing scheduled maintenance to improve your experience. Please check back shortly.';
+      const appName = String(s.appName || s.appShortName || 'MaxxPixels').trim();
+      const logoUrl = String(s.darkLogoUrl || s.logoUrl || '').trim();
+      setMaintenanceState({ active, message, appName, logoUrl });
+    } catch {
+      // Ignore network errors on settings check
+    } finally {
+      setCheckingMaintenance(false);
+    }
+  };
 
   useEffect(() => {
     setAuthReady(true);
+    checkMaintenanceMode();
   }, []);
 
   const isPublicAuthPage = PUBLIC_AUTH_PREFIXES.some((p) => pathname?.startsWith(p));
@@ -74,6 +113,39 @@ export function ConditionalChrome({ children }: { children: React.ReactNode }) {
       }
     } catch {}
   }, [pathname]);
+
+  if (maintenanceState.active) {
+    return (
+      <div className="min-h-screen bg-[#08080c] text-white flex items-center justify-center p-6">
+        <div className="max-w-lg w-full rounded-2xl border border-amber-500/30 bg-[#12121a] p-8 text-center space-y-5 shadow-2xl">
+          {maintenanceState.logoUrl ? (
+            <img
+              src={maintenanceState.logoUrl}
+              alt={maintenanceState.appName}
+              className="h-12 mx-auto object-contain"
+            />
+          ) : (
+            <div className="text-xl font-extrabold tracking-tight text-white">
+              {maintenanceState.appName}
+            </div>
+          )}
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs font-bold uppercase tracking-wider">
+            Scheduled Maintenance
+          </div>
+          <h1 className="text-2xl font-bold text-white">We&apos;ll Be Right Back</h1>
+          <p className="text-sm text-zinc-300 leading-relaxed">{maintenanceState.message}</p>
+          <button
+            type="button"
+            onClick={checkMaintenanceMode}
+            disabled={checkingMaintenance}
+            className="inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-semibold transition cursor-pointer"
+          >
+            {checkingMaintenance ? 'Checking Status...' : 'Check Status Again'}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const bare =
     pathname?.endsWith('/watch') ||

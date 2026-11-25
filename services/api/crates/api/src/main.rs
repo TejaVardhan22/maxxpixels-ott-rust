@@ -7,6 +7,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 use maxx_core::{AppConfig, AppState, DatabaseManager, MigrationRunner, RedisManager};
 
 mod health;
+mod maintenance;
 mod router;
 
 use router::build_app_router;

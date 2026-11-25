@@ -1,5 +1,5 @@
 use axum::{
-    middleware::from_fn,
+    middleware::{from_fn, from_fn_with_state},
     routing::get,
     Router,
 };
@@ -27,6 +27,7 @@ use maxx_module_users::{admin_users_routes, user_profile_routes, UsersService};
 use maxx_module_watch_history::{watch_routes, watchlist_routes, WatchHistoryService};
 
 use crate::health::{health_handler, metrics_handler, ping_handler};
+use crate::maintenance::maintenance_mode_middleware;
 
 pub fn build_app_router(state: AppState) -> Router {
     let cors = build_cors_layer(&state.config.cors_allowed_origins);
@@ -138,6 +139,7 @@ pub fn build_app_router(state: AppState) -> Router {
         // Module 11: GraphQL (NestJS parity endpoint)
         .merge(graphql_routes())
         // Apply global middlewares
+        .layer(from_fn_with_state(state.clone(), maintenance_mode_middleware))
         .layer(from_fn(response_envelope_middleware))
         .layer(TraceLayer::new_for_http())
         .layer(request_id)
