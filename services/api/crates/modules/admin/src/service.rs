@@ -14,6 +14,7 @@ use std::time::Duration;
 type AppResult<T> = Result<T, AppError>;
 
 const PUBLIC_SETTINGS_CACHE_KEY: &str = "settings:public:v1";
+const MAINTENANCE_CACHE_KEY: &str = "maxx:maintenance_status:v1";
 const PUBLIC_SETTINGS_CACHE_TTL_SECS: u64 = 60;
 
 fn http_client() -> &'static reqwest::Client {
@@ -56,32 +57,12 @@ fn mask_secret_value(v: &str) -> String {
 
 fn infer_setting_group(key: &str) -> &'static str {
     let k = key.to_lowercase();
-    if k.contains("bunny") || k.contains("s3") || k.contains("storage") || k.contains("cdn") {
-        "STORAGE"
-    } else if k.contains("razorpay")
-        || k.contains("stripe")
-        || k.contains("payment")
-        || k.contains("currency")
-        || k.contains("renewal")
-    {
+    if k.contains("currency") || k.contains("payment") {
         "PAYMENTS"
-    } else if k.contains("smtp")
-        || k.contains("msg91")
-        || k.contains("sms")
-        || k.contains("fcm")
-        || k.contains("push")
-    {
-        "NOTIFICATIONS"
-    } else if k.contains("admob") || k.contains("vast") || k.contains("inmobi") {
+    } else if k.contains("admob") {
         "ADMOB"
-    } else if k.contains("maintenance") || k.contains("feature") {
+    } else if k.contains("maintenance") {
         "MAINTENANCE"
-    } else if k.contains("player") || k.contains("watermark") {
-        "PLAYER"
-    } else if k.contains("device") || k.contains("concurrent") || k.contains("screen_recording") || k.contains("screenrecording") {
-        "RESTRICTIONS"
-    } else if k.contains("apk") || k.contains("game") {
-        "GAMES_APK"
     } else {
         "BRANDING"
     }
@@ -151,45 +132,12 @@ impl AdminService {
             .unwrap_or_default();
 
         let mut map = Map::new();
-        map.insert("APP_NAME".into(), json!("MaxxPixels OTT"));
-        map.insert("app_name".into(), json!("MaxxPixels OTT"));
-        map.insert("appName".into(), json!("MaxxPixels OTT"));
-        map.insert("platform_name".into(), json!("MaxxPixels OTT"));
-        map.insert("app_short_name".into(), json!("MaxxPixels"));
-        map.insert("appShortName".into(), json!("MaxxPixels"));
-        map.insert("logo_url".into(), json!("assets/logo.png"));
-        map.insert("logoUrl".into(), json!("assets/logo.png"));
-        map.insert("dark_logo_url".into(), json!("assets/logo.png"));
-        map.insert("darkLogoUrl".into(), json!("assets/logo.png"));
-        map.insert("DEFAULT_CURRENCY".into(), json!("INR"));
         map.insert("default_currency".into(), json!("INR"));
         map.insert("defaultCurrency".into(), json!("INR"));
-        map.insert("DEFAULT_LANGUAGE".into(), json!("hi"));
-        map.insert("default_language".into(), json!("hi"));
-        map.insert("defaultLanguage".into(), json!("hi"));
         map.insert("admob_enabled".into(), json!("false"));
         map.insert("admobEnabled".into(), json!("false"));
         map.insert("maintenance_mode".into(), json!("false"));
         map.insert("maintenanceMode".into(), json!("false"));
-
-        // Non-secret runtime infrastructure config sourced from backend env (DB settings below can override)
-        let public_base_url = std::env::var("PUBLIC_BASE_URL").unwrap_or_default();
-        if !public_base_url.is_empty() {
-            map.insert("publicBaseUrl".into(), json!(public_base_url));
-            map.insert("public_base_url".into(), json!(public_base_url));
-        }
-        if !state.config.bunny_stream_library_id.is_empty() {
-            map.insert("bunnyStreamLibraryId".into(), json!(state.config.bunny_stream_library_id));
-            map.insert("bunny_stream_library_id".into(), json!(state.config.bunny_stream_library_id));
-        }
-        if !state.config.bunny_stream_cdn_hostname.is_empty() {
-            map.insert("bunnyStreamCdnHostname".into(), json!(state.config.bunny_stream_cdn_hostname));
-            map.insert("bunny_stream_cdn_hostname".into(), json!(state.config.bunny_stream_cdn_hostname));
-        }
-        if !state.config.bunny_storage_zone_name.is_empty() {
-            map.insert("bunnyStorageZoneName".into(), json!(state.config.bunny_storage_zone_name));
-            map.insert("bunny_storage_zone_name".into(), json!(state.config.bunny_storage_zone_name));
-        }
 
         for r in rows {
             let secret = r.is_secret.unwrap_or(false) || is_secret_key(&r.setting_key);
@@ -225,31 +173,6 @@ impl AdminService {
         let rows = q.all(&state.db).await?;
         let mut items = Vec::with_capacity(rows.len());
         let mut map = Map::new();
-
-        // Non-secret runtime env fallbacks so Admin Settings reflects live server config dynamically (DB rows below override)
-        let env_fallbacks: [(&str, Option<String>); 10] = [
-            ("publicBaseUrl", std::env::var("PUBLIC_BASE_URL").ok()),
-            ("bunnyStreamLibraryId", Some(state.config.bunny_stream_library_id.clone())),
-            ("bunnyStreamCdnHostname", Some(state.config.bunny_stream_cdn_hostname.clone())),
-            ("bunnyStorageZoneName", Some(state.config.bunny_storage_zone_name.clone())),
-            ("bunnyCdnHostname", std::env::var("BUNNY_PULL_ZONE_DOMAIN").ok()),
-            ("bunnyStorageRegion", std::env::var("BUNNY_STORAGE_REGION").ok()),
-            ("razorpayKeyId", Some(state.config.razorpay_key_id.clone())),
-            ("smsProvider", std::env::var("SMS_PROVIDER").ok()),
-            ("msg91TemplateId", std::env::var("MSG91_TEMPLATE_ID").ok()),
-            ("fcmProjectId", std::env::var("FCM_PROJECT_ID").ok()),
-        ];
-        for (key, val_opt) in env_fallbacks {
-            if let Some(val) = val_opt.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
-                map.entry(key.to_string()).or_insert_with(|| json!(val));
-            }
-        }
-        if let Ok(val) = std::env::var("EMAIL_FROM") {
-            let trimmed = val.trim();
-            if !trimmed.is_empty() {
-                map.entry("smtpFromEmail".to_string()).or_insert_with(|| json!(trimmed));
-            }
-        }
 
         for r in rows {
             let secret = r.is_secret.unwrap_or(false) || is_secret_key(&r.setting_key);
@@ -401,6 +324,7 @@ impl AdminService {
             .await;
 
         let _ = state.redis.del(PUBLIC_SETTINGS_CACHE_KEY).await;
+        let _ = state.redis.del(MAINTENANCE_CACHE_KEY).await;
         Ok(json!({ "deleted": true, "settingKey": key_name }))
     }
 
@@ -563,6 +487,7 @@ impl AdminService {
                 .await;
             // Invalidate cached public settings
             let _ = state.redis.del(PUBLIC_SETTINGS_CACHE_KEY).await;
+        let _ = state.redis.del(MAINTENANCE_CACHE_KEY).await;
         }
 
         Ok(json!({ "updated": updated_count }))

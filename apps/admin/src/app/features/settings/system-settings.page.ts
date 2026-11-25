@@ -50,7 +50,7 @@ export interface AuditHistoryRecord {
         <div>
           <span class="category-tag"><mat-icon>settings</mat-icon> PLATFORM INFRASTRUCTURE & CONFIGURATION</span>
           <h1>System Settings & Central Control Studio</h1>
-          <p>Manage branding, currency, AdMob, maintenance mode, video player, and audit rollback (infrastructure secrets like Bunny, Razorpay, MSG91 &amp; Email are managed via server .env; device/stream limits are managed per Subscription Plan)</p>
+          <p>Manage platform branding, currency, Google AdMob, Maintenance Mode, and configuration audit rollback</p>
         </div>
         <div class="header-actions">
           <span *ngIf="settingsForm.dirty" class="unsaved-badge">
@@ -107,7 +107,7 @@ export interface AuditHistoryRecord {
       <!-- 3. SEARCH & QUICK FILTER BAR -->
       <div class="search-filter-box">
         <mat-icon>search</mat-icon>
-        <input type="text" [(ngModel)]="searchQuery" placeholder="Search settings (e.g. branding, currency, admob, player, watermark, maintenance, audit)..." (input)="onSearchChange()">
+        <input type="text" [(ngModel)]="searchQuery" placeholder="Search settings (e.g. branding, currency, admob, maintenance, audit)..." (input)="onSearchChange()">
         <button *ngIf="searchQuery" mat-icon-button (click)="searchQuery = ''; onSearchChange()"><mat-icon>close</mat-icon></button>
       </div>
 
@@ -120,13 +120,10 @@ export interface AuditHistoryRecord {
           <mat-icon>currency_exchange</mat-icon> Currency & Billing
         </button>
         <button class="tab-btn" [class.active]="activeTab === 'ADMOB'" (click)="activeTab = 'ADMOB'">
-          <mat-icon>monetization_on</mat-icon> Google AdMob & Ads
+          <mat-icon>monetization_on</mat-icon> Google AdMob
         </button>
         <button class="tab-btn" [class.active]="activeTab === 'MAINTENANCE'" (click)="activeTab = 'MAINTENANCE'">
-          <mat-icon>construction</mat-icon> Maintenance & Flags
-        </button>
-        <button class="tab-btn" [class.active]="activeTab === 'PLAYER'" (click)="activeTab = 'PLAYER'">
-          <mat-icon>play_circle</mat-icon> Video Player
+          <mat-icon>construction</mat-icon> Maintenance Mode
         </button>
         <button class="tab-btn" [class.active]="activeTab === 'HISTORY'" (click)="activeTab = 'HISTORY'; loadHistory()">
           <mat-icon>history</mat-icon> Audit & Rollback
@@ -329,14 +326,14 @@ export interface AuditHistoryRecord {
         </div>
       </div>
 
-      <!-- TAB 5: GOOGLE ADMOB & VAST -->
+      <!-- TAB 3: GOOGLE ADMOB -->
       <div *ngIf="activeTab === 'ADMOB'" class="tab-content">
         <div class="form-card">
           <div class="card-header">
             <div class="header-icon-box gold"><mat-icon>monetization_on</mat-icon></div>
             <div>
-              <h3>Google AdMob & Video Advertising (VAST)</h3>
-              <p>Configure mobile in-app banner, interstitial, rewarded ads, and video stream VAST tags</p>
+              <h3>Google AdMob (Mobile App)</h3>
+              <p>Remotely control mobile in-app AdMob status, test mode, and Ad Unit IDs without rebuilding the APK</p>
             </div>
           </div>
 
@@ -364,15 +361,6 @@ export interface AuditHistoryRecord {
             </div>
 
             <div class="form-row">
-              <div class="full-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Google AdMob App ID</mat-label>
-                  <input matInput formControlName="admobAppId" placeholder="ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX">
-                </mat-form-field>
-              </div>
-            </div>
-
-            <div class="form-row">
               <div class="half-width">
                 <mat-form-field appearance="outline" class="full-width custom-field">
                   <mat-label>Banner Ad Unit ID</mat-label>
@@ -391,37 +379,30 @@ export interface AuditHistoryRecord {
               <div class="half-width">
                 <mat-form-field appearance="outline" class="full-width custom-field">
                   <mat-label>Rewarded Video Ad Unit ID</mat-label>
-                  <input matInput formControlName="admobRewardedId">
-                </mat-form-field>
-              </div>
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>VAST 3.0 Ad Tag XML Endpoint</mat-label>
-                  <input matInput formControlName="vastAdTagUrl" placeholder="/api/v1/ads/vast.xml">
+                  <input matInput formControlName="admobRewardedId" placeholder="ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX">
                 </mat-form-field>
               </div>
             </div>
 
             <button mat-raised-button class="full-width submit-btn" type="submit" [disabled]="isSaving">
-              <mat-icon>save</mat-icon> Save AdMob & Advertising Settings
+              <mat-icon>save</mat-icon> Save AdMob Settings
             </button>
           </form>
         </div>
       </div>
 
-      <!-- TAB 6: MAINTENANCE & FEATURE FLAGS -->
+      <!-- TAB 4: MAINTENANCE MODE -->
       <div *ngIf="activeTab === 'MAINTENANCE'" class="tab-content">
         <div class="form-card">
           <div class="card-header">
             <div class="header-icon-box"><mat-icon>construction</mat-icon></div>
             <div>
-              <h3>Application Maintenance Mode & Feature Flags</h3>
-              <p>Instantly put the platform into maintenance mode and toggle client features across Web, Android & TV</p>
+              <h3>Platform Maintenance Mode</h3>
+              <p>Instantly put API, Web, and Mobile apps into scheduled maintenance while keeping Admin Panel accessible</p>
             </div>
           </div>
 
           <form [formGroup]="settingsForm" (ngSubmit)="onSaveSettings()" class="settings-form">
-            <!-- Maintenance Mode Toggle -->
             <div class="toggles-card" style="border: 1px solid rgba(239, 68, 68, 0.3); background: rgba(239, 68, 68, 0.05);">
               <h4 style="color: #ef4444; display: flex; align-items: center; gap: 8px;">
                 <mat-icon>warning</mat-icon> Platform Maintenance Mode
@@ -429,7 +410,7 @@ export interface AuditHistoryRecord {
               <div class="toggle-row">
                 <div>
                   <span class="t-title">Enable Maintenance Mode</span>
-                  <span class="t-desc">When active, clients receive HTTP 503 and custom notice. Admins can still log in and preview.</span>
+                  <span class="t-desc">When active, Web &amp; Mobile show the maintenance screen and non-admin API routes return HTTP 503. Admins can still log in and manage the console.</span>
                 </div>
                 <mat-slide-toggle formControlName="maintenanceMode" color="warn"></mat-slide-toggle>
               </div>
@@ -439,129 +420,19 @@ export interface AuditHistoryRecord {
               <div class="full-width">
                 <mat-form-field appearance="outline" class="full-width custom-field">
                   <mat-label>Custom Maintenance Message for End Users</mat-label>
-                  <textarea matInput formControlName="maintenanceMessage" rows="2"></textarea>
+                  <textarea matInput formControlName="maintenanceMessage" rows="3" placeholder="We are currently performing scheduled maintenance. Please check back shortly."></textarea>
                 </mat-form-field>
               </div>
             </div>
 
-            <div class="section-title"><mat-icon>flag</mat-icon><span>Cross-Platform Client Feature Flags</span></div>
-            <div class="toggles-card">
-              <div class="toggle-row">
-                <div>
-                  <span class="t-title">Offline Video Downloads</span>
-                  <span class="t-desc">Permit encrypted offline downloads in Mobile App</span>
-                </div>
-                <mat-slide-toggle formControlName="featureDownloadsEnabled" color="primary"></mat-slide-toggle>
-              </div>
-
-              <div class="toggle-row">
-                <div>
-                  <span class="t-title">Picture-in-Picture (PiP) & Background Playback</span>
-                  <span class="t-desc">Allow floating player widget on mobile devices</span>
-                </div>
-                <mat-slide-toggle formControlName="featurePipEnabled" color="primary"></mat-slide-toggle>
-              </div>
-
-              <div class="toggle-row">
-                <div>
-                  <span class="t-title">Smart TV Login Code</span>
-                  <span class="t-desc">Allow Android TV users to link account via 6-digit PIN code</span>
-                </div>
-                <mat-slide-toggle formControlName="featureTvLoginEnabled" color="primary"></mat-slide-toggle>
-              </div>
-
-              <div class="toggle-row">
-                <div>
-                  <span class="t-title">Kids Safe Profiles</span>
-                  <span class="t-desc">Enable child-restricted profile mode with curated catalog</span>
-                </div>
-                <mat-slide-toggle formControlName="featureKidProfilesEnabled" color="primary"></mat-slide-toggle>
-              </div>
-
-              <div class="toggle-row">
-                <div>
-                  <span class="t-title">PPV / Video Rentals (TVOD)</span>
-                  <span class="t-desc">Allow users to rent individual movie titles without full subscription</span>
-                </div>
-                <mat-slide-toggle formControlName="featureRentalsEnabled" color="primary"></mat-slide-toggle>
-              </div>
-
-              <div class="toggle-row">
-                <div>
-                  <span class="t-title">Interactive Games Catalog</span>
-                  <span class="t-desc">Show HTML5 / APK games tab in Mobile and Web app</span>
-                </div>
-                <mat-slide-toggle formControlName="featureGamesEnabled" color="primary"></mat-slide-toggle>
-              </div>
-            </div>
-
             <button mat-raised-button class="full-width submit-btn" type="submit" [disabled]="isSaving">
-              <mat-icon>save</mat-icon> Save Maintenance & Feature Flags
+              <mat-icon>save</mat-icon> Save Maintenance Settings
             </button>
           </form>
         </div>
       </div>
 
-      <!-- TAB 7: VIDEO PLAYER & PLAYBACK -->
-      <div *ngIf="activeTab === 'PLAYER'" class="tab-content">
-        <div class="form-card">
-          <div class="card-header">
-            <div class="header-icon-box blue"><mat-icon>play_circle</mat-icon></div>
-            <div>
-              <h3>Video Player & Playback Experience</h3>
-              <p>Configure autoplay, dynamic anti-piracy watermarking, buffer limits, and default streaming resolutions</p>
-            </div>
-          </div>
-
-          <form [formGroup]="settingsForm" (ngSubmit)="onSaveSettings()" class="settings-form">
-            <div class="section-title"><mat-icon>high_quality</mat-icon><span>Stream Quality & Playback Defaults</span></div>
-            <div class="form-row">
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Default Stream Resolution</mat-label>
-                  <mat-select formControlName="playerDefaultQuality" panelClass="custom-select-panel">
-                    <mat-option value="AUTO">Auto (Adaptive Bitrate - ABR)</mat-option>
-                    <mat-option value="1080p">1080p Full HD</mat-option>
-                    <mat-option value="720p">720p HD</mat-option>
-                    <mat-option value="480p">480p SD (Data Saver)</mat-option>
-                    <mat-option value="4K">4K Ultra HD (Premium)</mat-option>
-                  </mat-select>
-                </mat-form-field>
-              </div>
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Watermark Overlay Text</mat-label>
-                  <input matInput formControlName="playerWatermarkText" placeholder="MaxxPixels OTT">
-                </mat-form-field>
-              </div>
-            </div>
-
-            <div class="toggles-card">
-              <div class="toggle-row">
-                <div>
-                  <span class="t-title">Autoplay Next Episode</span>
-                  <span class="t-desc">Automatically cue up and start the next episode in a series</span>
-                </div>
-                <mat-slide-toggle formControlName="playerAutoplay" color="primary"></mat-slide-toggle>
-              </div>
-
-              <div class="toggle-row">
-                <div>
-                  <span class="t-title">Dynamic Anti-Piracy Watermark</span>
-                  <span class="t-desc">Render floating watermark over video player to deter screen recording</span>
-                </div>
-                <mat-slide-toggle formControlName="playerWatermarkEnabled" color="primary"></mat-slide-toggle>
-              </div>
-            </div>
-
-            <button mat-raised-button class="full-width submit-btn" type="submit" [disabled]="isSaving">
-              <mat-icon>save</mat-icon> Save Player Configuration
-            </button>
-          </form>
-        </div>
-      </div>
-
-      <!-- TAB 6: CONFIGURATION AUDIT & ROLLBACK -->
+      <!-- TAB 5: CONFIGURATION AUDIT & ROLLBACK -->
       <div *ngIf="activeTab === 'HISTORY'" class="tab-content">
         <div class="form-card">
           <div class="card-header">
@@ -922,65 +793,38 @@ export class SystemSettingsPage implements OnInit {
   historyRecords: AuditHistoryRecord[] = [];
 
   settingsForm = this.fb.group({
-    // All values are populated dynamically from GET /api/v1/admin/settings
+    // Branding & Identity (loaded dynamically from GET /api/v1/admin/settings)
     appName: ['', [Validators.required]],
     appShortName: ['', [Validators.required, Validators.maxLength(30)]],
     companyName: ['', [Validators.required]],
     websiteUrl: ['', [Validators.required]],
     logoUrl: ['', [Validators.required]],
     darkLogoUrl: [''],
-    faviconUrl: [''],
     supportEmail: ['', [Validators.required]],
     supportPhone: ['', [Validators.required]],
-    supportWhatsapp: [''],
-    supportUrl: ['', [Validators.required]],
     privacyPolicyUrl: ['', [Validators.required]],
     termsUrl: ['', [Validators.required]],
-    companyAddress: [''],
-    defaultTimezone: ['Asia/Kolkata', [Validators.required]],
     seoTitle: ['', [Validators.required, Validators.maxLength(70)]],
     seoDescription: ['', [Validators.required, Validators.maxLength(170)]],
     androidAppUrl: [''],
-    iosAppUrl: [''],
     facebookUrl: [''],
     instagramUrl: [''],
     twitterUrl: [''],
     youtubeUrl: [''],
-    cdnBaseUrl: [''],
-    defaultLanguage: ['en', [Validators.required]],
-    defaultRegion: ['GLOBAL', [Validators.required]],
 
-    // Currency & Billing (payment gateway secrets are managed via server .env)
+    // Currency & Billing
     defaultCurrency: ['INR', [Validators.required]],
-    autoRetryFailedRenewals: [false],
 
-    // Ads (populated dynamically from backend settings)
+    // Google AdMob (remotely read by Mobile App)
     admobEnabled: ['false', [Validators.required]],
     admobTestMode: ['false'],
-    admobAppId: [''],
     admobBannerId: [''],
     admobInterstitialId: [''],
     admobRewardedId: [''],
-    admobAppOpenId: [''],
-    vastAdTagUrl: [''],
 
-    // Maintenance & Feature Flags
+    // Maintenance Mode (wired in API 503 middleware, Web & Mobile)
     maintenanceMode: [false],
-    maintenanceMessage: [''],
-    featureDownloadsEnabled: [false],
-    featureWatchPartyEnabled: [false],
-    featurePipEnabled: [false],
-    featureCastingEnabled: [false],
-    featureTvLoginEnabled: [false],
-    featureKidProfilesEnabled: [false],
-    featureRentalsEnabled: [false],
-    featureGamesEnabled: [false],
-
-    // Player
-    playerAutoplay: [false],
-    playerDefaultQuality: ['1080p'],
-    playerWatermarkEnabled: [false],
-    playerWatermarkText: ['']
+    maintenanceMessage: ['']
   });
 
   ngOnInit(): void {
@@ -988,18 +832,7 @@ export class SystemSettingsPage implements OnInit {
   }
 
   private readonly booleanControlKeys = new Set<string>([
-    'autoRetryFailedRenewals',
     'maintenanceMode',
-    'featureDownloadsEnabled',
-    'featureWatchPartyEnabled',
-    'featurePipEnabled',
-    'featureCastingEnabled',
-    'featureTvLoginEnabled',
-    'featureKidProfilesEnabled',
-    'featureRentalsEnabled',
-    'featureGamesEnabled',
-    'playerAutoplay',
-    'playerWatermarkEnabled',
   ]);
 
   private coerceSettingsPayload(raw: Record<string, any>): Record<string, any> {
@@ -1047,7 +880,7 @@ export class SystemSettingsPage implements OnInit {
     });
   }
 
-  onBrandAssetUploaded(controlName: 'logoUrl' | 'darkLogoUrl' | 'faviconUrl', url: string): void {
+  onBrandAssetUploaded(controlName: 'logoUrl' | 'darkLogoUrl', url: string): void {
     this.settingsForm.get(controlName)?.setValue(url);
     this.settingsForm.get(controlName)?.markAsDirty();
   }
@@ -1060,12 +893,10 @@ export class SystemSettingsPage implements OnInit {
       this.activeTab = 'BRANDING';
     } else if (q.includes('currency') || q.includes('billing') || q.includes('pay')) {
       this.activeTab = 'PAYMENTS';
-    } else if (q.includes('ad') || q.includes('admob') || q.includes('vast') || q.includes('banner')) {
+    } else if (q.includes('ad') || q.includes('admob') || q.includes('banner')) {
       this.activeTab = 'ADMOB';
-    } else if (q.includes('maint') || q.includes('flag') || q.includes('download') || q.includes('casting')) {
+    } else if (q.includes('maint')) {
       this.activeTab = 'MAINTENANCE';
-    } else if (q.includes('player') || q.includes('watermark') || q.includes('quality') || q.includes('autoplay')) {
-      this.activeTab = 'PLAYER';
     } else if (q.includes('hist') || q.includes('audit') || q.includes('rollback')) {
       this.activeTab = 'HISTORY';
       this.loadHistory();
