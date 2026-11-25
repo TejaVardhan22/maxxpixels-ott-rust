@@ -144,7 +144,8 @@ impl AdminService {
         }
 
         let rows = system_setting::Entity::find()
-            .order_by_asc(system_setting::Column::SettingKey)
+            .order_by_asc(system_setting::Column::UpdatedAt)
+            .order_by_asc(system_setting::Column::Id)
             .all(&state.db)
             .await
             .unwrap_or_default();
@@ -215,7 +216,9 @@ impl AdminService {
         state: &AppState,
         group: Option<&str>,
     ) -> AppResult<Value> {
-        let mut q = system_setting::Entity::find().order_by_asc(system_setting::Column::SettingKey);
+        let mut q = system_setting::Entity::find()
+            .order_by_asc(system_setting::Column::UpdatedAt)
+            .order_by_asc(system_setting::Column::Id);
         if let Some(g) = group.filter(|s| !s.is_empty()) {
             q = q.filter(system_setting::Column::SettingGroup.eq(g.to_uppercase()));
         }
@@ -223,26 +226,28 @@ impl AdminService {
         let mut items = Vec::with_capacity(rows.len());
         let mut map = Map::new();
 
-        // Populate base defaults for Admin Settings FormGroup (DB rows below override)
-        if let Value::Object(pub_defaults) = Self::get_public_settings(state).await? {
-            for (k, v) in pub_defaults {
-                map.insert(k, v);
-            }
-        }
-
-        // Non-secret runtime env fallbacks so Admin Settings reflects live server config dynamically
-        let env_fallbacks: [(&str, Option<String>); 7] = [
+        // Non-secret runtime env fallbacks so Admin Settings reflects live server config dynamically (DB rows below override)
+        let env_fallbacks: [(&str, Option<String>); 10] = [
+            ("publicBaseUrl", std::env::var("PUBLIC_BASE_URL").ok()),
+            ("bunnyStreamLibraryId", Some(state.config.bunny_stream_library_id.clone())),
+            ("bunnyStreamCdnHostname", Some(state.config.bunny_stream_cdn_hostname.clone())),
+            ("bunnyStorageZoneName", Some(state.config.bunny_storage_zone_name.clone())),
             ("bunnyCdnHostname", std::env::var("BUNNY_PULL_ZONE_DOMAIN").ok()),
             ("bunnyStorageRegion", std::env::var("BUNNY_STORAGE_REGION").ok()),
             ("razorpayKeyId", Some(state.config.razorpay_key_id.clone())),
             ("smsProvider", std::env::var("SMS_PROVIDER").ok()),
             ("msg91TemplateId", std::env::var("MSG91_TEMPLATE_ID").ok()),
             ("fcmProjectId", std::env::var("FCM_PROJECT_ID").ok()),
-            ("smtpFromEmail", std::env::var("EMAIL_FROM").ok()),
         ];
         for (key, val_opt) in env_fallbacks {
             if let Some(val) = val_opt.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
                 map.entry(key.to_string()).or_insert_with(|| json!(val));
+            }
+        }
+        if let Ok(val) = std::env::var("EMAIL_FROM") {
+            let trimmed = val.trim();
+            if !trimmed.is_empty() {
+                map.entry("smtpFromEmail".to_string()).or_insert_with(|| json!(trimmed));
             }
         }
 
@@ -409,17 +414,18 @@ impl AdminService {
             None => return Ok(json!({ "updated": 0 })),
         };
 
-        // Load all existing settings in 1 query (eliminates N*2 round trips)
+        // Load all existing settings in 1 query and group ALL alias rows (e.g. logoUrl, logo_url, LOGO_URL)
+        // so updating a key keeps every legacy/alias row in sync and prevents stale rows from overwriting fresh values.
         let existing_rows = system_setting::Entity::find().all(&state.db).await?;
-        let mut by_key: HashMap<String, system_setting::Model> =
-            HashMap::with_capacity(existing_rows.len() * 2);
+        let mut by_canonical: HashMap<String, Vec<system_setting::Model>> =
+            HashMap::with_capacity(existing_rows.len());
         for row in existing_rows {
-            let exact = row.setting_key.clone();
-            let lower = exact.to_lowercase();
-            let upper = camel_to_screaming_snake(&exact);
-            by_key.insert(exact, row.clone());
-            by_key.entry(lower).or_insert_with(|| row.clone());
-            by_key.entry(upper).or_insert(row);
+            let norm = camel_to_screaming_snake(&row.setting_key);
+            by_canonical.entry(norm.clone()).or_default().push(row.clone());
+            // Keep APP_LOGO_URL in sync when logoUrl / LOGO_URL is saved
+            if norm == "APP_LOGO_URL" {
+                by_canonical.entry("LOGO_URL".to_string()).or_default().push(row);
+            }
         }
 
         let now: chrono::DateTime<chrono::FixedOffset> = Utc::now().into();
@@ -429,6 +435,7 @@ impl AdminService {
         let mut before_snapshot = Map::new();
         let mut after_snapshot = Map::new();
         let mut processed_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut updated_row_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
 
         for (k, v) in obj {
             if k == "items" || v.is_null() {
@@ -449,65 +456,62 @@ impl AdminService {
             } else {
                 k.to_uppercase()
             };
-            let lower_snake = snake_key.to_lowercase();
-
-            let existing_opt = by_key
-                .get(k)
-                .or_else(|| by_key.get(&snake_key))
-                .or_else(|| by_key.get(&lower_snake))
-                .or_else(|| by_key.get(&k.to_lowercase()))
-                .cloned();
-
-            let canonical_target = existing_opt
-                .as_ref()
-                .map(|e| e.setting_key.clone())
-                .unwrap_or_else(|| snake_key.clone());
 
             // Avoid duplicate updates/inserts for alias keys in the same payload
-            if !processed_keys.insert(canonical_target.to_lowercase()) {
+            if !processed_keys.insert(snake_key.clone()) {
                 continue;
             }
 
-            let secret = existing_opt
-                .as_ref()
-                .and_then(|e| e.is_secret)
-                .unwrap_or(false)
+            let matching_rows = by_canonical.get(&snake_key).cloned().unwrap_or_default();
+
+            let secret = matching_rows
+                .iter()
+                .any(|e| e.is_secret.unwrap_or(false))
                 || is_secret_key(k)
                 || is_secret_key(&snake_key);
 
-            if let Some(existing) = existing_opt {
-                let prev = existing.setting_value.clone().unwrap_or_default();
-                if prev == val_str {
-                    continue; // Skip unchanged keys
-                }
-                let canonical_key = existing.setting_key.clone();
-                let group = existing
-                    .setting_group
-                    .clone()
-                    .unwrap_or_else(|| infer_setting_group(&canonical_key).to_string());
-                let category = existing
-                    .category
-                    .clone()
-                    .unwrap_or_else(|| group.clone());
+            if !matching_rows.is_empty() {
+                let mut any_changed = false;
+                for existing in matching_rows {
+                    if !updated_row_ids.insert(existing.id) {
+                        continue;
+                    }
+                    let prev = existing.setting_value.clone().unwrap_or_default();
+                    if prev == val_str {
+                        continue;
+                    }
+                    let canonical_key = existing.setting_key.clone();
+                    let group = existing
+                        .setting_group
+                        .clone()
+                        .unwrap_or_else(|| infer_setting_group(&canonical_key).to_string());
+                    let category = existing
+                        .category
+                        .clone()
+                        .unwrap_or_else(|| group.clone());
 
-                let mut am: system_setting::ActiveModel = existing.into();
-                am.setting_value = Set(Some(val_str.clone()));
-                am.category = Set(Some(category));
-                am.setting_group = Set(Some(group));
-                am.is_secret = Set(Some(secret));
-                am.is_public = Set(Some(!secret));
-                am.updated_at = Set(now);
-                am.updated_by = Set(Some(updated_by.to_string()));
-                am.update(&txn).await?;
+                    let mut am: system_setting::ActiveModel = existing.into();
+                    am.setting_value = Set(Some(val_str.clone()));
+                    am.category = Set(Some(category));
+                    am.setting_group = Set(Some(group));
+                    am.is_secret = Set(Some(secret));
+                    am.is_public = Set(Some(!secret));
+                    am.updated_at = Set(now);
+                    am.updated_by = Set(Some(updated_by.to_string()));
+                    am.update(&txn).await?;
 
-                if secret {
-                    diff_lines.push(format!("{}: [REDACTED] -> [UPDATED]", canonical_key));
-                } else {
-                    diff_lines.push(format!("{}: '{}' -> '{}'", canonical_key, prev, val_str));
-                    before_snapshot.insert(canonical_key.clone(), json!(prev));
-                    after_snapshot.insert(canonical_key, json!(val_str));
+                    if !any_changed {
+                        if secret {
+                            diff_lines.push(format!("{}: [REDACTED] -> [UPDATED]", canonical_key));
+                        } else {
+                            diff_lines.push(format!("{}: '{}' -> '{}'", canonical_key, prev, val_str));
+                            before_snapshot.insert(canonical_key.clone(), json!(prev));
+                            after_snapshot.insert(canonical_key, json!(val_str));
+                        }
+                        any_changed = true;
+                        updated_count += 1;
+                    }
                 }
-                updated_count += 1;
             } else {
                 // Skip inserting empty brand-new keys that were never configured
                 if val_str.is_empty() {
