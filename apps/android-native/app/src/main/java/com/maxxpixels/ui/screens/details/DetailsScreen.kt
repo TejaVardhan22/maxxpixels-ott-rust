@@ -165,7 +165,7 @@ fun DetailsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaxxColors.CinemaBlack)
+                .background(MaxxColors.AmbientScreenBackground)
                 .statusBarsPadding()
                 .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -366,14 +366,14 @@ fun DetailsScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaxxColors.CinemaBlack)
+            .background(MaxxColors.AmbientScreenBackground)
             .windowInsetsPadding(
                 WindowInsets.statusBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top)
             )
             .navigationBarsPadding(),
         contentPadding = PaddingValues(top = 12.dp, bottom = 36.dp)
     ) {
-        // 1. Clean Top Cinema Hero Banner (with top margin, no fake player controls, smooth bottom fade)
+        // 1. Clean Top Cinema Hero Banner (with top margin, burgundy-to-black seamless inline fade)
         item {
             Box(
                 modifier = Modifier
@@ -389,18 +389,31 @@ fun DetailsScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Smooth inline bottom fade blending seamlessly into the details section (no card border)
+                // Soft top burgundy blend from the top margin into the banner
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(170.dp)
+                        .height(54.dp)
+                        .align(Alignment.TopCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color(0x99351924), Color.Transparent)
+                            )
+                        )
+                )
+
+                // Smooth inline bottom fade matching AmbientScreenBackground burgundy-plum mid-tone
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(175.dp)
                         .align(Alignment.BottomCenter)
                         .background(
                             Brush.verticalGradient(
                                 listOf(
                                     Color.Transparent,
-                                    Color(0x990A090E),
-                                    MaxxColors.CinemaBlack
+                                    Color(0x991A1219),
+                                    Color(0xFF1A1219)
                                 )
                             )
                         )
@@ -448,12 +461,20 @@ fun DetailsScreen(
             }
         }
 
-        // 2. Smooth Inline Details Section (no card border, no drag handle seam)
+        // 2. Smooth Inline Details Section (transparent over continuous burgundy-to-black gradient)
         item {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaxxColors.CinemaBlack)
+                    .background(
+                        Brush.verticalGradient(
+                            colorStops = arrayOf(
+                                0.0f to Color(0xFF1A1219),
+                                0.35f to Color(0xFF0E0C12),
+                                1.0f to MaxxColors.CinemaBlack
+                            )
+                        )
+                    )
                     .padding(top = 4.dp, bottom = 8.dp)
             ) {
                 // Title, Creator Name (if available), Formatted Metadata, Watch Now + 3 Frosted Action Circles, Smart Synopsis
