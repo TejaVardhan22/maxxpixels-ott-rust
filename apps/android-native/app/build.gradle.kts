@@ -1,8 +1,18 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
+}
+
+val keyPropertiesFile = rootProject.file("key.properties")
+val keyProperties = Properties().apply {
+    if (keyPropertiesFile.exists()) {
+        FileInputStream(keyPropertiesFile).use { load(it) }
+    }
 }
 
 android {
@@ -25,13 +35,36 @@ android {
         buildConfigField("String", "WEBSITE_URL", "\"https://maxxpixels.com\"")
     }
 
+    signingConfigs {
+        create("release") {
+            val rawStore = keyProperties.getProperty("storeFile")
+            if (!rawStore.isNullOrBlank()) {
+                val resolved = listOf(file(rawStore), rootProject.file(rawStore))
+                    .firstOrNull { it.exists() }
+                if (resolved != null) {
+                    storeFile = resolved
+                    storePassword = keyProperties.getProperty("storePassword")
+                    keyAlias = keyProperties.getProperty("keyAlias")
+                    keyPassword = keyProperties.getProperty("keyPassword")
+                    enableV1Signing = true
+                    enableV2Signing = true
+                }
+            }
+        }
+    }
+
     buildTypes {
         debug {
             buildConfigField("String", "API_BASE_URL", "\"https://api.maxxpixels.com/api/v1/\"")
         }
         release {
+            val relSign = signingConfigs.findByName("release")
+            if (relSign?.storeFile != null) {
+                signingConfig = relSign
+            }
             isMinifyEnabled = true
             isShrinkResources = true
+            isDebuggable = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

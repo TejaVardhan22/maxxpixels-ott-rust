@@ -1,10 +1,6 @@
 package com.maxxpixels.ui.screens.details
 
-import android.app.DownloadManager
-import android.content.Context
 import android.content.Intent
-import android.net.Uri
-import android.os.Environment
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -72,6 +68,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.maxxpixels.data.local.OfflineMediaStore
 import com.maxxpixels.data.model.CatalogItem
 import com.maxxpixels.data.model.CreatedOrder
 import com.maxxpixels.data.model.EpisodeItem
@@ -82,6 +79,8 @@ import com.maxxpixels.ui.components.ShimmerBox
 import com.maxxpixels.ui.components.bounceClick
 import com.maxxpixels.ui.screens.home.PortraitPosterCard
 import com.maxxpixels.ui.theme.MaxxColors
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 private fun formatMaturityRating(raw: String): String {
@@ -136,10 +135,11 @@ fun DetailsScreen(
     var tvodError by remember { mutableStateOf("") }
     var rentUnlocked by remember { mutableStateOf(false) }
 
-    // Plan-gated Offline Download state (hidden unless user's active plan includes offline downloads)
+    // Plan-gated Secure Private Offline Download state
+    val offlineStore = remember(context) { OfflineMediaStore(context) }
     var canOfflineDownload by remember { mutableStateOf(false) }
     var isDownloading by remember { mutableStateOf(false) }
-    var isDownloaded by remember { mutableStateOf(false) }
+    var isDownloaded by remember(contentId) { mutableStateOf(offlineStore.isDownloaded(contentId)) }
 
     LaunchedEffect(session?.id, session?.hasActiveSubscription, session?.packageName) {
         if (session?.hasActiveSubscription == true) {
@@ -160,34 +160,52 @@ fun DetailsScreen(
     }
 
     fun load() {
-        loading = true
+        loading = item == null
         errorMsg = null
         scope.launch {
             when (val res = repository.getContentDetail(contentId)) {
                 is ApiResult.Success -> {
                     val detail = res.data
                     item = detail
-                    val savedInList = if (session?.isLoggedIn == true) {
-                        runCatching { repository.getWatchlist().any { it.id == contentId } }.getOrDefault(false)
-                    } else false
-                    inWatchlist = detail.isBookmarked || savedInList
+                    inWatchlist = detail.isBookmarked
                     rentUnlocked = detail.isPurchased
-                    detail.seasons.firstOrNull()?.let { s ->
-                        episodes = repository.getSeasonEpisodes(s.id)
+                    // Render main Details UI immediately — fetch watchlist, episodes & related in parallel!
+                    loading = false
+
+                    coroutineScope {
+                        val wlDeferred = async {
+                            if (session?.isLoggedIn == true) {
+                                runCatching { repository.getWatchlist().any { it.id == contentId } }.getOrDefault(false)
+                            } else false
+                        }
+                        val epsDeferred = async {
+                            detail.seasons.firstOrNull()?.let { s ->
+                                runCatching { repository.getSeasonEpisodes(s.id) }.getOrDefault(emptyList())
+                            }.orEmpty()
+                        }
+                        val isKannada = repository.isKannadaItem(detail)
+                        val portalLang = if (isKannada) "kannada" else "all-indian"
+                        val catDeferred = async {
+                            runCatching { repository.getCategoryItems(detail.typeId, portalLang) }
+                                .getOrDefault(emptyList())
+                                .filter { it.id != contentId && repository.matchesLanguagePortal(it, portalLang) }
+                        }
+                        val trendDeferred = async {
+                            runCatching { repository.getTrending() }
+                                .getOrDefault(emptyList())
+                                .filter { it.id != contentId && repository.matchesLanguagePortal(it, portalLang) }
+                        }
+
+                        if (wlDeferred.await()) inWatchlist = true
+                        episodes = epsDeferred.await()
+                        related = (catDeferred.await() + trendDeferred.await()).distinctBy { it.id }.take(15)
                     }
-                    val isKannada = repository.isKannadaItem(detail)
-                    val portalLang = if (isKannada) "kannada" else "all-indian"
-                    val sameCategory = runCatching {
-                        repository.getCategoryItems(detail.typeId, portalLang)
-                    }.getOrDefault(emptyList()).filter { it.id != contentId && repository.matchesLanguagePortal(it, portalLang) }
-                    val trendingFallback = runCatching {
-                        repository.getTrending()
-                    }.getOrDefault(emptyList()).filter { it.id != contentId && repository.matchesLanguagePortal(it, portalLang) }
-                    related = (sameCategory + trendingFallback).distinctBy { it.id }.take(15)
                 }
-                is ApiResult.Error -> errorMsg = res.message
+                is ApiResult.Error -> {
+                    errorMsg = res.message
+                    loading = false
+                }
             }
-            loading = false
         }
     }
 
@@ -598,40 +616,39 @@ fun DetailsScreen(
                                     scope.launch { repository.toggleWatchlist(content.id, content.title, next) }
                                 }
                             )
-                            // Offline Download button — shown ONLY if user's active plan includes offline downloads
+                            // Plan-Gated Private Offline Download button (saves strictly to app-private storage)
                             if (canOfflineDownload) {
                                 FrostedActionCircle(
                                     icon = if (isDownloaded) Icons.Rounded.Check else Icons.Rounded.Download,
                                     tint = if (isDownloaded) MaxxColors.Primary else Color.White,
                                     onClick = {
                                         if (isDownloading) return@FrostedActionCircle
+                                        if (isDownloaded) {
+                                            Toast.makeText(context, "Already saved in My Downloads", Toast.LENGTH_SHORT).show()
+                                            return@FrostedActionCircle
+                                        }
                                         isDownloading = true
+                                        Toast.makeText(context, "Saving ${content.title} securely...", Toast.LENGTH_SHORT).show()
                                         scope.launch {
                                             when (val auth = repository.authorizePlayback(content.id, null)) {
                                                 is ApiResult.Success -> {
                                                     val url = auth.data.streamUrl
-                                                    if (url.startsWith("http", ignoreCase = true)) {
-                                                        runCatching {
-                                                            val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                                                            val safeName = content.title.replace(Regex("[^A-Za-z0-9._-]"), "_").take(40)
-                                                            val ext = if (url.contains(".m3u8", true)) "m3u8" else "mp4"
-                                                            val req = DownloadManager.Request(Uri.parse(url))
-                                                                .setTitle(content.title)
-                                                                .setDescription("Downloading for offline viewing on MaxxPixels")
-                                                                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                                                                .setDestinationInExternalFilesDir(
-                                                                    context,
-                                                                    Environment.DIRECTORY_DOWNLOADS,
-                                                                    "${safeName}_${content.id}.$ext"
-                                                                )
-                                                            dm.enqueue(req)
+                                                    if (url.startsWith("https://", ignoreCase = true)) {
+                                                        val dlRes = offlineStore.downloadToPrivateStorage(
+                                                            contentId = content.id,
+                                                            title = content.title,
+                                                            posterUrl = content.posterUrl.ifBlank { content.landscapeUrl },
+                                                            durationLabel = content.durationLabel,
+                                                            streamUrl = url
+                                                        )
+                                                        dlRes.onSuccess {
                                                             isDownloaded = true
-                                                            Toast.makeText(context, "Downloading ${content.title}...", Toast.LENGTH_SHORT).show()
+                                                            Toast.makeText(context, "${content.title} saved to My Downloads", Toast.LENGTH_SHORT).show()
                                                         }.onFailure { err ->
                                                             Toast.makeText(context, err.message ?: "Download failed", Toast.LENGTH_SHORT).show()
                                                         }
                                                     } else {
-                                                        Toast.makeText(context, "Offline stream not available for this title", Toast.LENGTH_SHORT).show()
+                                                        Toast.makeText(context, "Secure offline stream unavailable", Toast.LENGTH_SHORT).show()
                                                     }
                                                 }
                                                 is ApiResult.Error -> {

@@ -17,6 +17,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -66,12 +67,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.maxxpixels.R
 import com.maxxpixels.ui.theme.MaxxColors
 
 fun Modifier.bounceClick(
@@ -214,39 +218,20 @@ fun NoInternetScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth()
         ) {
-            // Layered Glowing Signal Rings (Amazon/Prime Video inspired offline hero visual)
-            Box(
-                modifier = Modifier.size(136.dp),
-                contentAlignment = Alignment.Center
+            // Amazon-inspired Cinema Dog Offline Illustration
+            Surface(
+                shape = RoundedCornerShape(28.dp),
+                border = BorderStroke(1.5.dp, MaxxColors.Primary.copy(alpha = 0.45f)),
+                shadowElevation = 18.dp,
+                color = Color(0xFF1A1219),
+                modifier = Modifier.size(176.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(136.dp)
-                        .clip(CircleShape)
-                        .background(MaxxColors.Primary.copy(alpha = 0.07f))
-                        .border(1.dp, MaxxColors.Primary.copy(alpha = 0.16f), CircleShape)
+                Image(
+                    painter = painterResource(R.drawable.offline_dog),
+                    contentDescription = "Offline Puppy",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
                 )
-                Box(
-                    modifier = Modifier
-                        .size(98.dp)
-                        .clip(CircleShape)
-                        .background(MaxxColors.Primary.copy(alpha = 0.12f))
-                        .border(1.dp, MaxxColors.Primary.copy(alpha = 0.28f), CircleShape)
-                )
-                Box(
-                    modifier = Modifier
-                        .size(66.dp)
-                        .clip(CircleShape)
-                        .background(MaxxColors.BrandGradient),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.WifiOff,
-                        contentDescription = "No Internet",
-                        tint = MaxxColors.OnPrimaryDark,
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
             }
 
             Spacer(Modifier.height(22.dp))

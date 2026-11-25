@@ -19,6 +19,8 @@ import com.maxxpixels.data.model.PortalBannerItem
 import com.maxxpixels.data.model.SubscriptionPlan
 import com.maxxpixels.data.model.UserSession
 import com.maxxpixels.data.network.MaxxApiService
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -28,6 +30,16 @@ import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import retrofit2.HttpException
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
+
+private data class Tuple6<A, B, C, D, E, F>(
+    val first: A,
+    val second: B,
+    val third: C,
+    val fourth: D,
+    val fifth: E,
+    val sixth: F
+)
 
 sealed class ApiResult<out T> {
     data class Success<T>(val data: T, val fromCache: Boolean = false) : ApiResult<T>()
@@ -38,6 +50,26 @@ class MaxxRepository(
     private val api: MaxxApiService,
     val sessionManager: SessionManager
 ) {
+    private data class CacheEntry<T>(val value: T, val cachedAtMs: Long = System.currentTimeMillis())
+    private val cacheTtlMs = 90_000L
+    private val homeCache = ConcurrentHashMap<String, CacheEntry<HomeData>>()
+    private val detailCache = ConcurrentHashMap<Long, CacheEntry<CatalogItem>>()
+    private var trendingCache: CacheEntry<List<CatalogItem>>? = null
+    private var watchlistCache: CacheEntry<List<CatalogItem>>? = null
+    private var plansCache: CacheEntry<List<SubscriptionPlan>>? = null
+    private var portalBannersCache: CacheEntry<List<PortalBannerItem>>? = null
+
+    private fun <T> CacheEntry<T>?.validOrNull(): T? =
+        if (this != null && (System.currentTimeMillis() - cachedAtMs) < cacheTtlMs) value else null
+
+    fun clearMemoryCaches() {
+        homeCache.clear()
+        detailCache.clear()
+        trendingCache = null
+        watchlistCache = null
+        plansCache = null
+        portalBannersCache = null
+    }
     private fun extractError(e: Throwable): ApiResult.Error {
         if (e is IOException) {
             return ApiResult.Error("No internet connection. Please check your network and try again.", isDisconnected = true)
@@ -227,28 +259,36 @@ class MaxxRepository(
         }
     }
 
-    suspend fun loadHomeCatalog(typeId: Int = 0, language: String? = null): ApiResult<HomeData> {
+    suspend fun loadHomeCatalog(typeId: Int = 0, language: String? = null, forceRefresh: Boolean = false): ApiResult<HomeData> {
+        val cacheKey = "${typeId}_${language.orEmpty().lowercase()}"
+        if (!forceRefresh) {
+            homeCache[cacheKey].validOrNull()?.let { return ApiResult.Success(it) }
+        }
         return try {
             val apiLang = if (language.equals("all-indian", true)) "non-kannada" else language
-            val bannerRes = runCatching {
-                api.getBanners("MOBILE", typeId.takeIf { it > 0 }, apiLang)
-            }.getOrNull()
-            val sectionRes = runCatching {
-                api.getSections(typeId.takeIf { it > 0 }, apiLang)
-            }.getOrNull()
-            val typesRes = runCatching { api.getContentTypes() }.getOrNull()
-            val cwRes = if (sessionManager.getAuthToken() != null) {
-                runCatching { api.getContinueWatching() }.getOrNull()
-            } else null
-
-            val langPoolRes = runCatching {
-                if (apiLang == "non-kannada") {
-                    api.getNonKannadaContent()
-                } else {
-                    api.getContentByLanguage(apiLang?.ifBlank { "kannada" } ?: "kannada")
+            val (bannerRes, sectionRes, typesRes, cwRes, langPoolRes, trendingRes) = coroutineScope {
+                val b = async { runCatching { api.getBanners("MOBILE", typeId.takeIf { it > 0 }, apiLang) }.getOrNull() }
+                val s = async { runCatching { api.getSections(typeId.takeIf { it > 0 }, apiLang) }.getOrNull() }
+                val t = async { runCatching { api.getContentTypes() }.getOrNull() }
+                val c = async {
+                    if (sessionManager.getAuthToken() != null) {
+                        runCatching { api.getContinueWatching() }.getOrNull()
+                    } else null
                 }
-            }.getOrNull()
-            val trendingRes = runCatching { api.getTrending() }.getOrNull()
+                val l = async {
+                    runCatching {
+                        if (apiLang == "non-kannada") {
+                            api.getNonKannadaContent()
+                        } else {
+                            api.getContentByLanguage(apiLang?.ifBlank { "kannada" } ?: "kannada")
+                        }
+                    }.getOrNull()
+                }
+                val tr = async { runCatching { api.getTrending() }.getOrNull() }
+                listOf(b.await(), s.await(), t.await(), c.await(), l.await(), tr.await())
+            }.let { list ->
+                Tuple6(list[0], list[1], list[2], list[3], list[4], list[5])
+            }
 
             // Strict language segregation: NEVER mix Kannada and All-Indian (non-Kannada) content
             val banners = JsonParsers.unwrapArray(bannerRes)
@@ -335,7 +375,9 @@ class MaxxRepository(
                 sessionManager.saveCachedHome(effectiveBanners, fallbackSections)
             }
 
-            ApiResult.Success(HomeData(effectiveBanners, fallbackSections, types, cw, fromCache = false))
+            val resultData = HomeData(effectiveBanners, fallbackSections, types, cw, fromCache = false)
+            homeCache[cacheKey] = CacheEntry(resultData)
+            ApiResult.Success(resultData)
         } catch (e: Throwable) {
             // Serve cached snapshot ONLY when it matches the requested language portal
             val cachedBanners = sessionManager.loadCachedBanners().filter { matchesLanguagePortal(it, language) }
@@ -366,11 +408,15 @@ class MaxxRepository(
     }
 
     // ── Content Details, Search, Episodes & Watchlist ───────────────────────
-    suspend fun getContentDetail(id: Long): ApiResult<CatalogItem> {
+    suspend fun getContentDetail(id: Long, forceRefresh: Boolean = false): ApiResult<CatalogItem> {
+        if (!forceRefresh) {
+            detailCache[id].validOrNull()?.let { return ApiResult.Success(it) }
+        }
         return try {
             val res = api.getContentDetail(id.toString())
             val obj = JsonParsers.unwrapObject(res) ?: return ApiResult.Error("Title not found.")
             val item = JsonParsers.parseCatalogItem(obj)
+            detailCache[id] = CacheEntry(item)
             recordEvent(item.id, item.title, "CONTENT_VIEW", "VIEW")
             ApiResult.Success(item)
         } catch (e: Throwable) {
@@ -407,11 +453,21 @@ class MaxxRepository(
         }
     }
 
-    suspend fun getTrending(): List<CatalogItem> =
-        runCatching { JsonParsers.unwrapArray(api.getTrending()).map(JsonParsers::parseCatalogItem) }.getOrDefault(emptyList())
+    suspend fun getTrending(): List<CatalogItem> {
+        trendingCache.validOrNull()?.let { return it }
+        val fresh = runCatching { JsonParsers.unwrapArray(api.getTrending()).map(JsonParsers::parseCatalogItem) }.getOrDefault(emptyList())
+        if (fresh.isNotEmpty()) trendingCache = CacheEntry(fresh)
+        return fresh
+    }
 
-    suspend fun getWatchlist(): List<CatalogItem> =
-        runCatching { JsonParsers.unwrapArray(api.getWatchlist()).map(JsonParsers::parseCatalogItem) }.getOrDefault(emptyList())
+    suspend fun getWatchlist(forceRefresh: Boolean = false): List<CatalogItem> {
+        if (!forceRefresh) {
+            watchlistCache.validOrNull()?.let { return it }
+        }
+        val fresh = runCatching { JsonParsers.unwrapArray(api.getWatchlist()).map(JsonParsers::parseCatalogItem) }.getOrDefault(emptyList())
+        watchlistCache = CacheEntry(fresh)
+        return fresh
+    }
 
     suspend fun toggleWatchlist(contentId: Long, title: String, add: Boolean): Boolean {
         return try {
@@ -424,6 +480,7 @@ class MaxxRepository(
             } else {
                 api.removeFromWatchlist(contentId)
             }
+            watchlistCache = null
             true
         } catch (_: Exception) {
             false

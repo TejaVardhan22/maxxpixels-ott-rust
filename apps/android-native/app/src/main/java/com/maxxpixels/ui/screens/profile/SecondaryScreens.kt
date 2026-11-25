@@ -67,6 +67,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.maxxpixels.data.local.OfflineDownloadEntry
+import com.maxxpixels.data.local.OfflineMediaStore
 import com.maxxpixels.data.model.CatalogItem
 import com.maxxpixels.data.model.NotificationEntry
 import com.maxxpixels.data.repository.MaxxRepository
@@ -712,13 +714,21 @@ fun CategoryContentScreen(
 }
 
 /**
- * Frosted-Glass MyDownloadsScreen.
+ * Frosted-Glass MyDownloadsScreen (backed by app-private OfflineMediaStore).
  */
 @Composable
 fun MyDownloadsScreen(
     onBack: () -> Unit,
     onExplore: () -> Unit
 ) {
+    val context = LocalContext.current
+    val store = remember(context) { OfflineMediaStore(context) }
+    var downloads by remember { mutableStateOf<List<OfflineDownloadEntry>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        downloads = store.listDownloads()
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -727,49 +737,112 @@ fun MyDownloadsScreen(
             .navigationBarsPadding()
     ) {
         ScreenTopHeader(title = "My Downloads", onBack = onBack)
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Surface(
-                color = Color.White.copy(alpha = 0.06f),
-                shape = RoundedCornerShape(24.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
-                modifier = Modifier.padding(24.dp)
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(28.dp)
+        if (downloads.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Surface(
+                    color = Color.White.copy(alpha = 0.06f),
+                    shape = RoundedCornerShape(24.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+                    modifier = Modifier.padding(24.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(60.dp)
-                            .clip(CircleShape)
-                            .background(Color(0x2660A5FA)),
-                        contentAlignment = Alignment.Center
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(28.dp)
                     ) {
-                        Icon(Icons.Rounded.CloudDownload, null, tint = Color(0xFF60A5FA), modifier = Modifier.size(30.dp))
-                    }
-                    Spacer(Modifier.height(14.dp))
-                    Text("No Downloads Yet", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "Titles you download for offline viewing will appear here.",
-                        color = MaxxColors.TextSecondary,
-                        fontSize = 13.sp,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(Modifier.height(22.dp))
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(999.dp))
-                            .background(MaxxColors.BrandGradient)
-                            .clickable(onClick = onExplore)
-                            .padding(horizontal = 26.dp, vertical = 12.dp)
-                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(60.dp)
+                                .clip(CircleShape)
+                                .background(Color(0x2660A5FA)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.CloudDownload, null, tint = Color(0xFF60A5FA), modifier = Modifier.size(30.dp))
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        Text("No Downloads Yet", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+                        Spacer(Modifier.height(6.dp))
                         Text(
-                            text = "Find Something to Watch",
-                            color = MaxxColors.OnPrimaryDark,
-                            fontSize = 13.5.sp,
-                            fontWeight = FontWeight.ExtraBold
+                            "Titles you save for offline viewing are stored privately inside the app and appear here.",
+                            color = MaxxColors.TextSecondary,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center
                         )
+                        Spacer(Modifier.height(22.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(MaxxColors.BrandGradient)
+                                .clickable(onClick = onExplore)
+                                .padding(horizontal = 26.dp, vertical = 12.dp)
+                        ) {
+                            Text(
+                                text = "Find Something to Watch",
+                                color = MaxxColors.OnPrimaryDark,
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            LazyColumn(
+                contentPadding = PaddingValues(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(downloads, key = { "dl_${it.contentId}" }) { dl ->
+                    val mb = String.format(Locale.US, "%.1f MB", dl.sizeBytes / (1024.0 * 1024.0))
+                    Surface(
+                        color = Color.White.copy(alpha = 0.07f),
+                        shape = RoundedCornerShape(18.dp),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(72.dp)
+                                    .height(48.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaxxColors.SurfaceDark)
+                            ) {
+                                if (dl.posterUrl.isNotBlank()) {
+                                    AsyncImage(
+                                        model = dl.posterUrl,
+                                        contentDescription = dl.title,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(dl.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = listOfNotNull(dl.durationLabel.takeIf { it.isNotBlank() }, mb, "Private Storage").joinToString(" • "),
+                                    color = MaxxColors.TextSecondary,
+                                    fontSize = 11.5.sp
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0x24EF4444))
+                                    .clickable {
+                                        store.deleteDownload(dl.contentId)
+                                        downloads = store.listDownloads()
+                                        Toast.makeText(context, "Removed ${dl.title}", Toast.LENGTH_SHORT).show()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Rounded.DeleteOutline, contentDescription = "Delete", tint = MaxxColors.ErrorSoft, modifier = Modifier.size(18.dp))
+                            }
+                        }
                     }
                 }
             }
