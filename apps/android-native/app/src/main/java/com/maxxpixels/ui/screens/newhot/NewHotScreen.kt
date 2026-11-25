@@ -199,7 +199,7 @@ fun NewHotScreen(
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             val pills = listOf(
-                0 to "Last 15 Days (${past15DaysItems.size})",
+                0 to "Latest (${past15DaysItems.size})",
                 1 to "Upcoming (${upcomingItems.size})"
             )
             pills.forEach { (idx, label) ->
@@ -292,7 +292,7 @@ fun NewHotScreen(
                         }
                         Spacer(Modifier.height(14.dp))
                         Text(
-                            text = if (activeTab == 1) "No upcoming releases yet" else "No releases in the last 15 days",
+                            text = if (activeTab == 1) "No upcoming releases yet" else "No latest releases yet",
                             color = Color.White,
                             fontSize = 16.5.sp,
                             fontWeight = FontWeight.Bold,
