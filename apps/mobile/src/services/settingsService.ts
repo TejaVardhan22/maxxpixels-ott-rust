@@ -36,16 +36,50 @@ export class SettingsService {
       if (cellular !== null) this._cellularData = cellular;
       if (theme !== null) this._playerTheme = theme;
 
-      // Fetch remote system settings from Spring Boot backend
-      try {
-        const remote = await ApiClient.getApi('settings');
-        if (remote && typeof remote === 'object') {
-          this._remoteSettings = remote;
-        }
-      } catch {}
+      // Fetch remote system settings from backend
+      await this.refreshRemoteSettings();
     } catch (e) {
       console.warn('SettingsService.init error:', e);
     }
+  }
+
+  public static async refreshRemoteSettings(): Promise<Record<string, string>> {
+    try {
+      const remote = await ApiClient.getApi('settings');
+      if (remote && typeof remote === 'object') {
+        const data = (remote as any).data ?? (remote as any).result ?? remote;
+        if (data && typeof data === 'object') {
+          this._remoteSettings = data;
+        }
+      }
+    } catch {}
+    return this._remoteSettings;
+  }
+
+  public static getMaintenanceStatus(): {
+    active: boolean;
+    message: string;
+    appName: string;
+    logoUrl: string;
+  } {
+    const raw =
+      this.getRemoteSetting('maintenanceMode') ||
+      this.getRemoteSetting('maintenance_mode') ||
+      this.getRemoteSetting('maintenance_mode_enabled') ||
+      'false';
+    const norm = raw.trim().toLowerCase();
+    const active = norm === 'true' || norm === '1' || norm === 'yes' || norm === 'on';
+    const message =
+      this.getRemoteSetting('maintenanceMessage') ||
+      this.getRemoteSetting('maintenance_message') ||
+      'We are currently performing scheduled maintenance to improve your experience. Please check back shortly.';
+    const brand = this.getBrandIdentity();
+    return {
+      active,
+      message,
+      appName: brand.name || 'MaxxPixels',
+      logoUrl: brand.darkLogoUrl || brand.logoUrl || '',
+    };
   }
 
   public static get wifiOnly(): boolean {
