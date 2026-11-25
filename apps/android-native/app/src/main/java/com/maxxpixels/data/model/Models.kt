@@ -71,6 +71,7 @@ data class CatalogItem(
     val resumeSeconds: Int = 0,
     val progressPercent: Float = 0f,
     val trailerUrl: String = "",
+    val creatorName: String = "",
     val cast: List<CastMember> = emptyList(),
     val seasons: List<SeasonItem> = emptyList()
 )
@@ -458,6 +459,19 @@ object JsonParsers {
             }
         }
 
+        val resolvedCreator = str(
+            contentObj,
+            "creatorName", "creator_name", "creator",
+            "directorName", "director_name", "director",
+            "producerName", "producer_name", "producer",
+            "productionHouse", "production_house", "studio", "channelName"
+        ).ifBlank {
+            castList.firstOrNull {
+                val r = it.role.lowercase()
+                r.contains("director") || r.contains("creator") || r.contains("producer")
+            }?.name.orEmpty()
+        }
+
         return CatalogItem(
             id = id,
             title = str(contentObj, "title", "name").ifBlank { str(obj, "title", "name").ifBlank { "Untitled" } },
@@ -485,6 +499,7 @@ object JsonParsers {
             resumeSeconds = resumeSec,
             progressPercent = computedPct,
             trailerUrl = MediaUrlNormalizer.normalize(str(contentObj, "trailerUrl", "trailer_url")),
+            creatorName = resolvedCreator,
             cast = castList,
             seasons = seasonsList
         )

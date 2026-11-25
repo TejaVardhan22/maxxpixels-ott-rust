@@ -10,28 +10,31 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Share
@@ -39,7 +42,6 @@ import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -57,7 +59,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -366,15 +367,18 @@ fun DetailsScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaxxColors.CinemaBlack)
+            .windowInsetsPadding(
+                WindowInsets.statusBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top)
+            )
             .navigationBarsPadding(),
-        contentPadding = PaddingValues(bottom = 36.dp)
+        contentPadding = PaddingValues(top = 12.dp, bottom = 36.dp)
     ) {
-        // 1. Top Cinema Hero Preview with TopCenter framing (no cropped heads) & clean scrubber
+        // 1. Clean Top Cinema Hero Banner (with top margin, no fake player controls, smooth bottom fade)
         item {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(365.dp)
+                    .height(310.dp)
                     .clickable { triggerPlay() }
             ) {
                 AsyncImage(
@@ -385,28 +389,31 @@ fun DetailsScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Soft cinema bottom vignette
+                // Smooth inline bottom fade blending seamlessly into the details section (no card border)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(185.dp)
+                        .height(170.dp)
                         .align(Alignment.BottomCenter)
                         .background(
                             Brush.verticalGradient(
-                                listOf(Color.Transparent, Color(0xCC0A090E), MaxxColors.CinemaBlack)
+                                listOf(
+                                    Color.Transparent,
+                                    Color(0x990A090E),
+                                    MaxxColors.CinemaBlack
+                                )
                             )
                         )
                 )
 
-                // Top-left circular frosted collapse chevron
+                // Top-left circular frosted back chevron
                 Surface(
-                    color = Color.Black.copy(alpha = 0.42f),
+                    color = Color.Black.copy(alpha = 0.44f),
                     shape = CircleShape,
                     border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)),
                     modifier = Modifier
-                        .statusBarsPadding()
-                        .padding(16.dp)
-                        .size(42.dp)
+                        .padding(14.dp)
+                        .size(40.dp)
                         .clickable(onClick = onBack)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -414,7 +421,7 @@ fun DetailsScreen(
                             imageVector = Icons.Rounded.KeyboardArrowDown,
                             contentDescription = "Back",
                             tint = Color.White,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(23.dp)
                         )
                     }
                 }
@@ -426,7 +433,7 @@ fun DetailsScreen(
                     border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f)),
                     modifier = Modifier
                         .align(Alignment.Center)
-                        .size(60.dp)
+                        .size(58.dp)
                         .bounceClick { triggerPlay() }
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -434,134 +441,58 @@ fun DetailsScreen(
                             imageVector = Icons.Rounded.PlayArrow,
                             contentDescription = "Play",
                             tint = MaxxColors.Primary,
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(30.dp)
                         )
                     }
-                }
-
-                // Bottom sleek mini scrubber bar (no stop-dot artifact)
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .padding(start = 18.dp, end = 18.dp, bottom = 36.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Surface(
-                                color = Color.Black.copy(alpha = 0.52f),
-                                shape = RoundedCornerShape(999.dp)
-                            ) {
-                                Text(
-                                    text = if (hasResume) "Resume" else "00:00",
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                )
-                            }
-                            if (content.durationLabel.isNotBlank()) {
-                                Surface(
-                                    color = Color.Black.copy(alpha = 0.52f),
-                                    shape = RoundedCornerShape(999.dp)
-                                ) {
-                                    Text(
-                                        text = content.durationLabel,
-                                        color = Color.White.copy(alpha = 0.85f),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            MiniHeroControlIcon(Icons.Rounded.ClosedCaption) { triggerPlay() }
-                            MiniHeroControlIcon(Icons.AutoMirrored.Rounded.VolumeUp) { triggerPlay() }
-                            MiniHeroControlIcon(Icons.Rounded.Fullscreen) { triggerPlay() }
-                        }
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-
-                    LinearProgressIndicator(
-                        progress = { content.progressPercent.coerceIn(0.08f, 1f) },
-                        color = MaxxColors.Primary,
-                        trackColor = Color.White.copy(alpha = 0.24f),
-                        strokeCap = StrokeCap.Round,
-                        drawStopIndicator = {},
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(999.dp))
-                    )
                 }
             }
         }
 
-        // 2. Overlapping Frosted Glass Bottom Sheet
+        // 2. Smooth Inline Details Section (no card border, no drag handle seam)
         item {
-            Surface(
-                color = MaxxColors.SurfaceDark,
-                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .offset(y = (-22).dp)
+                    .background(MaxxColors.CinemaBlack)
+                    .padding(top = 4.dp, bottom = 8.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color(0xFF281822), MaxxColors.SurfaceDark, MaxxColors.CinemaBlack)
-                            )
-                        )
-                        .padding(top = 12.dp, bottom = 8.dp)
-                ) {
-                    // Subtle glass drag handle
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.CenterHorizontally)
-                            .width(42.dp)
-                            .height(4.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.24f))
+                // Title, Creator Name (if available), Formatted Metadata, Watch Now + 3 Frosted Action Circles, Smart Synopsis
+                Column(modifier = Modifier.padding(horizontal = 18.dp)) {
+                    Text(
+                        text = content.title,
+                        color = Color.White,
+                        fontSize = 25.sp,
+                        fontWeight = FontWeight.Black,
+                        lineHeight = 30.sp
                     )
-
-                    Spacer(Modifier.height(18.dp))
-
-                    // Title, Formatted Metadata, Watch Now + 3 Frosted Action Circles, Smart Synopsis
-                    Column(modifier = Modifier.padding(horizontal = 18.dp)) {
+                    if (content.creatorName.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
                         Text(
-                            text = content.title,
-                            color = Color.White,
-                            fontSize = 25.sp,
-                            fontWeight = FontWeight.Black,
-                            lineHeight = 30.sp
+                            text = "By ${content.creatorName}",
+                            color = MaxxColors.PrimaryLight,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(Modifier.height(6.dp))
-                        val meta = listOfNotNull(
-                            content.releaseYear.takeIf { it.isNotBlank() },
-                            content.durationLabel.takeIf { it.isNotBlank() },
-                            content.language.takeIf { it.isNotBlank() },
-                            formattedRating.takeIf { it.isNotBlank() }
-                        ).joinToString(" • ")
-                        if (meta.isNotBlank()) {
-                            Text(
-                                text = meta,
-                                color = MaxxColors.TextSecondary,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    val meta = listOfNotNull(
+                        content.releaseYear.takeIf { it.isNotBlank() },
+                        content.durationLabel.takeIf { it.isNotBlank() },
+                        content.language.takeIf { it.isNotBlank() },
+                        formattedRating.takeIf { it.isNotBlank() }
+                    ).joinToString(" • ")
+                    if (meta.isNotBlank()) {
+                        Text(
+                            text = meta,
+                            color = MaxxColors.TextSecondary,
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
 
-                        Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(16.dp))
 
                         // Golden Amber Pill CTA + Circular Frosted Action Buttons
                         Row(
@@ -914,26 +845,6 @@ fun DetailsScreen(
             }
         }
     }
-}
-
-@Composable
-private fun MiniHeroControlIcon(
-    icon: ImageVector,
-    onClick: () -> Unit
-) {
-    Surface(
-        color = Color.Black.copy(alpha = 0.45f),
-        shape = CircleShape,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
-        modifier = Modifier
-            .size(32.dp)
-            .clickable(onClick = onClick)
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-        }
-    }
-}
 
 @Composable
 private fun FrostedActionCircle(
