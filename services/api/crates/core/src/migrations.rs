@@ -87,6 +87,11 @@ pub const MIGRATIONS: &[MigrationDef] = &[
         name: "producer_content_collect_flow",
         sql: include_str!("../../../migrations/0012_producer_content_collect_flow.sql"),
     },
+    MigrationDef {
+        version: "0013",
+        name: "cleanup_unused_system_settings",
+        sql: include_str!("../../../migrations/0013_cleanup_unused_system_settings.sql"),
+    },
 ];
 
 pub struct MigrationRunner;
