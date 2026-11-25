@@ -1,23 +1,31 @@
 package com.maxxpixels.ui.screens.home
 
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -26,13 +34,16 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.WorkspacePremium
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
@@ -51,6 +62,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -71,6 +84,7 @@ import com.maxxpixels.ui.components.bounceClick
 import com.maxxpixels.ui.theme.MaxxColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.absoluteValue
 
 /**
  * Modern Frosted-Glass Cinema HomeScreen:
@@ -146,128 +160,137 @@ fun HomeScreen(
     }
     val portalLabel = if (selectedLanguage == "kannada") "Kannada Cinema" else "All Indian"
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaxxColors.AmbientScreenBackground)
     ) {
-        LazyColumn(
+        // 1. Pinned Notch-Safe Top Navbar (clears status bar & camera cutout cleanly on all devices)
+        Column(
             modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding(),
-            contentPadding = PaddingValues(top = 12.dp, bottom = 112.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+                .fillMaxWidth()
+                .background(Color(0xDC0B0A10))
+                .windowInsetsPadding(
+                    WindowInsets.statusBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top)
+                )
         ) {
-            // 1. Greeting Header (Avatar + Portal + "Hello, <Name>" | Frosted Bell + Menu Capsule)
-            item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 18.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(onClick = onOpenPortalHub)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                    Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .clickable(onClick = onOpenPortalHub)
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(MaxxColors.SurfaceElevated),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape)
-                                .background(MaxxColors.SurfaceElevated),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (!session?.avatarUrl.isNullOrBlank()) {
-                                AsyncImage(
-                                    model = session?.avatarUrl,
-                                    contentDescription = firstName,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                Image(
-                                    painter = painterResource(R.drawable.app_logo),
-                                    contentDescription = "MaxxPixels",
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier.size(30.dp)
-                                )
-                            }
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Rounded.LocationOn,
-                                    contentDescription = null,
-                                    tint = MaxxColors.TextSecondary,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                Spacer(Modifier.width(3.dp))
-                                Text(
-                                    text = portalLabel,
-                                    color = MaxxColors.TextSecondary,
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                            Text(
-                                text = "Hello, $firstName",
-                                color = Color.White,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                        if (!session?.avatarUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = session?.avatarUrl,
+                                contentDescription = firstName,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Image(
+                                painter = painterResource(R.drawable.app_logo),
+                                contentDescription = "MaxxPixels",
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.size(28.dp)
                             )
                         }
                     }
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.LocationOn,
+                                contentDescription = null,
+                                tint = MaxxColors.Primary,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Spacer(Modifier.width(3.dp))
+                            Text(
+                                text = portalLabel,
+                                color = MaxxColors.TextSecondary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        Text(
+                            text = "Hello, $firstName",
+                            color = Color.White,
+                            fontSize = 17.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
 
-                    // Frosted Double-Pill Action Capsule (Notification Bell + Portal Menu)
-                    Surface(
-                        color = Color.White.copy(alpha = 0.09f),
-                        shape = RoundedCornerShape(999.dp),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f))
+                // Frosted Double-Pill Action Capsule (Notification Bell + Portal Menu)
+                Surface(
+                    color = Color.White.copy(alpha = 0.09f),
+                    shape = RoundedCornerShape(999.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .clickable(onClick = onOpenNotifications),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .clip(CircleShape)
-                                    .clickable(onClick = onOpenNotifications),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Notifications,
-                                    contentDescription = "Notifications",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.White.copy(alpha = 0.08f))
-                                    .clickable(onClick = onOpenPortalHub),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Menu,
-                                    contentDescription = "Portals",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Rounded.Notifications,
+                                contentDescription = "Notifications",
+                                tint = Color.White,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.08f))
+                                .clickable(onClick = onOpenPortalHub),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Menu,
+                                contentDescription = "Portals",
+                                tint = Color.White,
+                                modifier = Modifier.size(19.dp)
+                            )
                         }
                     }
                 }
             }
+            HorizontalDivider(color = Color.White.copy(alpha = 0.06f))
+        }
+
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            contentPadding = PaddingValues(top = 14.dp, bottom = 112.dp),
+            verticalArrangement = Arrangement.spacedBy(22.dp)
+        ) {
 
             // 2. Category Pill Bar (Golden Active Pill + Frosted Glass Inactive Pills)
             item {
@@ -316,20 +339,21 @@ fun HomeScreen(
                 }
             }
 
-            // 3. Large Rounded Hero Billboard Card (Reference Screen 2 Centerpiece)
+            // 3. Peeking Hero Section Carousel with Frosted Details Card
             item {
                 if (loading && banners.isEmpty()) {
                     ShimmerBox(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 18.dp)
-                            .aspectRatio(0.76f),
+                            .padding(horizontal = 24.dp)
+                            .aspectRatio(0.75f),
                         shape = RoundedCornerShape(28.dp)
                     )
                 } else if (banners.isNotEmpty()) {
                     val pagerState = rememberPagerState(pageCount = { banners.size })
-                    LaunchedEffect(banners.size) {
-                        if (banners.size > 1) {
+                    val isDragged by pagerState.interactionSource.collectIsDraggedAsState()
+                    LaunchedEffect(banners.size, isDragged) {
+                        if (banners.size > 1 && !isDragged) {
                             while (true) {
                                 delay(5000)
                                 val next = (pagerState.currentPage + 1) % banners.size
@@ -341,40 +365,59 @@ fun HomeScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         HorizontalPager(
                             state = pagerState,
-                            contentPadding = PaddingValues(horizontal = 18.dp),
-                            pageSpacing = 14.dp,
+                            contentPadding = PaddingValues(horizontal = 24.dp),
+                            pageSpacing = 12.dp,
+                            beyondViewportPageCount = 1,
                             modifier = Modifier.fillMaxWidth()
                         ) { page ->
                             val item = banners[page]
                             val isSaved = savedIds.contains(item.id) || item.isBookmarked
+                            val pageOffset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction)
+                                .absoluteValue.coerceIn(0f, 1f)
+                            val scale = 1f - (pageOffset * 0.06f)
+                            val cardAlpha = 1f - (pageOffset * 0.22f)
+
                             HeroCinemaPosterCard(
                                 item = item,
                                 isSaved = isSaved,
-                                onWatchNow = { onOpenDetails(item.id) },
+                                onOpenDetails = { onOpenDetails(item.id) },
                                 onToggleWatchlist = {
                                     val next = !isSaved
                                     savedIds = if (next) savedIds + item.id else savedIds - item.id
                                     scope.launch { repository.toggleWatchlist(item.id, item.title, next) }
+                                },
+                                modifier = Modifier.graphicsLayer {
+                                    scaleX = scale
+                                    scaleY = scale
+                                    alpha = cardAlpha
                                 }
                             )
                         }
 
                         if (banners.size > 1) {
-                            Spacer(Modifier.height(12.dp))
+                            Spacer(Modifier.height(14.dp))
                             Row(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(7.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                repeat(banners.size.coerceAtMost(7)) { idx ->
+                                val count = banners.size.coerceAtMost(8)
+                                repeat(count) { idx ->
                                     val active = pagerState.currentPage % banners.size == idx
+                                    val pillWidth by animateDpAsState(
+                                        targetValue = if (active) 24.dp else 7.dp,
+                                        label = "heroDot"
+                                    )
                                     Box(
                                         modifier = Modifier
-                                            .height(5.dp)
-                                            .width(if (active) 22.dp else 6.dp)
+                                            .height(6.dp)
+                                            .width(pillWidth)
                                             .clip(CircleShape)
                                             .background(
-                                                if (active) MaxxColors.Primary else Color.White.copy(alpha = 0.25f)
+                                                if (active) MaxxColors.Primary else Color.White.copy(alpha = 0.26f)
                                             )
+                                            .clickable {
+                                                scope.launch { pagerState.animateScrollToPage(idx) }
+                                            }
                                     )
                                 }
                             }
@@ -390,12 +433,13 @@ fun HomeScreen(
                         HomeSectionRowHeader(title = "Continue Watching", actionLabel = null, onAction = {})
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 18.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
                             items(continueWatching, key = { "cw_${it.id}" }) { cwItem ->
                                 ContinueWatchingCard(
                                     item = cwItem,
-                                    onClick = { onPlayItem(cwItem.id, cwItem.title) }
+                                    onPlay = { onPlayItem(cwItem.id, cwItem.title) },
+                                    onOpenDetails = { onOpenDetails(cwItem.id) }
                                 )
                             }
                         }
@@ -542,17 +586,30 @@ private fun HomeSectionRowHeader(
 private fun HeroCinemaPosterCard(
     item: CatalogItem,
     isSaved: Boolean,
-    onWatchNow: () -> Unit,
-    onToggleWatchlist: () -> Unit
+    onOpenDetails: () -> Unit,
+    onToggleWatchlist: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
+    val badgeLabel = when {
+        item.isRent -> if (item.rentPrice > 0) "RENT ₹${item.rentPrice.toInt()}" else "RENT"
+        item.isPremium -> "VIP EXCLUSIVE"
+        else -> "FEATURED"
+    }
+    val metaParts = listOfNotNull(
+        item.releaseYear.takeIf { it.isNotBlank() },
+        item.language.takeIf { it.isNotBlank() },
+        item.durationLabel.takeIf { it.isNotBlank() },
+        item.maturityRating.takeIf { it.isNotBlank() }
+    )
+
     Surface(
         shape = RoundedCornerShape(28.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
-        shadowElevation = 20.dp,
-        modifier = Modifier
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+        shadowElevation = 22.dp,
+        modifier = modifier
             .fillMaxWidth()
-            .aspectRatio(0.76f)
-            .bounceClick(onClick = onWatchNow)
+            .aspectRatio(0.75f)
+            .bounceClick(onClick = onOpenDetails)
     ) {
         Box(modifier = Modifier.fillMaxSize().background(MaxxColors.SurfaceDark)) {
             AsyncImage(
@@ -562,89 +619,161 @@ private fun HeroCinemaPosterCard(
                 modifier = Modifier.fillMaxSize()
             )
 
-            // Bottom cinema vignette
+            // Subtle top & bottom cinematic vignette
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(210.dp)
+                    .height(90.dp)
+                    .align(Alignment.TopCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color(0x990A090E), Color.Transparent)
+                        )
+                    )
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(230.dp)
                     .align(Alignment.BottomCenter)
                     .background(
                         Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                Color(0xBB0A090E),
-                                Color(0xF50A090E)
-                            )
+                            colors = listOf(Color.Transparent, Color(0x990A090E), Color(0xEE0A090E))
                         )
                     )
             )
 
-            // Top-right Watchlist frosted circle
-            Box(
+            // Top Row: Featured / VIP / Rent Badge + Watchlist Circle
+            Row(
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(14.dp)
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.45f))
-                    .clickable(onClick = onToggleWatchlist),
-                contentAlignment = Alignment.Center
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = if (isSaved) Icons.Rounded.Check else Icons.Rounded.Add,
-                    contentDescription = "My List",
-                    tint = if (isSaved) MaxxColors.Primary else Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
+                Surface(
+                    color = if (item.isRent) MaxxColors.Primary else Color.Black.copy(alpha = 0.55f),
+                    shape = RoundedCornerShape(999.dp),
+                    border = BorderStroke(
+                        1.dp,
+                        if (item.isRent) MaxxColors.Primary else MaxxColors.Primary.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Text(
+                        text = badgeLabel,
+                        color = if (item.isRent) MaxxColors.OnPrimaryDark else MaxxColors.Primary,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 0.8.sp,
+                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp)
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.52f))
+                        .clickable(onClick = onToggleWatchlist),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (isSaved) Icons.Rounded.Check else Icons.Rounded.Add,
+                        contentDescription = "My List",
+                        tint = if (isSaved) MaxxColors.Primary else Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
 
-            // Bottom centered title + golden "Watch Now" pill button
-            Column(
+            // Bottom Floating Frosted Details Card (Name + Details + Watch Now -> Routes to DetailsScreen)
+            Surface(
+                color = Color(0xD814111D),
+                shape = RoundedCornerShape(22.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 22.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .padding(12.dp)
+                    .clickable(onClick = onOpenDetails)
             ) {
-                Text(
-                    text = item.title.uppercase(),
-                    color = Color.White,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 1.sp,
-                    textAlign = TextAlign.Center,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                val meta = listOfNotNull(
-                    item.releaseYear.takeIf { it.isNotBlank() },
-                    item.language.takeIf { it.isNotBlank() },
-                    item.durationLabel.takeIf { it.isNotBlank() }
-                ).joinToString(" • ")
-                if (meta.isNotBlank()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = meta,
-                        color = Color.White.copy(alpha = 0.78f),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-                Spacer(Modifier.height(14.dp))
-                Box(
+                Column(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(MaxxColors.BrandGradient)
-                        .clickable(onClick = onWatchNow)
-                        .padding(horizontal = 32.dp, vertical = 12.dp),
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .padding(horizontal = 15.dp, vertical = 13.dp)
                 ) {
                     Text(
-                        text = "Watch Now",
-                        color = MaxxColors.OnPrimaryDark,
-                        fontSize = 14.5.sp,
-                        fontWeight = FontWeight.ExtraBold
+                        text = item.title,
+                        color = Color.White,
+                        fontSize = 18.5.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
+                    if (metaParts.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = metaParts.joinToString(" • "),
+                            color = Color.White.copy(alpha = 0.74f),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Spacer(Modifier.height(11.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(9.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(42.dp)
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(MaxxColors.BrandGradient)
+                                .clickable(onClick = onOpenDetails),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.PlayArrow,
+                                    contentDescription = null,
+                                    tint = MaxxColors.OnPrimaryDark,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = "Watch Now",
+                                    color = MaxxColors.OnPrimaryDark,
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                        }
+
+                        Surface(
+                            color = Color.White.copy(alpha = 0.1f),
+                            shape = CircleShape,
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clickable(onClick = onOpenDetails)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                                    contentDescription = "Open Details",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -713,15 +842,23 @@ fun PortraitPosterCard(
 @Composable
 private fun ContinueWatchingCard(
     item: CatalogItem,
-    onClick: () -> Unit
+    onPlay: () -> Unit,
+    onOpenDetails: () -> Unit
 ) {
+    val pct = (item.progressPercent.coerceIn(0.05f, 1f) * 100).toInt()
+    val subtitle = listOfNotNull(
+        item.durationLabel.takeIf { it.isNotBlank() },
+        item.language.takeIf { it.isNotBlank() }
+    ).joinToString(" • ").ifBlank { "$pct% watched" }
+
     Surface(
-        color = MaxxColors.SurfaceDark,
-        shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, MaxxColors.BorderSubtle),
+        color = MaxxColors.SurfaceGlass,
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.13f)),
+        shadowElevation = 10.dp,
         modifier = Modifier
-            .width(204.dp)
-            .bounceClick(onClick = onClick)
+            .width(248.dp)
+            .bounceClick(onClick = onPlay)
     ) {
         Column {
             Box(
@@ -735,35 +872,137 @@ private fun ContinueWatchingCard(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
+
+                // Subtle bottom scrim for controls & progress legibility
                 Box(
                     modifier = Modifier
-                        .align(Alignment.Center)
-                        .size(38.dp)
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, Color(0xDD0B0A10))
+                            )
+                        )
+                )
+
+                // Top-left frosted progress badge
+                Surface(
+                    color = Color.Black.copy(alpha = 0.62f),
+                    shape = RoundedCornerShape(999.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(MaxxColors.Primary)
+                        )
+                        Text(
+                            text = "$pct% watched",
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                // Top-right frosted Info icon -> routes to DetailsScreen
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(10.dp)
+                        .size(30.dp)
                         .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.6f)),
+                        .background(Color.Black.copy(alpha = 0.56f))
+                        .clickable(onClick = onOpenDetails),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Rounded.PlayArrow, null, tint = MaxxColors.Primary, modifier = Modifier.size(22.dp))
+                    Icon(
+                        imageVector = Icons.Rounded.Info,
+                        contentDescription = "Details",
+                        tint = Color.White.copy(alpha = 0.9f),
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
+
+                // Bottom-right glowing amber Play button
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 10.dp, bottom = 12.dp)
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(MaxxColors.BrandGradient)
+                        .clickable(onClick = onPlay),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.PlayArrow,
+                        contentDescription = "Resume",
+                        tint = MaxxColors.OnPrimaryDark,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                // Clean rounded progress bar without trailing stop dot
                 LinearProgressIndicator(
                     progress = { item.progressPercent.coerceIn(0.05f, 1f) },
                     color = MaxxColors.Primary,
-                    trackColor = Color.White.copy(alpha = 0.25f),
+                    trackColor = Color.White.copy(alpha = 0.22f),
+                    strokeCap = StrokeCap.Round,
+                    drawStopIndicator = {},
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(3.dp)
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                        .height(4.dp)
                         .align(Alignment.BottomCenter)
                 )
             }
-            Text(
-                text = item.title,
-                color = Color.White,
-                fontSize = 12.5.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)
-            )
+
+            // Bottom Frosted Info Row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 13.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = item.title,
+                        color = Color.White,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = subtitle,
+                        color = MaxxColors.TextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "Resume",
+                    color = MaxxColors.Primary,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
         }
     }
 }
