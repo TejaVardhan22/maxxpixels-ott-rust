@@ -168,8 +168,8 @@ interface AdminDashboardMetrics {
           <div class="kpi-icon"><mat-icon>cloud_queue</mat-icon></div>
           <div class="kpi-content">
             <span class="kpi-title">Bunny.net CDN & Storage</span>
-            <div class="kpi-value">{{ metrics.storageUsedGb }} GB / {{ metrics.storageTotalGb }} GB</div>
-            <mat-progress-bar mode="determinate" [value]="(metrics.storageUsedGb / metrics.storageTotalGb) * 100" class="kpi-bar"></mat-progress-bar>
+            <div class="kpi-value">{{ metrics.storageUsedGb | number:'1.0-2' }} GB / {{ metrics.storageTotalGb | number:'1.0-0' }} GB</div>
+            <mat-progress-bar mode="determinate" [value]="getStorageUsagePercent()" class="kpi-bar"></mat-progress-bar>
           </div>
         </div>
       </div>
@@ -253,7 +253,7 @@ interface AdminDashboardMetrics {
               <div class="chart-legend">
                 <span class="legend-item"><span class="dot blue"></span> Platform Revenue (₹)</span>
                 <span class="legend-item"><span class="dot magenta"></span> Active Streaming Users</span>
-                <span class="legend-item"><span class="dot green"></span> Live Telemetry Sync: Active</span>
+                <span class="legend-item"><span class="dot green"></span> Live Telemetry Sync: {{ liveConnected ? 'Active (SSE)' : 'Polling' }}</span>
               </div>
             </div>
           </div>
@@ -262,14 +262,14 @@ interface AdminDashboardMetrics {
           <div class="section-card">
             <div class="card-header-row">
               <h3><mat-icon>equalizer</mat-icon> Weekly Streaming Traffic & Playback Consumption</h3>
-              <span class="badge-tag">Peak Traffic: Weekends</span>
+              <span class="badge-tag">{{ getPeakTrafficLabel() }}</span>
             </div>
 
             <div class="bar-chart-container">
               <div class="bar-col" *ngFor="let item of weeklyWatchHours">
                 <div class="bar-val">{{ item.hours }}h</div>
                 <div class="bar-track">
-                  <div class="bar-fill" [style.height.%]="(item.hours / 1400) * 100">
+                  <div class="bar-fill" [style.height.%]="getWeeklyBarHeight(item.hours)">
                     <div class="bar-inner-glow"></div>
                   </div>
                 </div>
@@ -556,7 +556,7 @@ interface AdminDashboardMetrics {
           <div class="section-card chat-section">
             <div class="card-header-row">
               <h3><mat-icon>forum</mat-icon> Admin Team Live Operations Chat</h3>
-              <span class="online-indicator"><span class="pulse-dot"></span> 4 Admins Online</span>
+              <span class="online-indicator"><span class="pulse-dot"></span> {{ onlineAdmins }} {{ onlineAdmins === 1 ? 'Admin' : 'Admins' }} Online</span>
             </div>
 
             <!-- Chat Room Tabs -->
@@ -602,13 +602,13 @@ interface AdminDashboardMetrics {
           <div class="section-card health-section">
             <div class="card-header-row">
               <h3><mat-icon>dns</mat-icon> Infrastructure Telemetry & Status</h3>
-              <span class="online-indicator"><span class="pulse-dot"></span> All Systems Operational</span>
+              <span class="online-indicator"><span class="pulse-dot"></span> {{ getSystemHealthSummary() }}</span>
             </div>
 
             <div class="health-list">
               <div class="health-item" *ngFor="let item of infrastructureTelemetry">
                 <div class="service-info">
-                  <mat-icon class="status-icon online">check_circle</mat-icon>
+                  <mat-icon class="status-icon" [ngClass]="item.statusClass === 'amber' ? 'degraded' : 'online'">{{ item.statusClass === 'amber' ? 'warning' : 'check_circle' }}</mat-icon>
                   <div>
                     <span class="service-name">{{ item.serviceName }}</span>
                     <span class="service-meta">{{ item.meta }}</span>
@@ -1172,6 +1172,7 @@ interface AdminDashboardMetrics {
           gap: 10px;
 
           .status-icon.online { color: #00e676; font-size: 20px; width: 20px; height: 20px; }
+          .status-icon.degraded { color: #ffab00; font-size: 20px; width: 20px; height: 20px; }
           .service-name { font-size: 13px; font-weight: 600; display: block; color: #ffffff; }
           .service-meta { font-size: 11px; color: #a0a0b0; }
         }
@@ -1182,6 +1183,7 @@ interface AdminDashboardMetrics {
           padding: 3px 8px;
           border-radius: 4px;
           &.green { background: rgba(0, 230, 118, 0.15); color: #00e676; }
+          &.amber { background: rgba(255, 171, 0, 0.15); color: #ffab00; }
         }
       }
     }
@@ -1275,6 +1277,7 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   liveStreams: any[] = [];
   recentInteractions: any[] = [];
   liveConnected = false;
+  onlineAdmins = 1;
   private liveRefreshTimer: any;
   private disconnectLiveAnalytics?: () => void;
 
@@ -1492,10 +1495,15 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
           if (d.weeklyWatchHours || d.weekly_watch_hours) {
             this.weeklyWatchHours = d.weeklyWatchHours || d.weekly_watch_hours;
           }
+          if (typeof d.onlineAdmins === 'number' && d.onlineAdmins > 0) {
+            this.onlineAdmins = d.onlineAdmins;
+          }
           if (d.topContent && d.topContent.length > 0) {
             this.topTrendingContent = d.topContent;
           } else if (d.top_content && d.top_content.length > 0) {
             this.topTrendingContent = d.top_content;
+          } else {
+            this.loadFallbackTopContent();
           }
 
           this.arpu = Number(d.arpu ?? 0);
@@ -1529,24 +1537,58 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
         // Gracefully handle unauthenticated or network error
       }
     });
+  }
 
+  private loadFallbackTopContent(): void {
     this.http.get<any>(`${environment.apiBaseUrl}/admin/movies?size=6`).subscribe({
       next: (res) => {
-        if (res.success && res.data && res.data.content) {
+        if (this.topTrendingContent.length === 0 && res.success && res.data && res.data.content) {
           this.topTrendingContent = res.data.content.map((m: any) => ({
             title: m.title,
-            contentType: m.contentType || 'Movie',
+            contentType: m.contentType || 'MOVIE',
             totalViews: m.viewCount || m.totalViews || 0,
-            watchHours: m.watchHours ? Number(m.watchHours).toFixed(0) : (m.viewCount ? ((m.viewCount * (m.duration || 120)) / 3600).toFixed(0) : '0'),
+            watchHours: m.watchHours ? Number(m.watchHours).toFixed(1) : '0',
             totalRevenue: m.totalRevenue || 0,
             rating: m.maturityRating || m.rating || 'U/A 13+'
           }));
         }
       },
-      error: () => {
-        // Gracefully handle unauthenticated or network error
-      }
+      error: () => {}
     });
+  }
+
+  getStorageUsagePercent(): number {
+    const used = Number(this.metrics.storageUsedGb || 0);
+    const total = Number(this.metrics.storageTotalGb || 0);
+    if (total <= 0) return 0;
+    return Math.min(100, Math.max(0, (used / total) * 100));
+  }
+
+  getWeeklyBarHeight(hours: number): number {
+    const maxHours = Math.max(...(this.weeklyWatchHours || []).map((w: any) => Number(w.hours || 0)), 1);
+    const val = Number(hours || 0);
+    if (val <= 0) return 4;
+    return Math.min(100, Math.max(8, (val / maxHours) * 100));
+  }
+
+  getPeakTrafficLabel(): string {
+    if (!this.weeklyWatchHours || this.weeklyWatchHours.length === 0) return 'No traffic data yet';
+    let peak = this.weeklyWatchHours[0];
+    for (const item of this.weeklyWatchHours) {
+      if (Number(item.hours || 0) > Number(peak.hours || 0)) {
+        peak = item;
+      }
+    }
+    return Number(peak?.hours || 0) > 0 ? `Peak Day: ${peak.day} (${peak.hours}h)` : 'Awaiting playback data';
+  }
+
+  getSystemHealthSummary(): string {
+    if (!this.infrastructureTelemetry || this.infrastructureTelemetry.length === 0) {
+      return 'Checking Telemetry...';
+    }
+    const degradedCount = this.infrastructureTelemetry.filter((i: any) => i.statusClass === 'amber').length;
+    if (degradedCount === 0) return 'All Systems Operational';
+    return `${degradedCount} Service${degradedCount === 1 ? '' : 's'} Attention Needed`;
   }
 
   // GRAPH MATH HELPERS FOR SVG
@@ -1663,27 +1705,20 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   }
 
   private loadChatMessages(): void {
-    if (typeof localStorage === 'undefined') return;
-    try {
-      const raw = localStorage.getItem('maxx_admin_dashboard_chat_v1');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          this.chatMessages = parsed;
+    if (!this.authStore.isAuthenticated()) return;
+    this.http.get<any>(`${environment.apiBaseUrl}/admin/analytics/ops-chat`).subscribe({
+      next: (res) => {
+        if (res?.success && res?.data) {
+          if (Array.isArray(res.data.messages)) {
+            this.chatMessages = res.data.messages;
+          }
+          if (typeof res.data.onlineAdmins === 'number' && res.data.onlineAdmins > 0) {
+            this.onlineAdmins = res.data.onlineAdmins;
+          }
         }
-      }
-    } catch {
-      // ignore invalid local cache
-    }
-  }
-
-  private saveChatMessages(): void {
-    if (typeof localStorage === 'undefined') return;
-    try {
-      localStorage.setItem('maxx_admin_dashboard_chat_v1', JSON.stringify(this.chatMessages.slice(-200)));
-    } catch {
-      // ignore storage quota/errors
-    }
+      },
+      error: () => {}
+    });
   }
 
   getFilteredMessages(): ChatMessage[] {
@@ -1691,20 +1726,38 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   }
 
   sendChatMessage(): void {
-    if (!this.newMessageText || !this.newMessageText.trim()) return;
-    const newMsg: ChatMessage = {
-      id: Date.now(),
-      senderName: 'Super Admin',
-      senderAvatar: '⚡',
-      role: 'SuperAdmin',
-      roleColor: '#1a4cd8',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      room: this.currentRoom,
-      message: this.newMessageText.trim()
-    };
-    this.chatMessages.push(newMsg);
+    const text = (this.newMessageText || '').trim();
+    if (!text) return;
+    const room = this.currentRoom;
     this.newMessageText = '';
-    this.saveChatMessages();
+
+    this.http.post<any>(`${environment.apiBaseUrl}/admin/analytics/ops-chat`, { room, message: text }).subscribe({
+      next: (res) => {
+        if (res?.success && res?.data) {
+          this.chatMessages = [...this.chatMessages, res.data];
+        } else {
+          this.loadChatMessages();
+        }
+      },
+      error: () => {
+        const user = this.authStore.currentUser();
+        const senderName = user?.name || user?.email || 'Admin';
+        const isSuper = (user?.roles || []).some(r => r.toUpperCase().includes('SUPER'));
+        this.chatMessages = [
+          ...this.chatMessages,
+          {
+            id: Date.now(),
+            senderName,
+            senderAvatar: senderName.slice(0, 2).toUpperCase(),
+            role: isSuper ? 'SuperAdmin' : 'Admin',
+            roleColor: isSuper ? '#1a4cd8' : '#c725a3',
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            room,
+            message: text
+          }
+        ];
+      }
+    });
   }
 
   onNavigate(route: string): void {

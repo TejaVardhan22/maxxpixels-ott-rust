@@ -14,7 +14,8 @@ pub fn analytics_routes() -> Router<AppState> {
         .route("/sse", get(live_analytics_stream_handler))
         .route("/realtime", get(get_realtime_handler))
         .route("/live-streams", get(get_realtime_handler))
-        .route("/live", get(get_realtime_handler));
+        .route("/live", get(get_realtime_handler))
+        .route("/ops-chat", get(list_ops_chat_handler).post(post_ops_chat_handler));
 
     let public_router = Router::new()
         .route("/event", post(record_event_handler))

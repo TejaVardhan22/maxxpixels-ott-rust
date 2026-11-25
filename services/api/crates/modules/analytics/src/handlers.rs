@@ -50,6 +50,37 @@ pub async fn get_realtime_handler(
     Ok(ApiResponse::ok_response(data))
 }
 
+pub async fn list_ops_chat_handler(
+    State(state): State<AppState>,
+    _claims: Claims,
+    Query(params): Query<HashMap<String, String>>,
+) -> AppResult<Response> {
+    let room = params.get("room").map(|s| s.as_str());
+    let data = AnalyticsService::list_ops_chat_messages(&state, room).await?;
+    Ok(ApiResponse::ok_response(data))
+}
+
+pub async fn post_ops_chat_handler(
+    State(state): State<AppState>,
+    claims: Claims,
+    Json(body): Json<Value>,
+) -> AppResult<Response> {
+    let sender_id = claims.sub.parse::<i64>().ok();
+    let sender_name = claims
+        .email
+        .as_deref()
+        .and_then(|e| e.split('@').next())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Admin");
+    let role = if claims.roles.iter().any(|r| r.to_uppercase().contains("SUPER")) {
+        "SuperAdmin"
+    } else {
+        "Admin"
+    };
+    let data = AnalyticsService::post_ops_chat_message(&state, sender_id, sender_name, role, body).await?;
+    Ok(ApiResponse::ok_response(data))
+}
+
 /// Server-sent events stream for live view/watch counters.
 ///
 /// EventSource cannot attach an Authorization header, so the JWT is accepted as

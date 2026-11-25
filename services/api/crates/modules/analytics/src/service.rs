@@ -159,7 +159,11 @@ impl AnalyticsService {
         let payment_metrics = Self::build_payment_metrics(state).await;
         let funnel_metrics = Self::build_funnel_metrics(state, total_users, monthly_active_users, active_subscriptions).await;
         let geo_metrics = Self::build_geo_metrics(state).await;
-        let engagement_metrics = Self::build_engagement_metrics(state, avg_completion_rate).await;
+        let (storage_used_gb, storage_total_gb) = Self::compute_storage_usage(state).await;
+        let buffer_ratio_pct = Self::compute_buffer_ratio(state).await;
+        let online_admins = Self::count_online_admins(state).await;
+
+        let engagement_metrics = Self::build_engagement_metrics(state, avg_completion_rate, buffer_ratio_pct).await;
         let content_engagement = Self::build_content_engagement(state).await;
 
         // Keep additive aliases and legacy fields for existing consumers.
@@ -176,8 +180,9 @@ impl AnalyticsService {
             "totalContent": total_content,
             "pendingApprovals": pending_approvals,
             "concurrentStreams": active_streams,
-            "storageUsedGb": 0,
-            "storageTotalGb": 0,
+            "storageUsedGb": storage_used_gb,
+            "storageTotalGb": storage_total_gb,
+            "onlineAdmins": online_admins,
             "avgCompletionRate": rounded_completion,
             "dailyActiveUsers": daily_active_users,
             "monthlyActiveUsers": monthly_active_users,
@@ -193,7 +198,7 @@ impl AnalyticsService {
             "topContent": top_content,
             "infrastructureTelemetry": infrastructure_telemetry,
             "failedPayments": failed_payments,
-            "bufferRatioPercentage": 0.0,
+            "bufferRatioPercentage": buffer_ratio_pct,
             "timeframe": tf,
 
             // Metrics depth / executive insights (additive)
@@ -1094,7 +1099,7 @@ impl AnalyticsService {
         })
     }
 
-    async fn build_engagement_metrics(state: &AppState, avg_completion_rate: f64) -> Value {
+    async fn build_engagement_metrics(state: &AppState, avg_completion_rate: f64, buffer_ratio_pct: f64) -> Value {
         let avg_session_minutes = Self::scalar_f64(
             state,
             "SELECT COALESCE(AVG(GREATEST(COALESCE(duration_seconds,0), COALESCE(position_seconds,0), COALESCE(watch_duration_seconds,0)))::float8 / 60.0, 0)::float8 AS value
@@ -1133,7 +1138,7 @@ impl AnalyticsService {
             "avgCompletionRate": (avg_completion_rate * 10.0).round() / 10.0,
             "returningUsers30d": returning_users_30d,
             "retentionRate30d": retention_rate,
-            "bufferRatioPercentage": 0.0
+            "bufferRatioPercentage": buffer_ratio_pct
         })
     }
 
@@ -1236,6 +1241,243 @@ impl AnalyticsService {
         }));
 
         items
+    }
+
+    async fn compute_storage_usage(state: &AppState) -> (f64, f64) {
+        let quota_gb = std::env::var("BUNNY_STORAGE_QUOTA_GB")
+            .ok()
+            .and_then(|v| v.trim().parse::<f64>().ok())
+            .filter(|v| *v > 0.0)
+            .unwrap_or(500.0);
+
+        const CACHE_KEY: &str = "analytics:storage_used_gb:v1";
+        if let Some(cached) = state.redis.get::<f64>(CACHE_KEY).await {
+            return (cached, quota_gb.max((cached * 1.25).ceil()));
+        }
+
+        let mut total_bytes: u64 = 0;
+        let lib_id = state.config.bunny_stream_library_id.trim();
+        let api_key = state.config.bunny_stream_api_key.trim();
+        if !lib_id.is_empty() && !api_key.is_empty() {
+            if let Ok(client) = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(5))
+                .build()
+            {
+                let url = format!(
+                    "https://video.bunnycdn.com/library/{}/videos?page=1&itemsPerPage=100",
+                    lib_id
+                );
+                if let Ok(resp) = client.get(&url).header("AccessKey", api_key).send().await {
+                    if resp.status().is_success() {
+                        if let Ok(body) = resp.json::<Value>().await {
+                            if let Some(items) = body.get("items").and_then(|v| v.as_array()) {
+                                for item in items {
+                                    total_bytes = total_bytes.saturating_add(
+                                        item.get("storageSize").and_then(|v| v.as_u64()).unwrap_or(0),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Add PostgreSQL database size so metric is always grounded in real usage even before Bunny videos exist
+        let db_bytes = Self::scalar_i64(
+            state,
+            "SELECT pg_database_size(current_database())::bigint AS value",
+        )
+        .await
+        .max(0) as u64;
+        total_bytes = total_bytes.saturating_add(db_bytes);
+
+        let used_gb = ((total_bytes as f64 / (1024.0 * 1024.0 * 1024.0)) * 100.0).round() / 100.0;
+        let _ = state.redis.set(CACHE_KEY, &used_gb, 300).await;
+        (used_gb, quota_gb.max((used_gb * 1.25).ceil()))
+    }
+
+    async fn compute_buffer_ratio(state: &AppState) -> f64 {
+        let total_events = Self::scalar_i64(
+            state,
+            "SELECT COUNT(*)::bigint AS value FROM user_interactions WHERE created_at >= NOW() - INTERVAL '30 days'",
+        )
+        .await;
+        if total_events <= 0 {
+            return 0.0;
+        }
+        let buffer_events = Self::scalar_i64(
+            state,
+            "SELECT COUNT(*)::bigint AS value FROM user_interactions WHERE created_at >= NOW() - INTERVAL '30 days' AND UPPER(COALESCE(interaction_type, '')) IN ('BUFFER', 'BUFFERING', 'STALL', 'PLAYBACK_ERROR')",
+        )
+        .await;
+        ((buffer_events as f64 / total_events as f64) * 1000.0).round() / 10.0
+    }
+
+    async fn count_online_admins(state: &AppState) -> i64 {
+        let count = Self::scalar_i64(
+            state,
+            "SELECT COUNT(DISTINCT u.id)::bigint AS value
+             FROM users u
+             JOIN user_roles ur ON ur.user_id = u.id
+             JOIN roles r ON r.id = ur.role_id
+             WHERE UPPER(r.name) LIKE '%ADMIN%'
+               AND COALESCE(u.last_active_at, u.last_login_at) >= NOW() - INTERVAL '30 minutes'",
+        )
+        .await;
+        count.max(1)
+    }
+
+    async fn ensure_ops_chat_table(state: &AppState) {
+        let _ = state
+            .db
+            .execute_unprepared(
+                r#"
+                CREATE TABLE IF NOT EXISTS admin_ops_messages (
+                    id BIGSERIAL PRIMARY KEY,
+                    room VARCHAR(64) NOT NULL DEFAULT 'general',
+                    sender_id BIGINT,
+                    sender_name VARCHAR(150) NOT NULL,
+                    role VARCHAR(64) NOT NULL DEFAULT 'Admin',
+                    role_color VARCHAR(32) NOT NULL DEFAULT '#1a4cd8',
+                    message TEXT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+                "#,
+            )
+            .await;
+    }
+
+    pub async fn list_ops_chat_messages(state: &AppState, room: Option<&str>) -> AppResult<Value> {
+        Self::ensure_ops_chat_table(state).await;
+        let online_admins = Self::count_online_admins(state).await;
+        let rows = if let Some(r) = room.map(str::trim).filter(|s| !s.is_empty()) {
+            state
+                .db
+                .query_all(Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    r#"
+                    SELECT json_build_object(
+                        'id', id,
+                        'room', room,
+                        'senderName', sender_name,
+                        'senderAvatar', UPPER(LEFT(sender_name, 2)),
+                        'role', role,
+                        'roleColor', role_color,
+                        'message', message,
+                        'timestamp', to_char(created_at AT TIME ZONE 'Asia/Kolkata', 'HH12:MI AM'),
+                        'createdAt', created_at
+                    ) AS value
+                    FROM admin_ops_messages
+                    WHERE room = $1
+                    ORDER BY created_at ASC
+                    LIMIT 150
+                    "#,
+                    [r.into()],
+                ))
+                .await
+                .unwrap_or_default()
+        } else {
+            state
+                .db
+                .query_all(Statement::from_string(
+                    DatabaseBackend::Postgres,
+                    r#"
+                    SELECT json_build_object(
+                        'id', id,
+                        'room', room,
+                        'senderName', sender_name,
+                        'senderAvatar', UPPER(LEFT(sender_name, 2)),
+                        'role', role,
+                        'roleColor', role_color,
+                        'message', message,
+                        'timestamp', to_char(created_at AT TIME ZONE 'Asia/Kolkata', 'HH12:MI AM'),
+                        'createdAt', created_at
+                    ) AS value
+                    FROM admin_ops_messages
+                    ORDER BY created_at ASC
+                    LIMIT 200
+                    "#
+                    .to_string(),
+                ))
+                .await
+                .unwrap_or_default()
+        };
+
+        let messages: Vec<Value> = rows
+            .into_iter()
+            .filter_map(|row| row.try_get::<Value>("", "value").ok())
+            .collect();
+
+        Ok(json!({
+            "messages": messages,
+            "onlineAdmins": online_admins
+        }))
+    }
+
+    pub async fn post_ops_chat_message(
+        state: &AppState,
+        sender_id: Option<i64>,
+        sender_name: &str,
+        role: &str,
+        body: Value,
+    ) -> AppResult<Value> {
+        Self::ensure_ops_chat_table(state).await;
+        let msg = body
+            .get("message")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| AppError::BadRequest("Message cannot be empty".to_string()))?;
+        let room = body
+            .get("room")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("general");
+        let role_color = if role.to_uppercase().contains("SUPER") {
+            "#1a4cd8"
+        } else if role.to_uppercase().contains("DEV") {
+            "#00d2ff"
+        } else {
+            "#c725a3"
+        };
+
+        let row = state
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                INSERT INTO admin_ops_messages (room, sender_id, sender_name, role, role_color, message)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING json_build_object(
+                    'id', id,
+                    'room', room,
+                    'senderName', sender_name,
+                    'senderAvatar', UPPER(LEFT(sender_name, 2)),
+                    'role', role,
+                    'roleColor', role_color,
+                    'message', message,
+                    'timestamp', to_char(created_at AT TIME ZONE 'Asia/Kolkata', 'HH12:MI AM'),
+                    'createdAt', created_at
+                ) AS value
+                "#,
+                vec![
+                    room.into(),
+                    sender_id.into(),
+                    sender_name.into(),
+                    role.into(),
+                    role_color.into(),
+                    msg.into(),
+                ],
+            ))
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let saved = row
+            .and_then(|r| r.try_get::<Value>("", "value").ok())
+            .unwrap_or_else(|| json!({ "room": room, "senderName": sender_name, "message": msg }));
+        Ok(saved)
     }
 }
 
