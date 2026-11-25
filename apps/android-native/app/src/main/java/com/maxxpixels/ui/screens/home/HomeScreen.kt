@@ -323,13 +323,13 @@ fun HomeScreen(
                 }
             }
 
-            // 3. JioHotstar-Style Stacked Deck Hero Carousel
+            // 3. Hotstar-Style Centered Hero Carousel with Space on Both Sides
             item {
                 if (loading && banners.isEmpty()) {
                     ShimmerBox(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 18.dp, end = 48.dp)
+                            .padding(horizontal = 26.dp)
                             .aspectRatio(0.75f),
                         shape = RoundedCornerShape(22.dp)
                     )
@@ -346,49 +346,70 @@ fun HomeScreen(
                         }
                     }
 
-                    HorizontalPager(
-                        state = pagerState,
-                        contentPadding = PaddingValues(start = 18.dp, end = 48.dp),
-                        pageSpacing = 0.dp,
-                        beyondViewportPageCount = 2,
-                        modifier = Modifier.fillMaxWidth()
-                    ) { page ->
-                        val item = banners[page]
-                        val isSaved = savedIds.contains(item.id) || item.isBookmarked
-                        // Positive offset = upcoming cards stacked behind on the right (JioHotstar deck)
-                        val relOffset = (page - pagerState.currentPage) - pagerState.currentPageOffsetFraction
-                        val scale = when {
-                            relOffset > 0f -> (1f - (relOffset * 0.07f)).coerceIn(0.84f, 1f)
-                            else -> (1f + (relOffset * 0.04f)).coerceIn(0.92f, 1f)
-                        }
-                        val cardAlpha = when {
-                            relOffset > 0f -> (1f - (relOffset * 0.28f)).coerceIn(0.38f, 1f)
-                            else -> (1f + (relOffset * 0.35f)).coerceIn(0.45f, 1f)
-                        }
-                        val cardZ = if (relOffset >= 0f) 10f - relOffset else 10f + relOffset
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        HorizontalPager(
+                            state = pagerState,
+                            contentPadding = PaddingValues(horizontal = 26.dp),
+                            pageSpacing = 12.dp,
+                            beyondViewportPageCount = 2,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { page ->
+                            val item = banners[page]
+                            val isSaved = savedIds.contains(item.id) || item.isBookmarked
+                            val pageOffset = kotlin.math.abs(
+                                (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                            ).coerceIn(0f, 1f)
+                            val scale = 1f - (pageOffset * 0.06f)
+                            val cardAlpha = 1f - (pageOffset * 0.28f)
 
-                        HeroCinemaPosterCard(
-                            item = item,
-                            rankIndex = page + 1,
-                            isSaved = isSaved,
-                            onWatchNow = { onOpenDetails(item.id) },
-                            onToggleWatchlist = {
-                                val next = !isSaved
-                                savedIds = if (next) savedIds + item.id else savedIds - item.id
-                                scope.launch { repository.toggleWatchlist(item.id, item.title, next) }
-                            },
-                            modifier = Modifier
-                                .zIndex(cardZ)
-                                .graphicsLayer {
-                                    scaleX = scale
-                                    scaleY = scale
-                                    alpha = cardAlpha
-                                    if (relOffset > 0f) {
-                                        // Pull upcoming cards left so they stack neatly behind the right edge
-                                        translationX = -relOffset * size.width * 0.86f + (relOffset * 26.dp.toPx())
+                            HeroCinemaPosterCard(
+                                item = item,
+                                rankIndex = page + 1,
+                                isSaved = isSaved,
+                                onWatchNow = { onOpenDetails(item.id) },
+                                onToggleWatchlist = {
+                                    val next = !isSaved
+                                    savedIds = if (next) savedIds + item.id else savedIds - item.id
+                                    scope.launch { repository.toggleWatchlist(item.id, item.title, next) }
+                                },
+                                modifier = Modifier
+                                    .zIndex(1f - pageOffset)
+                                    .graphicsLayer {
+                                        scaleX = scale
+                                        scaleY = scale
+                                        alpha = cardAlpha
                                     }
+                            )
+                        }
+
+                        if (banners.size > 1) {
+                            Spacer(Modifier.height(12.dp))
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val count = banners.size.coerceAtMost(8)
+                                repeat(count) { idx ->
+                                    val active = pagerState.currentPage % banners.size == idx
+                                    val dotWidth by animateDpAsState(
+                                        targetValue = if (active) 22.dp else 6.dp,
+                                        label = "heroDot"
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .height(5.dp)
+                                            .width(dotWidth)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (active) MaxxColors.Primary else Color.White.copy(alpha = 0.28f)
+                                            )
+                                            .clickable {
+                                                scope.launch { pagerState.animateScrollToPage(idx) }
+                                            }
+                                    )
                                 }
-                        )
+                            }
+                        }
                     }
                 }
             }

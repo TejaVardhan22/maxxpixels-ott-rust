@@ -504,22 +504,38 @@ class MaxxRepository(
     }
 
     suspend fun getNotifications(): List<NotificationEntry> {
+        val clearedIds = sessionManager.getClearedNotificationIds()
         return runCatching {
             JsonParsers.unwrapArray(api.getNotifications()).map { n ->
                 NotificationEntry(
                     id = JsonParsers.long(n, "id", "notification_id"),
                     title = JsonParsers.str(n, "title", "name").ifBlank { "MaxxPixels" },
                     message = JsonParsers.str(n, "message", "description"),
-                    imageUrl = MediaUrlNormalizer.normalize(JsonParsers.str(n, "imageUrl", "image")),
+                    imageUrl = MediaUrlNormalizer.normalize(JsonParsers.str(n, "imageUrl", "image_url", "image")),
                     createdAt = JsonParsers.str(n, "createdAt", "created_at"),
-                    isRead = JsonParsers.bool(n, "read", "is_read")
+                    isRead = JsonParsers.bool(n, "isRead", "is_read", "read")
                 )
-            }
+            }.filterNot { it.id in clearedIds }
         }.getOrDefault(emptyList())
     }
 
     suspend fun markNotificationRead(id: Long) {
         runCatching { api.markNotificationRead(id, buildJsonObject {}) }
+    }
+
+    suspend fun markAllNotificationsRead() {
+        runCatching { api.markAllNotificationsRead(buildJsonObject {}) }
+    }
+
+    suspend fun clearNotification(id: Long) {
+        sessionManager.markNotificationsCleared(listOf(id))
+        runCatching { api.markNotificationRead(id, buildJsonObject {}) }
+    }
+
+    suspend fun clearAllNotifications(currentIds: List<Long>) {
+        sessionManager.markNotificationsCleared(currentIds)
+        runCatching { api.clearAllNotifications() }
+        runCatching { api.markAllNotificationsRead(buildJsonObject {}) }
     }
 
     suspend fun updateProfile(

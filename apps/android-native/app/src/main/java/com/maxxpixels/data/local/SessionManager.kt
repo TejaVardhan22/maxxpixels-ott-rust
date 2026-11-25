@@ -107,11 +107,24 @@ class SessionManager(context: Context) {
         return runCatching { json.decodeFromString<List<HomeSection>>(raw) }.getOrDefault(emptyList())
     }
 
+    // ── Cleared Notifications Persistence (prevents cleared old items from reappearing) ──
+    fun getClearedNotificationIds(): Set<Long> {
+        val raw = prefs.getString(KEY_CLEARED_NOTIFS, null) ?: return emptySet()
+        return raw.split(",").mapNotNull { it.trim().toLongOrNull() }.toSet()
+    }
+
+    fun markNotificationsCleared(ids: Collection<Long>) {
+        if (ids.isEmpty()) return
+        val merged = (getClearedNotificationIds() + ids).toList().takeLast(500)
+        prefs.edit().putString(KEY_CLEARED_NOTIFS, merged.joinToString(",")).apply()
+    }
+
     companion object {
         private const val KEY_SESSION = "user_session_v2"
         private const val KEY_BRAND = "brand_identity_v2"
         private const val KEY_DEVICE_ID = "device_id_v2"
         private const val KEY_CACHE_BANNERS = "cache_home_banners_v2"
         private const val KEY_CACHE_SECTIONS = "cache_home_sections_v2"
+        private const val KEY_CLEARED_NOTIFS = "cleared_notification_ids_v1"
     }
 }

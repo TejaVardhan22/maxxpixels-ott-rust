@@ -412,4 +412,14 @@ impl NotificationService {
         let res = state.db.execute(stmt).await?;
         Ok(json!({ "markedRead": res.rows_affected() }))
     }
+
+    pub async fn clear_all_notifications(state: &AppState, user_id: i64) -> AppResult<Value> {
+        let stmt = Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "DELETE FROM user_notifications WHERE user_id = $1",
+            vec![user_id.into()],
+        );
+        let res = state.db.execute(stmt).await?;
+        Ok(json!({ "cleared": res.rows_affected() }))
+    }
 }

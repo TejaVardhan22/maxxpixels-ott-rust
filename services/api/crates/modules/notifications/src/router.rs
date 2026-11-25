@@ -1,5 +1,5 @@
 use crate::handlers::*;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::Router;
 use maxx_core::AppState;
 
@@ -27,6 +27,7 @@ pub fn notification_routes() -> Router<AppState> {
         .route("/my", get(get_my_notifications_handler))
         .route("/unread-count", get(unread_count_handler))
         .route("/read-all", post(mark_all_read_handler))
+        .route("/clear-all", delete(clear_all_notifications_handler))
         .route("/:id/read", post(mark_read_handler));
 
     Router::new()

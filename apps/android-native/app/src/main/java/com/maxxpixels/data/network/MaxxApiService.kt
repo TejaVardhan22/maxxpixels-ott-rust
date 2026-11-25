@@ -150,6 +150,12 @@ interface MaxxApiService {
     @POST("notifications/{id}/read")
     suspend fun markNotificationRead(@Path("id") id: Long, @Body body: JsonObject): JsonElement
 
+    @POST("notifications/read-all")
+    suspend fun markAllNotificationsRead(@Body body: JsonObject): JsonElement
+
+    @DELETE("notifications/clear-all")
+    suspend fun clearAllNotifications(): JsonElement
+
     // ── Subscriptions, Coupons & Razorpay Payments ──────────────────────────
     @GET("plans")
     suspend fun getPlans(): JsonElement

@@ -159,26 +159,49 @@ fun NotificationsScreen(
                 }
             }
 
-            if (unreadCount > 0) {
-                Surface(
-                    color = Color.White.copy(alpha = 0.08f),
-                    shape = RoundedCornerShape(999.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
-                    modifier = Modifier.clickable {
-                        val unreadIds = list.filter { !it.isRead }.map { it.id }
-                        list = list.map { it.copy(isRead = true) }
-                        scope.launch {
-                            unreadIds.forEach { repository.markNotificationRead(it) }
+            val context = LocalContext.current
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (unreadCount > 0) {
+                    Surface(
+                        color = Color.White.copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(999.dp),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+                        modifier = Modifier.clickable {
+                            list = list.map { it.copy(isRead = true) }
+                            Toast.makeText(context, "All notifications marked read", Toast.LENGTH_SHORT).show()
+                            scope.launch { repository.markAllNotificationsRead() }
+                        }
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Rounded.DoneAll, null, tint = MaxxColors.Primary, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Read all", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                         }
                     }
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                }
+                if (list.isNotEmpty()) {
+                    Surface(
+                        color = Color(0x22EF4444),
+                        shape = RoundedCornerShape(999.dp),
+                        border = BorderStroke(1.dp, Color(0x55EF4444)),
+                        modifier = Modifier.clickable {
+                            val ids = list.map { it.id }
+                            list = emptyList()
+                            Toast.makeText(context, "All notifications cleared", Toast.LENGTH_SHORT).show()
+                            scope.launch { repository.clearAllNotifications(ids) }
+                        }
                     ) {
-                        Icon(Icons.Rounded.DoneAll, null, tint = MaxxColors.Primary, modifier = Modifier.size(14.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Read all", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Rounded.DeleteOutline, null, tint = MaxxColors.ErrorSoft, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Clear", color = MaxxColors.ErrorSoft, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -335,13 +358,28 @@ fun NotificationsScreen(
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.weight(1f)
                                     )
-                                    if (!n.isRead) {
-                                        Spacer(Modifier.width(8.dp))
-                                        Box(
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        if (!n.isRead) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .clip(CircleShape)
+                                                    .background(MaxxColors.Primary)
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = Icons.Rounded.Close,
+                                            contentDescription = "Clear notification",
+                                            tint = MaxxColors.TextMuted,
                                             modifier = Modifier
-                                                .size(8.dp)
-                                                .clip(CircleShape)
-                                                .background(MaxxColors.Primary)
+                                                .size(16.dp)
+                                                .clickable {
+                                                    list = list.filterNot { it.id == n.id }
+                                                    scope.launch { repository.clearNotification(n.id) }
+                                                }
                                         )
                                     }
                                 }

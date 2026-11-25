@@ -297,6 +297,18 @@ pub async fn mark_all_read_handler(
     Ok(ApiResponse::ok_response(data))
 }
 
+pub async fn clear_all_notifications_handler(
+    State(state): State<AppState>,
+    claims: Claims,
+) -> AppResult<Response> {
+    let uid = claims
+        .sub
+        .parse::<i64>()
+        .map_err(|_| AppError::Unauthorized("Invalid user token".to_string()))?;
+    let data = NotificationService::clear_all_notifications(&state, uid).await?;
+    Ok(ApiResponse::ok_response(data))
+}
+
 
 pub async fn register_device_token_handler(
     State(state): State<AppState>,
