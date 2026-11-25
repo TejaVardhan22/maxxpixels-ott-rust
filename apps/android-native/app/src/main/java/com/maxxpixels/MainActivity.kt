@@ -677,87 +677,120 @@ private fun RnMainTabsShell(
 ) {
     var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab) }
 
-    Scaffold(
-        containerColor = MaxxColors.CinemaBlack,
-        bottomBar = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaxxColors.SurfaceDark)
-                    .navigationBarsPadding()
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaxxColors.CinemaBlack)
+    ) {
+        when (selectedTab) {
+            0 -> HomeScreen(
+                repository = app.repository,
+                initialLanguage = initialLanguage,
+                initialTypeId = initialTypeId,
+                onOpenDetails = onOpenDetails,
+                onPlayItem = onPlay,
+                onOpenSearch = { selectedTab = 1 },
+                onOpenNotifications = onOpenNotifications,
+                onOpenCategory = onOpenCategory,
+                onOpenSubscription = onOpenSubscription,
+                onOpenGames = onOpenGames,
+                onOpenPortalHub = onOpenPortalHub
+            )
+            1 -> SearchScreen(
+                repository = app.repository,
+                onOpenDetails = onOpenDetails
+            )
+            2 -> NewHotScreen(
+                repository = app.repository,
+                onOpenDetails = onOpenDetails,
+                onPlayItem = onPlay
+            )
+            else -> ProfileScreen(
+                repository = app.repository,
+                onOpenDetails = onOpenDetails,
+                onOpenSubscription = onOpenSubscription,
+                onOpenAccount = onOpenAccount,
+                onOpenRentals = onOpenRentals,
+                onOpenDownloads = onOpenDownloads,
+                onOpenStorage = onOpenStorage,
+                onOpenSettings = onOpenSettings,
+                onOpenHelp = onOpenHelp,
+                onOpenLegal = onOpenLegal,
+                onSignedOut = onSignedOut
+            )
+        }
+
+        // Floating Frosted Pill Bottom Navigation Bar (Matching Reference UI)
+        val tabs = listOf(
+            Triple("Home", Icons.Rounded.Home, 0),
+            Triple("Search", Icons.Rounded.Search, 1),
+            Triple("New", Icons.Rounded.LocalFireDepartment, 2),
+            Triple("Profile", Icons.Rounded.Person, 3)
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+        ) {
+            Surface(
+                color = MaxxColors.FloatingDockBg,
+                shape = RoundedCornerShape(999.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+                shadowElevation = 18.dp
             ) {
-                HorizontalDivider(thickness = 1.dp, color = MaxxColors.BorderSubtle)
-                val tabs = listOf(
-                    Triple("Home", Icons.Rounded.Home, 0),
-                    Triple("Search", Icons.Rounded.Search, 1),
-                    Triple("New & Hot", Icons.Rounded.LocalFireDepartment, 2),
-                    Triple("My Space", Icons.Rounded.Person, 3)
-                )
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(60.dp)
-                        .padding(horizontal = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceAround,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     tabs.forEach { (label, icon, idx) ->
                         val active = selectedTab == idx
-                        val tint = if (active) MaxxColors.Primary else Color(0xFF8E8E93)
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable { selectedTab = idx }
-                                .padding(vertical = 4.dp)
-                        ) {
-                            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(22.dp))
-                            Spacer(Modifier.height(2.dp))
-                            Text(label, color = tint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        if (active) {
+                            Surface(
+                                color = Color.White,
+                                shape = RoundedCornerShape(999.dp),
+                                modifier = Modifier.clickable { selectedTab = idx }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 11.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = label,
+                                        tint = MaxxColors.OnPrimaryDark,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        text = label,
+                                        color = MaxxColors.OnPrimaryDark,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        } else {
+                            Surface(
+                                color = Color.White.copy(alpha = 0.09f),
+                                shape = RoundedCornerShape(999.dp),
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .clickable { selectedTab = idx }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = label,
+                                        tint = Color.White.copy(alpha = 0.85f),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
-            }
-        }
-    ) { innerPadding ->
-        Box(modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding())) {
-            when (selectedTab) {
-                0 -> HomeScreen(
-                    repository = app.repository,
-                    initialLanguage = initialLanguage,
-                    initialTypeId = initialTypeId,
-                    onOpenDetails = onOpenDetails,
-                    onPlayItem = onPlay,
-                    onOpenSearch = { selectedTab = 1 },
-                    onOpenNotifications = onOpenNotifications,
-                    onOpenCategory = onOpenCategory,
-                    onOpenSubscription = onOpenSubscription,
-                    onOpenGames = onOpenGames,
-                    onOpenPortalHub = onOpenPortalHub
-                )
-                1 -> SearchScreen(
-                    repository = app.repository,
-                    onOpenDetails = onOpenDetails
-                )
-                2 -> NewHotScreen(
-                    repository = app.repository,
-                    onOpenDetails = onOpenDetails,
-                    onPlayItem = onPlay
-                )
-                else -> ProfileScreen(
-                    repository = app.repository,
-                    onOpenDetails = onOpenDetails,
-                    onOpenSubscription = onOpenSubscription,
-                    onOpenAccount = onOpenAccount,
-                    onOpenRentals = onOpenRentals,
-                    onOpenDownloads = onOpenDownloads,
-                    onOpenStorage = onOpenStorage,
-                    onOpenSettings = onOpenSettings,
-                    onOpenHelp = onOpenHelp,
-                    onOpenLegal = onOpenLegal,
-                    onSignedOut = onSignedOut
-                )
             }
         }
     }
