@@ -50,7 +50,7 @@ export interface AuditHistoryRecord {
         <div>
           <span class="category-tag"><mat-icon>settings</mat-icon> PLATFORM INFRASTRUCTURE & CONFIGURATION</span>
           <h1>System Settings & Central Control Studio</h1>
-          <p>Manage branding, currency, AdMob, maintenance mode, player rules, device limits, APK versions, and audit rollback (infrastructure secrets like Bunny, Razorpay, MSG91 &amp; Email are managed via server .env)</p>
+          <p>Manage branding, currency, AdMob, maintenance mode, video player, and audit rollback (infrastructure secrets like Bunny, Razorpay, MSG91 &amp; Email are managed via server .env; device/stream limits are managed per Subscription Plan)</p>
         </div>
         <div class="header-actions">
           <span *ngIf="settingsForm.dirty" class="unsaved-badge">
@@ -94,10 +94,12 @@ export interface AuditHistoryRecord {
         </div>
 
         <div class="kpi-card purple">
-          <div class="kpi-icon"><mat-icon>devices</mat-icon></div>
+          <div class="kpi-icon"><mat-icon>monetization_on</mat-icon></div>
           <div>
-            <span class="kpi-label">Device Concurrency</span>
-            <div class="kpi-val font-mono">{{ settingsForm.value.maxDevicesPerUser || '4' }} Devices • {{ settingsForm.value.maxConcurrentStreamsPerUser || '2' }} Streams</div>
+            <span class="kpi-label">Google AdMob</span>
+            <div class="kpi-val" [class.text-green]="settingsForm.value.admobEnabled === 'true'" [class.text-red]="settingsForm.value.admobEnabled !== 'true'">
+              {{ settingsForm.value.admobEnabled === 'true' ? (settingsForm.value.admobTestMode === 'true' ? '🧪 Test Mode' : '🟢 Live Ads') : '🔴 Disabled' }}
+            </div>
           </div>
         </div>
       </div>
@@ -105,7 +107,7 @@ export interface AuditHistoryRecord {
       <!-- 3. SEARCH & QUICK FILTER BAR -->
       <div class="search-filter-box">
         <mat-icon>search</mat-icon>
-        <input type="text" [(ngModel)]="searchQuery" placeholder="Search settings (e.g. branding, currency, admob, player, watermark, maintenance, device, apk)..." (input)="onSearchChange()">
+        <input type="text" [(ngModel)]="searchQuery" placeholder="Search settings (e.g. branding, currency, admob, player, watermark, maintenance, audit)..." (input)="onSearchChange()">
         <button *ngIf="searchQuery" mat-icon-button (click)="searchQuery = ''; onSearchChange()"><mat-icon>close</mat-icon></button>
       </div>
 
@@ -125,12 +127,6 @@ export interface AuditHistoryRecord {
         </button>
         <button class="tab-btn" [class.active]="activeTab === 'PLAYER'" (click)="activeTab = 'PLAYER'">
           <mat-icon>play_circle</mat-icon> Video Player
-        </button>
-        <button class="tab-btn" [class.active]="activeTab === 'RESTRICTIONS'" (click)="activeTab = 'RESTRICTIONS'">
-          <mat-icon>devices</mat-icon> Device Limits
-        </button>
-        <button class="tab-btn" [class.active]="activeTab === 'GAMES_APK'" (click)="activeTab = 'GAMES_APK'">
-          <mat-icon>sports_esports</mat-icon> Games & APK
         </button>
         <button class="tab-btn" [class.active]="activeTab === 'HISTORY'" (click)="activeTab = 'HISTORY'; loadHistory()">
           <mat-icon>history</mat-icon> Audit & Rollback
@@ -565,98 +561,7 @@ export interface AuditHistoryRecord {
         </div>
       </div>
 
-      <!-- TAB 8: DEVICE & SECURITY RESTRICTIONS -->
-      <div *ngIf="activeTab === 'RESTRICTIONS'" class="tab-content">
-        <div class="form-card">
-          <div class="card-header">
-            <div class="header-icon-box purple"><mat-icon>devices</mat-icon></div>
-            <div>
-              <h3>Device Concurrency & Security Policies</h3>
-              <p>Control multi-device logins, concurrent streaming limits, and session expiration</p>
-            </div>
-          </div>
-
-          <form [formGroup]="settingsForm" (ngSubmit)="onSaveSettings()" class="settings-form">
-            <div class="section-title"><mat-icon>security</mat-icon><span>User & Device Limitations</span></div>
-            <div class="form-row">
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Max Registered Devices per User</mat-label>
-                  <input matInput type="number" formControlName="maxDevicesPerUser" min="1" max="10">
-                  <mat-hint>Users must unlink an old device once this threshold is reached</mat-hint>
-                </mat-form-field>
-              </div>
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Max Simultaneous Active Streams</mat-label>
-                  <input matInput type="number" formControlName="maxConcurrentStreamsPerUser" min="1" max="5">
-                  <mat-hint>Maximum screens that can play simultaneously on a single subscription</mat-hint>
-                </mat-form-field>
-              </div>
-            </div>
-
-            <div class="toggles-card">
-              <div class="toggle-row">
-                <div>
-                  <span class="t-title">Allow Screen Recording & Screenshots</span>
-                  <span class="t-desc">Block screenshotting and screen recording via FLAG_SECURE on Android</span>
-                </div>
-                <mat-slide-toggle formControlName="allowScreenRecording" color="warn"></mat-slide-toggle>
-              </div>
-            </div>
-
-            <button mat-raised-button class="full-width submit-btn" type="submit" [disabled]="isSaving">
-              <mat-icon>save</mat-icon> Save Device & Security Limits
-            </button>
-          </form>
-        </div>
-      </div>
-
-      <!-- TAB 9: GAMES & APK DISTRIBUTION -->
-      <div *ngIf="activeTab === 'GAMES_APK'" class="tab-content">
-        <div class="form-card">
-          <div class="card-header">
-            <div class="header-icon-box gold"><mat-icon>sports_esports</mat-icon></div>
-            <div>
-              <h3>Games Catalog & APK Distribution Management</h3>
-              <p>Distribute mobile games and trigger OTA updates for sideloaded Android TV and Mobile APKs</p>
-            </div>
-          </div>
-
-          <form [formGroup]="settingsForm" (ngSubmit)="onSaveSettings()" class="settings-form">
-            <div class="section-title"><mat-icon>system_update</mat-icon><span>Mobile & TV App Version Management</span></div>
-            <div class="form-row">
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Latest Android Version Code</mat-label>
-                  <input matInput type="number" formControlName="apkLatestVersionCode" placeholder="12">
-                </mat-form-field>
-              </div>
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Latest Version Display Name</mat-label>
-                  <input matInput formControlName="apkLatestVersionName" placeholder="1.2.0">
-                </mat-form-field>
-              </div>
-            </div>
-
-            <div class="form-row">
-              <div class="full-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Direct APK Download URL</mat-label>
-                  <input matInput type="url" formControlName="apkDownloadUrl" placeholder="https://.../maxxpixels-ott.apk">
-                </mat-form-field>
-              </div>
-            </div>
-
-            <button mat-raised-button class="full-width submit-btn" type="submit" [disabled]="isSaving">
-              <mat-icon>save</mat-icon> Save App Version & Games Config
-            </button>
-          </form>
-        </div>
-      </div>
-
-      <!-- TAB 10: CONFIGURATION AUDIT & ROLLBACK -->
+      <!-- TAB 6: CONFIGURATION AUDIT & ROLLBACK -->
       <div *ngIf="activeTab === 'HISTORY'" class="tab-content">
         <div class="form-card">
           <div class="card-header">
@@ -1075,17 +980,7 @@ export class SystemSettingsPage implements OnInit {
     playerAutoplay: [false],
     playerDefaultQuality: ['1080p'],
     playerWatermarkEnabled: [false],
-    playerWatermarkText: [''],
-
-    // Restrictions
-    maxDevicesPerUser: [''],
-    maxConcurrentStreamsPerUser: [''],
-    allowScreenRecording: [false],
-
-    // Games & APK
-    apkLatestVersionCode: [''],
-    apkLatestVersionName: [''],
-    apkDownloadUrl: ['']
+    playerWatermarkText: ['']
   });
 
   ngOnInit(): void {
@@ -1105,7 +1000,6 @@ export class SystemSettingsPage implements OnInit {
     'featureGamesEnabled',
     'playerAutoplay',
     'playerWatermarkEnabled',
-    'allowScreenRecording',
   ]);
 
   private coerceSettingsPayload(raw: Record<string, any>): Record<string, any> {
@@ -1116,7 +1010,6 @@ export class SystemSettingsPage implements OnInit {
       logoUrl: ['logoUrl', 'APP_LOGO_URL', 'appLogoUrl', 'logo_url'],
       darkLogoUrl: ['darkLogoUrl', 'DARK_LOGO_URL', 'dark_logo_url'],
       maintenanceMode: ['maintenanceMode', 'MAINTENANCE_MODE_ENABLED', 'maintenanceModeEnabled'],
-      apkLatestVersionName: ['apkLatestVersionName', 'ANDROID_LATEST_VERSION', 'androidLatestVersion'],
     };
     for (const [target, keys] of Object.entries(aliases)) {
       if (normalized[target] === undefined || normalized[target] === null || normalized[target] === '') {
@@ -1173,10 +1066,6 @@ export class SystemSettingsPage implements OnInit {
       this.activeTab = 'MAINTENANCE';
     } else if (q.includes('player') || q.includes('watermark') || q.includes('quality') || q.includes('autoplay')) {
       this.activeTab = 'PLAYER';
-    } else if (q.includes('device') || q.includes('screen') || q.includes('limit') || q.includes('concurrent')) {
-      this.activeTab = 'RESTRICTIONS';
-    } else if (q.includes('game') || q.includes('apk') || q.includes('version')) {
-      this.activeTab = 'GAMES_APK';
     } else if (q.includes('hist') || q.includes('audit') || q.includes('rollback')) {
       this.activeTab = 'HISTORY';
       this.loadHistory();
