@@ -418,7 +418,7 @@ pub async fn admin_list_submissions_handler(
     Query(q): Query<AdQuery>,
 ) -> AppResult<Response> {
     Ok(ApiResponse::ok_response(
-        AdvertisingService::list_producer_submissions(&state, q.status.as_deref()).await?,
+        AdvertisingService::admin_list_collect_submissions(&state, q.status.as_deref()).await?,
     ))
 }
 
@@ -574,57 +574,55 @@ pub async fn producer_submit_content_handler(
 
 pub async fn admin_review_submission_handler(
     State(state): State<AppState>,
-    _claims: Claims,
+    claims: Claims,
     Path(id): Path<i64>,
     Json(body): Json<Value>,
 ) -> AppResult<Response> {
-    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
-    let action = body
-        .get("action")
-        .or_else(|| body.get("status"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("APPROVE")
-        .to_uppercase();
-
-    let next_status = if action.contains("APPROV") || action == "PUBLISHED" {
-        "PUBLISHED"
-    } else if action.contains("REJECT") {
-        "REJECTED"
-    } else if action.contains("SHARE_AGREEMENT") || action.contains("SHARE AGREEMENT") {
-        "AGREEMENT_SHARED"
-    } else if action.contains("AWAITING") {
-        "AWAITING_AGREEMENT"
-    } else {
-        action.as_str()
-    };
-
-    // Also update producer_submissions tracking table
-    let _ = state.db.execute(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "UPDATE producer_submissions SET status = $1, updated_at = NOW() WHERE content_id = $2",
-        [next_status.into(), id.into()],
-    )).await;
-
-    state
-        .db
-        .execute(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "UPDATE contents SET status = $1, published_at = CASE WHEN $1 = 'PUBLISHED' THEN COALESCE(published_at, NOW()) ELSE published_at END, updated_at = NOW() WHERE id = $2",
-            [next_status.into(), id.into()],
-        ))
-        .await?;
-
-    Ok(ApiResponse::ok_response(serde_json::json!({
-        "id": id,
-        "status": next_status,
-        "reviewed": true
-    })))
+    let reviewer = claims
+        .email
+        .as_deref()
+        .unwrap_or("admin@maxxpixels.com");
+    let data = AdvertisingService::admin_review_collect_submission(&state, id, reviewer, body).await?;
+    Ok(ApiResponse::ok_response(data))
 }
 
 pub async fn public_producer_submit_handler(
     State(state): State<AppState>,
     Json(body): Json<Value>,
 ) -> AppResult<Response> {
-    let data = AdvertisingService::public_producer_submit(&state, body).await?;
+    let data = AdvertisingService::collect_submit_content(&state, body).await?;
+    Ok(ApiResponse::ok_response(data))
+}
+
+pub async fn collect_send_otp_handler(
+    State(state): State<AppState>,
+    Json(body): Json<Value>,
+) -> AppResult<Response> {
+    let data = AdvertisingService::collect_send_otp(&state, body).await?;
+    Ok(ApiResponse::ok_response(data))
+}
+
+pub async fn collect_verify_otp_handler(
+    State(state): State<AppState>,
+    Json(body): Json<Value>,
+) -> AppResult<Response> {
+    let data = AdvertisingService::collect_verify_otp(&state, body).await?;
+    Ok(ApiResponse::ok_response(data))
+}
+
+pub async fn collect_get_status_handler(
+    State(state): State<AppState>,
+    Path(token): Path<String>,
+) -> AppResult<Response> {
+    let data = AdvertisingService::collect_get_status(&state, &token).await?;
+    Ok(ApiResponse::ok_response(data))
+}
+
+pub async fn collect_submit_kyc_handler(
+    State(state): State<AppState>,
+    Path(token): Path<String>,
+    Json(body): Json<Value>,
+) -> AppResult<Response> {
+    let data = AdvertisingService::collect_submit_kyc(&state, &token, body).await?;
     Ok(ApiResponse::ok_response(data))
 }

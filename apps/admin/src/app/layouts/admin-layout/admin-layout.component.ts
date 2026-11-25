@@ -78,6 +78,12 @@ import { environment } from '../../../environments/environment';
                 <a mat-list-item [routerLink]="item.route" [queryParams]="item.queryParams" routerLinkActive="active-link" [routerLinkActiveOptions]="{ exact: false }" (click)="onNavItemClick(drawer)">
                   <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
                   <span matListItemTitle class="nav-item-title">{{ item.label }}</span>
+                  <span
+                    matListItemMeta
+                    class="nav-alert-badge"
+                    *ngIf="item.route === '/admin/producer-reviews' && pendingProducerReviewsCount > 0">
+                    {{ pendingProducerReviewsCount }}
+                  </span>
                 </a>
               </ng-template>
             </ng-container>
@@ -148,6 +154,21 @@ import { environment } from '../../../environments/environment';
       height: 40px !important;
       border-radius: 8px;
       margin-bottom: 2px;
+    }
+    .nav-alert-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: #e50914;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1;
+      box-shadow: 0 0 10px rgba(229, 9, 20, 0.55);
     }
     .brand {
       min-height: 64px;
@@ -312,9 +333,11 @@ export class AdminLayoutComponent implements OnInit, OnDestroy {
 
   isMobile = false;
   private breakpointSub?: Subscription;
+  private reviewPollTimer: any;
 
   brandName = 'MaxxPixels';
   brandLogoUrl = 'assets/logo.png';
+  pendingProducerReviewsCount = 0;
   expandedMenus: Record<string, boolean> = { Content: false };
 
   toggleMenu(label: string): void {
@@ -438,10 +461,31 @@ export class AdminLayoutComponent implements OnInit, OnDestroy {
         this.applyBranding(settings);
       }
     });
+
+    this.loadPendingProducerReviewsCount();
+    this.reviewPollTimer = setInterval(() => this.loadPendingProducerReviewsCount(), 60000);
+  }
+
+  private loadPendingProducerReviewsCount(): void {
+    this.http
+      .get<any>(`${environment.apiBaseUrl}/admin/content/submissions`, { params: { status: 'ALL' } })
+      .subscribe({
+        next: (res) => {
+          const list = Array.isArray(res?.data) ? res.data : [];
+          this.pendingProducerReviewsCount = list.filter((item: any) => {
+            const st = String(item?.status || '').toUpperCase();
+            return st === 'SUBMITTED' || st === 'KYC_SUBMITTED';
+          }).length;
+        },
+        error: () => {}
+      });
   }
 
   ngOnDestroy(): void {
     this.breakpointSub?.unsubscribe();
+    if (this.reviewPollTimer) {
+      clearInterval(this.reviewPollTimer);
+    }
     if (typeof window !== 'undefined') {
       window.removeEventListener('maxx:branding-updated', this.onBrandingUpdated);
     }

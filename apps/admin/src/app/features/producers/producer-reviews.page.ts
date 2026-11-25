@@ -48,16 +48,16 @@ import { ProducerApiService, ProducerSubmission, ProducerOnboardingProfile } fro
 
       <!-- 2. TOP QUEUE SELECTION TABS -->
       <div class="queue-tab-bar">
-        <button class="queue-tab" [class.active]="activeQueue === 'KYC'" (click)="setQueue('KYC')">
-          <mat-icon>shield</mat-icon>
-          <span>Producer KYC Onboarding Requests</span>
-          <span class="badge red-badge" *ngIf="pendingKycCount > 0">{{ pendingKycCount }}</span>
-        </button>
-
         <button class="queue-tab" [class.active]="activeQueue === 'CONTENT'" (click)="setQueue('CONTENT')">
           <mat-icon>video_library</mat-icon>
           <span>Content Submissions Queue</span>
-          <span class="badge blue-badge" *ngIf="pendingContentCount > 0">{{ pendingContentCount }}</span>
+          <span class="badge red-badge" *ngIf="pendingContentCount > 0">{{ pendingContentCount }}</span>
+        </button>
+
+        <button class="queue-tab" [class.active]="activeQueue === 'KYC'" (click)="setQueue('KYC')">
+          <mat-icon>shield</mat-icon>
+          <span>Producer KYC Onboarding Requests</span>
+          <span class="badge blue-badge" *ngIf="pendingKycCount > 0">{{ pendingKycCount }}</span>
         </button>
       </div>
 
@@ -109,16 +109,16 @@ import { ProducerApiService, ProducerSubmission, ProducerOnboardingProfile } fro
         <div class="kpi-card gold">
           <div class="kpi-icon"><mat-icon>pending_actions</mat-icon></div>
           <div>
-            <span class="kpi-label">Pending Approval</span>
-            <div class="kpi-val">{{ getCountByStatus('SUBMITTED') }} In Review</div>
+            <span class="kpi-label">Needs Admin Action</span>
+            <div class="kpi-val">{{ pendingContentCount }} Pending</div>
           </div>
         </div>
 
         <div class="kpi-card green">
           <div class="kpi-icon"><mat-icon>task_alt</mat-icon></div>
           <div>
-            <span class="kpi-label">Approved & Published</span>
-            <div class="kpi-val text-green">{{ getCountByStatus('APPROVED') + getCountByStatus('PUBLISHED') }} Live/Queued</div>
+            <span class="kpi-label">Onboarded to Draft</span>
+            <div class="kpi-val text-green">{{ getCountByStatus('ONBOARDED') + getCountByStatus('APPROVED') + getCountByStatus('PUBLISHED') }} Onboarded</div>
           </div>
         </div>
 
@@ -126,7 +126,7 @@ import { ProducerApiService, ProducerSubmission, ProducerOnboardingProfile } fro
           <div class="kpi-icon"><mat-icon>cancel</mat-icon></div>
           <div>
             <span class="kpi-label">Rejected Assets</span>
-            <div class="kpi-val text-red">{{ getCountByStatus('REJECTED') }} Purged</div>
+            <div class="kpi-val text-red">{{ getCountByStatus('REJECTED') }} Rejected</div>
           </div>
         </div>
       </div>
@@ -338,19 +338,42 @@ import { ProducerApiService, ProducerSubmission, ProducerOnboardingProfile } fro
             </td>
           </ng-container>
 
-          <!-- Master Video Asset S3 URL -->
+          <!-- Master Video / Google Drive Assets -->
           <ng-container matColumnDef="rawVideo">
-            <th mat-header-cell *matHeaderCellDef>Raw Master Video</th>
+            <th mat-header-cell *matHeaderCellDef>Drive Assets</th>
             <td mat-cell *matCellDef="let row">
-              <div class="video-link-box" *ngIf="row.rawVideoUrl">
-                <button mat-stroked-button class="preview-video-btn" (click)="openVideoPreview(row)" matTooltip="Play & preview submission video">
+              <div class="video-link-box" *ngIf="row.googleDriveLink || row.rawVideoUrl; else noDriveTpl">
+                <a
+                  *ngIf="row.googleDriveLink"
+                  [href]="row.googleDriveLink"
+                  target="_blank"
+                  mat-stroked-button
+                  class="preview-video-btn"
+                  matTooltip="Open Full Movie Google Drive link">
+                  <mat-icon>cloud</mat-icon> Drive Movie
+                </a>
+                <button
+                  *ngIf="!row.googleDriveLink && row.rawVideoUrl"
+                  mat-stroked-button
+                  class="preview-video-btn"
+                  (click)="openVideoPreview(row)"
+                  matTooltip="Play & preview submission video">
                   <mat-icon>play_circle</mat-icon> Preview
                 </button>
-                <button mat-icon-button class="copy-btn" (click)="copyUrl(row.rawVideoUrl)" matTooltip="Copy Raw Video URL">
+                <button
+                  mat-icon-button
+                  class="copy-btn"
+                  (click)="copyUrl(row.googleDriveLink || row.rawVideoUrl, 'Drive link copied!')"
+                  matTooltip="Copy Video / Drive URL">
                   <mat-icon>content_copy</mat-icon>
                 </button>
               </div>
-              <span *ngIf="!row.rawVideoUrl" class="text-muted">No raw video URL</span>
+              <ng-template #noDriveTpl>
+                <span class="text-muted">No drive link</span>
+              </ng-template>
+              <div class="review-notes" *ngIf="row.bunnyTransferStatus && row.bunnyTransferStatus !== 'NONE'">
+                <small>Bunny: <strong>{{ row.bunnyTransferStatus }}</strong></small>
+              </div>
             </td>
           </ng-container>
 
@@ -359,6 +382,9 @@ import { ProducerApiService, ProducerSubmission, ProducerOnboardingProfile } fro
             <th mat-header-cell *matHeaderCellDef>Status</th>
             <td mat-cell *matCellDef="let row">
               <app-status-badge [status]="row.status"></app-status-badge>
+              <div class="review-notes" *ngIf="row.phoneVerified">
+                <small style="color: #00e676;">OTP Verified</small>
+              </div>
               <div class="review-notes" *ngIf="row.reviewNotes">
                 <small>{{ row.reviewNotes }}</small>
               </div>
@@ -371,56 +397,63 @@ import { ProducerApiService, ProducerSubmission, ProducerOnboardingProfile } fro
             <td mat-cell *matCellDef="let row">
               <div class="actions-cell">
                 <button
+                  mat-stroked-button
+                  color="accent"
+                  class="action-btn view-btn"
+                  (click)="openSubmissionDetailsModal(row)"
+                  matTooltip="Inspect all details, Drive links, Agreement & KYC">
+                  <mat-icon>visibility</mat-icon> Inspect
+                </button>
+
+                <button
                   mat-raised-button
                   color="primary"
                   class="action-btn approve-btn"
-                  *ngIf="isPendingContent(row)"
-                  (click)="approveContent(row)"
-                  matTooltip="Approve and publish this title">
-                  <mat-icon>check</mat-icon> Approve & Publish
+                  *ngIf="row.status === 'SUBMITTED' || row.status === 'PENDING' || row.status === 'UNDER_REVIEW'"
+                  (click)="approveDetailsForKyc(row)"
+                  matTooltip="Approve details and send Agreement & KYC link">
+                  <mat-icon>verified</mat-icon> Approve &amp; Request KYC
                 </button>
 
                 <button
                   mat-stroked-button
                   color="accent"
                   class="action-btn"
-                  *ngIf="isPendingContent(row) && row.submissionSource === 'public_producer'"
-                  (click)="shareAgreement(row)"
-                  matTooltip="Share agreement with producer for signature">
-                  <mat-icon>description</mat-icon> Share Agreement
+                  *ngIf="row.status === 'KYC_PENDING' && row.kycUrl"
+                  (click)="copyUrl(row.kycUrl, 'Agreement & KYC link copied!')"
+                  matTooltip="Copy Agreement & KYC link to share with producer">
+                  <mat-icon>content_copy</mat-icon> Copy KYC Link
                 </button>
-
-                <button
-                  mat-stroked-button
-                  color="warn"
-                  class="action-btn reject-btn"
-                  *ngIf="isPendingContent(row)"
-                  (click)="rejectContent(row)"
-                  matTooltip="Reject submission">
-                  <mat-icon>close</mat-icon> Reject
-                </button>
-
-                <span *ngIf="row.status === 'AGREEMENT_SHARED'" class="agreement-label">
-                  <mat-icon>pending</mat-icon> Awaiting Signed Agreement
-                </span>
 
                 <button
                   mat-raised-button
                   color="primary"
                   class="action-btn approve-btn"
-                  *ngIf="row.status === 'AGREEMENT_SHARED'"
-                  (click)="publishAfterAgreement(row)"
-                  matTooltip="Publish content after signed agreement is uploaded">
-                  <mat-icon>publish</mat-icon> Publish After Agreement
+                  *ngIf="row.status === 'KYC_SUBMITTED'"
+                  (click)="onboardToDraft(row)"
+                  matTooltip="Verify KYC, create Draft in All Catalog & transfer Drive assets to Bunny">
+                  <mat-icon>cloud_upload</mat-icon> Onboard Draft (Bunny)
                 </button>
 
-                <span *ngIf="row.status === 'APPROVED' || row.status === 'PUBLISHED'" class="approved-label">
-                  <mat-icon>verified</mat-icon> Approved
-                </span>
+                <a
+                  mat-stroked-button
+                  color="accent"
+                  class="action-btn"
+                  *ngIf="row.status === 'ONBOARDED' && row.contentId"
+                  [routerLink]="['/admin/movies/edit', row.contentId]"
+                  matTooltip="Open Draft in Content Editor">
+                  <mat-icon>edit_note</mat-icon> Open Draft
+                </a>
 
-                <span *ngIf="row.status === 'REJECTED'" class="rejected-label">
-                  <mat-icon>block</mat-icon> Rejected
-                </span>
+                <button
+                  mat-stroked-button
+                  color="warn"
+                  class="action-btn reject-btn"
+                  *ngIf="row.status !== 'REJECTED' && row.status !== 'ONBOARDED' && row.status !== 'PUBLISHED'"
+                  (click)="rejectContent(row)"
+                  matTooltip="Reject submission">
+                  <mat-icon>close</mat-icon> Reject
+                </button>
               </div>
             </td>
           </ng-container>
@@ -437,6 +470,210 @@ import { ProducerApiService, ProducerSubmission, ProducerOnboardingProfile } fro
             </td>
           </tr>
           </table>
+        </div>
+      </div>
+
+      <!-- CONTENT SUBMISSION EYE VALIDATION & ONBOARDING MODAL -->
+      <div class="modal-backdrop" *ngIf="selectedSubmission" (click)="closeSubmissionDetailsModal()">
+        <div class="modal-card detail-modal" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <div class="header-icon-box"><mat-icon>movie_filter</mat-icon></div>
+            <div>
+              <h2>{{ selectedSubmission.title }}</h2>
+              <p>
+                #{{ selectedSubmission.id }} · {{ selectedSubmission.contentType }}
+                <span *ngIf="selectedSubmission.language"> · {{ selectedSubmission.language }}</span>
+                <span *ngIf="selectedSubmission.createdAt"> · {{ selectedSubmission.createdAt | date:'medium' }}</span>
+              </p>
+            </div>
+            <div class="header-status-box">
+              <app-status-badge [status]="selectedSubmission.status"></app-status-badge>
+              <button mat-icon-button (click)="closeSubmissionDetailsModal()" class="close-btn"><mat-icon>close</mat-icon></button>
+            </div>
+          </div>
+
+          <div class="modal-body detail-body">
+            <!-- Producer & Contact Verification -->
+            <div class="detail-section">
+              <h3><mat-icon>person</mat-icon> Producer &amp; Contact Details</h3>
+              <div class="detail-grid">
+                <div class="info-item"><label>Producer Name:</label><span>{{ selectedSubmission.producerName || 'N/A' }}</span></div>
+                <div class="info-item"><label>Production House:</label><span>{{ selectedSubmission.productionName || 'N/A' }}</span></div>
+                <div class="info-item">
+                  <label>Mobile Number:</label>
+                  <span>
+                    {{ selectedSubmission.producerContactPhone || 'N/A' }}
+                    <span class="ver-badge ver-ok" *ngIf="selectedSubmission.phoneVerified" style="margin-left: 6px;">OTP VERIFIED</span>
+                  </span>
+                </div>
+                <div class="info-item"><label>Email ID(s):</label><span>{{ selectedSubmission.producerEmail || 'N/A' }}</span></div>
+              </div>
+              <div class="info-item" style="margin-top: 12px;" *ngIf="selectedSubmission.oneLineBrief || selectedSubmission.description">
+                <label>One-Line Brief / Synopsis:</label>
+                <span>{{ selectedSubmission.oneLineBrief || selectedSubmission.description }}</span>
+              </div>
+            </div>
+
+            <!-- Google Drive Asset Links -->
+            <div class="detail-section">
+              <h3><mat-icon>cloud</mat-icon> Google Drive Asset Links (Shared with maxxpixelsoffical&#64;gmail.com)</h3>
+              <div class="kyc-cards-grid">
+                <div class="kyc-card-box">
+                  <div class="box-title"><div class="title-with-icon"><mat-icon>image</mat-icon><span>Portrait Poster (3:4)</span></div></div>
+                  <div class="doc-box-actions" style="margin-top: 8px;">
+                    <a *ngIf="selectedSubmission.posterUrl" [href]="selectedSubmission.posterUrl" target="_blank" mat-stroked-button class="doc-btn">
+                      <mat-icon>open_in_new</mat-icon> Open Poster Link
+                    </a>
+                    <button *ngIf="selectedSubmission.posterUrl" mat-icon-button class="ext-icon-btn" (click)="copyUrl(selectedSubmission.posterUrl, 'Poster link copied!')">
+                      <mat-icon>content_copy</mat-icon>
+                    </button>
+                    <span *ngIf="!selectedSubmission.posterUrl" class="missing-warning">Not provided</span>
+                  </div>
+                </div>
+
+                <div class="kyc-card-box">
+                  <div class="box-title"><div class="title-with-icon"><mat-icon>panorama</mat-icon><span>Landscape Banner (16:9)</span></div></div>
+                  <div class="doc-box-actions" style="margin-top: 8px;">
+                    <a *ngIf="selectedSubmission.bannerUrl || selectedSubmission.poster2Url" [href]="selectedSubmission.bannerUrl || selectedSubmission.poster2Url" target="_blank" mat-stroked-button class="doc-btn">
+                      <mat-icon>open_in_new</mat-icon> Open Banner Link
+                    </a>
+                    <button *ngIf="selectedSubmission.bannerUrl || selectedSubmission.poster2Url" mat-icon-button class="ext-icon-btn" (click)="copyUrl((selectedSubmission.bannerUrl || selectedSubmission.poster2Url)!, 'Banner link copied!')">
+                      <mat-icon>content_copy</mat-icon>
+                    </button>
+                    <span *ngIf="!selectedSubmission.bannerUrl && !selectedSubmission.poster2Url" class="missing-warning">Not provided</span>
+                  </div>
+                </div>
+
+                <div class="kyc-card-box">
+                  <div class="box-title"><div class="title-with-icon"><mat-icon>play_circle</mat-icon><span>Trailer Link</span></div></div>
+                  <div class="doc-box-actions" style="margin-top: 8px;">
+                    <a *ngIf="selectedSubmission.trailerUrl" [href]="selectedSubmission.trailerUrl" target="_blank" mat-stroked-button class="doc-btn">
+                      <mat-icon>open_in_new</mat-icon> Open Trailer Link
+                    </a>
+                    <button *ngIf="selectedSubmission.trailerUrl" mat-icon-button class="ext-icon-btn" (click)="copyUrl(selectedSubmission.trailerUrl, 'Trailer link copied!')">
+                      <mat-icon>content_copy</mat-icon>
+                    </button>
+                    <span *ngIf="!selectedSubmission.trailerUrl" class="missing-warning">Not provided</span>
+                  </div>
+                </div>
+
+                <div class="kyc-card-box">
+                  <div class="box-title"><div class="title-with-icon"><mat-icon>movie</mat-icon><span>Full Movie / Master</span></div></div>
+                  <div class="doc-box-actions" style="margin-top: 8px;">
+                    <a *ngIf="selectedSubmission.googleDriveLink || selectedSubmission.rawVideoUrl" [href]="selectedSubmission.googleDriveLink || selectedSubmission.rawVideoUrl" target="_blank" mat-stroked-button class="doc-btn">
+                      <mat-icon>open_in_new</mat-icon> Open Full Movie
+                    </a>
+                    <button *ngIf="selectedSubmission.googleDriveLink || selectedSubmission.rawVideoUrl" mat-icon-button class="ext-icon-btn" (click)="copyUrl((selectedSubmission.googleDriveLink || selectedSubmission.rawVideoUrl)!, 'Movie Drive link copied!')">
+                      <mat-icon>content_copy</mat-icon>
+                    </button>
+                    <span *ngIf="!selectedSubmission.googleDriveLink && !selectedSubmission.rawVideoUrl" class="missing-warning">Not provided</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Agreement & KYC Section -->
+            <div class="detail-section" *ngIf="selectedSubmission.kycUrl || selectedSubmission.agreementAccepted || selectedSubmission.aadhaarNumber || selectedSubmission.panNumber">
+              <h3><mat-icon>verified_user</mat-icon> Agreement &amp; KYC Documents</h3>
+              <div class="detail-grid">
+                <div class="info-item">
+                  <label>Agreement Status:</label>
+                  <span>
+                    <span class="ver-badge" [class.ver-ok]="selectedSubmission.agreementAccepted">
+                      {{ selectedSubmission.agreementAccepted ? 'SIGNED' : (selectedSubmission.agreementStatus || 'PENDING') }}
+                    </span>
+                    <span *ngIf="selectedSubmission.agreementSignedName"> — {{ selectedSubmission.agreementSignedName }}</span>
+                  </span>
+                </div>
+                <div class="info-item" *ngIf="selectedSubmission.kycUrl">
+                  <label>Producer Agreement &amp; KYC Link:</label>
+                  <div style="display: flex; gap: 8px; align-items: center;">
+                    <button mat-stroked-button class="doc-btn" (click)="copyUrl(selectedSubmission.kycUrl!, 'Agreement & KYC link copied!')">
+                      <mat-icon>content_copy</mat-icon> Copy KYC Link
+                    </button>
+                    <a [href]="selectedSubmission.kycUrl" target="_blank" class="ext-icon-btn"><mat-icon>open_in_new</mat-icon></a>
+                  </div>
+                </div>
+                <div class="info-item" *ngIf="selectedSubmission.aadhaarNumber">
+                  <label>Aadhaar Number:</label>
+                  <span class="font-mono">
+                    {{ selectedSubmission.aadhaarNumber }}
+                    <a *ngIf="selectedSubmission.aadhaarDocLink" [href]="selectedSubmission.aadhaarDocLink" target="_blank" style="margin-left: 8px; color: #00d2ff;">Open Doc</a>
+                  </span>
+                </div>
+                <div class="info-item" *ngIf="selectedSubmission.panNumber">
+                  <label>PAN Number:</label>
+                  <span class="font-mono">
+                    {{ selectedSubmission.panNumber }}
+                    <a *ngIf="selectedSubmission.panDocLink" [href]="selectedSubmission.panDocLink" target="_blank" style="margin-left: 8px; color: #00d2ff;">Open Doc</a>
+                  </span>
+                </div>
+                <div class="info-item" *ngIf="selectedSubmission.bankAccountHolder">
+                  <label>Bank Account Holder:</label>
+                  <span>{{ selectedSubmission.bankAccountHolder }} ({{ selectedSubmission.bankName }})</span>
+                </div>
+                <div class="info-item" *ngIf="selectedSubmission.bankAccountNumber">
+                  <label>Account No / IFSC:</label>
+                  <span class="font-mono">
+                    {{ selectedSubmission.bankAccountNumber }} · {{ selectedSubmission.bankIfscCode }}
+                    <a *ngIf="selectedSubmission.bankChequeLink" [href]="selectedSubmission.bankChequeLink" target="_blank" style="margin-left: 8px; color: #00d2ff;">Cheque</a>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Bunny Onboarding & Draft Info -->
+            <div class="detail-section" *ngIf="selectedSubmission.contentId || (selectedSubmission.bunnyTransferStatus && selectedSubmission.bunnyTransferStatus !== 'NONE')">
+              <h3><mat-icon>cloud_upload</mat-icon> Draft Onboarding &amp; Bunny Transfer</h3>
+              <div class="detail-grid">
+                <div class="info-item" *ngIf="selectedSubmission.contentId">
+                  <label>Draft Content ID:</label>
+                  <span>
+                    #{{ selectedSubmission.contentId }}
+                    <a [routerLink]="['/admin/movies/edit', selectedSubmission.contentId]" (click)="closeSubmissionDetailsModal()" style="margin-left: 8px; color: #00d2ff; font-weight: 700;">Open in Content Editor →</a>
+                  </span>
+                </div>
+                <div class="info-item">
+                  <label>Bunny Transfer Status:</label>
+                  <span class="ver-badge" [class.ver-ok]="selectedSubmission.bunnyTransferStatus === 'COMPLETED'">
+                    {{ selectedSubmission.bunnyTransferStatus || 'NONE' }}
+                  </span>
+                </div>
+                <div class="info-item" *ngIf="selectedSubmission.bunnyVideoJobId">
+                  <label>Media-Streamer Job ID:</label>
+                  <span class="font-mono">{{ selectedSubmission.bunnyVideoJobId }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button mat-button (click)="closeSubmissionDetailsModal()">Close</button>
+
+            <button
+              mat-raised-button
+              color="primary"
+              *ngIf="selectedSubmission.status === 'SUBMITTED' || selectedSubmission.status === 'PENDING' || selectedSubmission.status === 'UNDER_REVIEW'"
+              (click)="approveDetailsForKyc(selectedSubmission); closeSubmissionDetailsModal();">
+              <mat-icon>verified</mat-icon> Approve Details → Request Agreement &amp; KYC
+            </button>
+
+            <button
+              mat-raised-button
+              color="primary"
+              *ngIf="selectedSubmission.status === 'KYC_SUBMITTED'"
+              (click)="onboardToDraft(selectedSubmission); closeSubmissionDetailsModal();">
+              <mat-icon>cloud_upload</mat-icon> Approve KYC &amp; Onboard to Draft (Transfer to Bunny)
+            </button>
+
+            <button
+              mat-stroked-button
+              color="warn"
+              *ngIf="selectedSubmission.status !== 'REJECTED' && selectedSubmission.status !== 'ONBOARDED'"
+              (click)="rejectContent(selectedSubmission); closeSubmissionDetailsModal();">
+              <mat-icon>close</mat-icon> Reject Submission
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1459,7 +1696,7 @@ export class ProducerReviewsPage implements OnInit {
   private readonly sanitizer = inject(DomSanitizer);
   private readonly route = inject(ActivatedRoute);
 
-  activeQueue: 'KYC' | 'CONTENT' = 'KYC';
+  activeQueue: 'KYC' | 'CONTENT' = 'CONTENT';
 
   // Producer KYC Onboardings Data
   kycOnboardings: ProducerOnboardingProfile[] = [];
@@ -1476,10 +1713,19 @@ export class ProducerReviewsPage implements OnInit {
   searchQuery = '';
   loading = false;
   selectedProducer: ProducerOnboardingProfile | null = null;
+  selectedSubmission: ProducerSubmission | null = null;
   previewVideoItem: ProducerSubmission | null = null;
 
   previewDocUrl: string | null = null;
   previewDocTitle: string | null = null;
+
+  openSubmissionDetailsModal(sub: ProducerSubmission): void {
+    this.selectedSubmission = sub;
+  }
+
+  closeSubmissionDetailsModal(): void {
+    this.selectedSubmission = null;
+  }
 
   openProducerDetailsModal(producer: ProducerOnboardingProfile): void {
     this.selectedProducer = producer;
@@ -1647,14 +1893,35 @@ export class ProducerReviewsPage implements OnInit {
           language: s.language || s.original_language_code || '',
           posterUrl: s.posterUrl || s.poster_url || '',
           poster2Url: s.poster2Url || s.poster_2_url || '',
-          bannerUrl: s.bannerUrl || s.banner_url || '',
+          bannerUrl: s.bannerUrl || s.banner_url || s.poster2Url || s.poster_2_url || '',
           trailerUrl: s.trailerUrl || s.trailer_url || '',
           productionName: s.productionName || s.production_name || '',
           producerContactPhone: s.producerContactPhone || s.producer_contact_phone || '',
+          phoneVerified: Boolean(s.phoneVerified ?? s.phone_verified),
           googleDriveLink: s.googleDriveLink || s.google_drive_link || '',
           submissionSource: s.submissionSource || s.submission_source || 'admin',
           agreementUrl: s.agreementUrl || s.agreement_url || '',
           agreementStatus: s.agreementStatus || s.agreement_status || 'PENDING',
+          agreementAccepted: Boolean(s.agreementAccepted ?? s.agreement_accepted),
+          agreementSignedName: s.agreementSignedName || s.agreement_signed_name || '',
+          agreementSignedAt: s.agreementSignedAt || s.agreement_signed_at || '',
+          kycToken: s.kycToken || s.kyc_token || '',
+          kycUrl: s.kycUrl || s.kyc_url || '',
+          aadhaarNumber: s.aadhaarNumber || s.aadhaar_number || '',
+          aadhaarDocLink: s.aadhaarDocLink || s.aadhaar_doc_link || '',
+          panNumber: s.panNumber || s.pan_number || '',
+          panDocLink: s.panDocLink || s.pan_doc_link || '',
+          bankAccountHolder: s.bankAccountHolder || s.bank_account_holder || '',
+          bankAccountNumber: s.bankAccountNumber || s.bank_account_number || '',
+          bankIfscCode: s.bankIfscCode || s.bank_ifsc_code || '',
+          bankName: s.bankName || s.bank_name || '',
+          bankChequeLink: s.bankChequeLink || s.bank_cheque_link || '',
+          contentId: s.contentId ?? s.content_id ?? null,
+          bunnyTransferStatus: s.bunnyTransferStatus || s.bunny_transfer_status || 'NONE',
+          bunnyVideoJobId: s.bunnyVideoJobId || s.bunny_video_job_id || '',
+          bunnyTrailerJobId: s.bunnyTrailerJobId || s.bunny_trailer_job_id || '',
+          bunnyPosterUrl: s.bunnyPosterUrl || s.bunny_poster_url || '',
+          bunnyBannerUrl: s.bunnyBannerUrl || s.bunny_banner_url || '',
           expiresAt: s.expiresAt || s.expires_at || '',
           rawVideoUrl: s.rawVideoUrl || s.raw_video_url || s.videoUrl || s.video_url || s.hlsManifestUrl || '',
           revenueSharePercentage: s.revenueSharePercentage || s.revenue_share_percentage || 70,
@@ -1679,7 +1946,7 @@ export class ProducerReviewsPage implements OnInit {
   }
 
   isPendingContent(sub: ProducerSubmission): boolean {
-    return ['SUBMITTED', 'DRAFT', 'PENDING', 'PENDING_APPROVAL', 'UNDER_REVIEW'].includes(sub.status);
+    return ['SUBMITTED', 'KYC_SUBMITTED', 'PENDING', 'PENDING_APPROVAL', 'UNDER_REVIEW'].includes(sub.status);
   }
 
   getCountByStatus(status: string): number {
@@ -1784,24 +2051,60 @@ export class ProducerReviewsPage implements OnInit {
     });
   }
 
-  approveContent(sub: ProducerSubmission): void {
+  approveDetailsForKyc(sub: ProducerSubmission): void {
     if (!sub.id) return;
     this.loading = true;
-    this.producerApiService.reviewSubmission(sub.id, 'APPROVED', 'Approved by Platform Administrator').subscribe({
+    this.producerApiService.reviewSubmission(sub.id, 'APPROVE_DETAILS', 'Details verified by Admin — Agreement & KYC requested').subscribe({
       next: (res) => {
         this.loading = false;
         if (res.success) {
-          this.notificationService.success(`"${sub.title}" approved and published.`);
+          const kycUrl = (res.data as any)?.kycUrl || sub.kycUrl;
+          this.notificationService.success(`"${sub.title}" approved! Agreement & KYC link sent to producer.`);
+          if (kycUrl) {
+            navigator.clipboard?.writeText(kycUrl);
+          }
           this.refreshAll();
         } else {
-          this.notificationService.error(res.message || 'Failed to approve submission');
+          this.notificationService.error(res.message || 'Failed to approve details');
         }
       },
       error: (err) => {
         this.loading = false;
-        this.notificationService.error(err?.error?.message || 'Error approving submission');
+        this.notificationService.error(err?.error?.message || 'Error approving submission details');
       }
     });
+  }
+
+  onboardToDraft(sub: ProducerSubmission): void {
+    if (!sub.id) return;
+    const confirmed = confirm(
+      `Approve Agreement & KYC for "${sub.title}"?\n\nThis will create a DRAFT entry in All Catalog and start transferring all assets directly from Google Drive to Bunny CDN.`
+    );
+    if (!confirmed) return;
+
+    this.loading = true;
+    this.producerApiService.reviewSubmission(sub.id, 'ONBOARD_DRAFT', 'KYC verified — onboarded to Draft & Bunny transfer started').subscribe({
+      next: (res) => {
+        this.loading = false;
+        if (res.success) {
+          const d: any = res.data || {};
+          this.notificationService.success(
+            `"${sub.title}" onboarded as Draft (#${d.contentId || ''})! Bunny transfer status: ${d.bunnyTransferStatus || 'TRANSFERRING'}.`
+          );
+          this.refreshAll();
+        } else {
+          this.notificationService.error(res.message || 'Failed to onboard submission');
+        }
+      },
+      error: (err) => {
+        this.loading = false;
+        this.notificationService.error(err?.error?.message || 'Error onboarding submission to Draft');
+      }
+    });
+  }
+
+  approveContent(sub: ProducerSubmission): void {
+    this.approveDetailsForKyc(sub);
   }
 
   rejectContent(sub: ProducerSubmission): void {
@@ -1810,11 +2113,11 @@ export class ProducerReviewsPage implements OnInit {
     if (reason === null) return;
 
     this.loading = true;
-    this.producerApiService.reviewSubmission(sub.id, 'REJECTED', reason).subscribe({
+    this.producerApiService.reviewSubmission(sub.id, 'REJECT', reason).subscribe({
       next: (res) => {
         this.loading = false;
         if (res.success) {
-          this.notificationService.success(`Submission "${sub.title}" rejected and removed from publication.`);
+          this.notificationService.success(`Submission "${sub.title}" rejected.`);
           this.refreshAll();
         } else {
           this.notificationService.error(res.message || 'Failed to reject submission');
@@ -1828,55 +2131,16 @@ export class ProducerReviewsPage implements OnInit {
   }
 
   shareAgreement(sub: ProducerSubmission): void {
-    if (!sub.id) return;
-    const agreementUrl = prompt(`Enter agreement document URL to share with producer for "${sub.title}":`, '');
-    if (agreementUrl === null) return;
-    if (!agreementUrl.trim()) {
-      this.notificationService.error('Agreement URL is required.');
-      return;
-    }
-
-    this.loading = true;
-    this.producerApiService.reviewSubmission(sub.id, 'SHARE_AGREEMENT', `Agreement shared: ${agreementUrl}`).subscribe({
-      next: (res) => {
-        this.loading = false;
-        if (res.success) {
-          this.notificationService.success(`Agreement shared with producer for "${sub.title}". Awaiting signed upload.`);
-          this.refreshAll();
-        } else {
-          this.notificationService.error(res.message || 'Failed to share agreement');
-        }
-      },
-      error: (err) => {
-        this.loading = false;
-        this.notificationService.error(err?.error?.message || 'Error sharing agreement');
-      }
-    });
+    this.approveDetailsForKyc(sub);
   }
 
   publishAfterAgreement(sub: ProducerSubmission): void {
-    if (!sub.id) return;
-    this.loading = true;
-    this.producerApiService.reviewSubmission(sub.id, 'APPROVED', 'Agreement confirmed - publishing content').subscribe({
-      next: (res) => {
-        this.loading = false;
-        if (res.success) {
-          this.notificationService.success(`"${sub.title}" published after agreement confirmation.`);
-          this.refreshAll();
-        } else {
-          this.notificationService.error(res.message || 'Failed to publish');
-        }
-      },
-      error: (err) => {
-        this.loading = false;
-        this.notificationService.error(err?.error?.message || 'Error publishing content');
-      }
-    });
+    this.onboardToDraft(sub);
   }
 
-  copyUrl(url: string): void {
+  copyUrl(url: string, msg = 'Link copied to clipboard!'): void {
     if (!url) return;
     navigator.clipboard.writeText(url);
-    this.notificationService.info('Raw video URL copied to clipboard!');
+    this.notificationService.info(msg);
   }
 }

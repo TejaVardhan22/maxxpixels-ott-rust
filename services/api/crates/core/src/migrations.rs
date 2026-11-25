@@ -82,6 +82,11 @@ pub const MIGRATIONS: &[MigrationDef] = &[
         name: "sync_sequences_and_settings_seed",
         sql: include_str!("../../../migrations/0011_sync_sequences_and_settings_seed.sql"),
     },
+    MigrationDef {
+        version: "0012",
+        name: "producer_content_collect_flow",
+        sql: include_str!("../../../migrations/0012_producer_content_collect_flow.sql"),
+    },
 ];
 
 pub struct MigrationRunner;

@@ -7,8 +7,8 @@ import Footer from '@/components/layout/Footer';
 import { USER_SCOPED_PAGES } from '@/lib/userRoutes';
 import { useStoredUser } from '@/lib/auth';
 
-const BARE_PATH_PREFIXES = ['/apple-design', '/stream', '/player', '/watch', '/login', '/register', '/subscription', '/paymentsuccess', '/paymentcancel'];
-const PUBLIC_AUTH_PREFIXES = ['/login', '/register', '/auth', '/legal'];
+const BARE_PATH_PREFIXES = ['/apple-design', '/stream', '/player', '/watch', '/login', '/register', '/subscription', '/paymentsuccess', '/paymentcancel', '/producer'];
+const PUBLIC_AUTH_PREFIXES = ['/login', '/register', '/auth', '/legal', '/producer'];
 
 const NON_HERO_ROOT_SEGMENTS = new Set([
   'about', 'auth', 'avatar', 'bycast', 'bycategory', 'bychannel', 'bylanguage',
