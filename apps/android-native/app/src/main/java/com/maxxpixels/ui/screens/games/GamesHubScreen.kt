@@ -1,16 +1,24 @@
 package com.maxxpixels.ui.screens.games
 
 import android.annotation.SuppressLint
+import android.content.Intent
+import android.graphics.Bitmap
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,23 +29,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Casino
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.EmojiEvents
 import androidx.compose.material.icons.rounded.MonetizationOn
-import androidx.compose.material.icons.rounded.SportsEsports
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.Surface
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -49,268 +54,361 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.maxxpixels.data.model.CoinPackItem
-import com.maxxpixels.data.model.GamerProfile
 import com.maxxpixels.data.repository.ApiResult
 import com.maxxpixels.data.repository.MaxxRepository
-import com.maxxpixels.ui.components.MaxxPrimaryButton
-import com.maxxpixels.ui.components.bounceClick
-import com.maxxpixels.ui.theme.MaxxColors
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
-private data class GameTile(val key: String, val name: String, val tagline: String, val colors: List<Color>)
+private const val PLAYFORFUN_PUBLIC_KEY = "pk_b13e8b8d067d61963234"
+private val GAMES_BG = Color(0xFF050A15)
+private val GAMES_SURFACE = Color(0xFF111827)
+private val GAMES_ACCENT = Color(0xFFA855F7)
+private val GAMES_COIN_GOLD = Color(0xFFFBBF24)
 
+private fun isValidPlayforFunUrl(url: String): Boolean {
+    return try {
+        val uri = Uri.parse(url)
+        val originOk = uri.scheme == "https" && uri.host.equals("playforfun.in", ignoreCase = true)
+        val path = uri.path.orEmpty()
+        originOk && (
+            path == "/arena" ||
+                Regex("^/play/(ludo|carrom|snooker|chess)$").matches(path)
+            )
+    } catch (_: Exception) {
+        false
+    }
+}
+
+private fun appendPublicKey(url: String): String {
+    return try {
+        val uri = Uri.parse(url)
+        if (!uri.getQueryParameter("pk").isNullOrBlank()) {
+            url
+        } else {
+            uri.buildUpon().appendQueryParameter("pk", PLAYFORFUN_PUBLIC_KEY).build().toString()
+        }
+    } catch (_: Exception) {
+        val sep = if (url.contains("?")) "&" else "?"
+        "$url${sep}pk=$PLAYFORFUN_PUBLIC_KEY"
+    }
+}
+
+/**
+ * 1:1 Kotlin Compose equivalent of React Native GamesWebViewScreen.tsx:
+ * - Immediately fetches signed PlayforFun SSO URL (`GET /games/playforfun/launch`)
+ * - Renders top header (Back, MAXX GAMES, Gold Coins wallet icon, Close X)
+ * - Exposes `window.ReactNativeWebView.postMessage` JS bridge for `PFF_BUY_COINS` -> GamesWalletScreen
+ * - Fires subscription coin grant (`POST /games/coins/subscription-grant`) in background
+ * - Hardware back navigates WebView history before exiting
+ */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun GamesHubScreen(
     repository: MaxxRepository,
-    onBack: () -> Unit
+    game: String? = null,
+    title: String = "MAXX GAMES",
+    onBack: () -> Unit,
+    onOpenWallet: (recommendedCoins: Int) -> Unit = {},
+    onRequireLogin: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
-    var gamer by remember { mutableStateOf(GamerProfile()) }
-    var packs by remember { mutableStateOf<List<CoinPackItem>>(emptyList()) }
     var launchUrl by remember { mutableStateOf<String?>(null) }
-    var launching by remember { mutableStateOf(false) }
-    var launchError by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var canGoBack by remember { mutableStateOf(false) }
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
 
-    LaunchedEffect(Unit) {
-        gamer = repository.getGamerProfile()
-        packs = repository.getCoinPacks()
-    }
-
-    // Full-screen PlayforFun SSO Arena WebView when a game is launched
-    if (launchUrl != null) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
-                .statusBarsPadding()
-                .navigationBarsPadding()
-        ) {
-            AndroidView(
-                factory = { ctx ->
-                    WebView(ctx).apply {
-                        settings.javaScriptEnabled = true
-                        settings.domStorageEnabled = true
-                        settings.mediaPlaybackRequiresUserGesture = false
-                        settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-                        webViewClient = WebViewClient()
-                        loadUrl(launchUrl!!)
-                    }
-                },
-                modifier = Modifier.fillMaxSize()
-            )
-            IconButton(
-                onClick = { launchUrl = null },
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(12.dp)
-                    .size(38.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.65f))
-            ) {
-                Icon(Icons.Rounded.Close, "Exit Arena", tint = Color.White)
-            }
-        }
-        return
-    }
-
-    val games = listOf(
-        GameTile("ludo", "Ludo Arena", "Multiplayer Classic", listOf(Color(0xFFEC4899), Color(0xFF9333EA))),
-        GameTile("carrom", "Carrom Pro", "Strike & Pocket", listOf(Color(0xFFF59E0B), Color(0xFFEA580C))),
-        GameTile("snooker", "Snooker 3D", "Precision Tables", listOf(Color(0xFF10B981), Color(0xFF047857))),
-        GameTile("chess", "Grand Chess", "Rapid Matches", listOf(Color(0xFF3B82F6), Color(0xFF6366F1)))
-    )
-
-    fun startGame(gameKey: String? = null) {
-        launching = true
-        launchError = ""
+    fun fetchLaunchUrl() {
         scope.launch {
-            when (val res = repository.launchGameUrl(gameKey)) {
-                is ApiResult.Success -> launchUrl = res.data
-                is ApiResult.Error -> launchError = res.message
+            loading = true
+            error = null
+            if (repository.sessionManager.getAuthToken().isNullOrBlank()) {
+                error = "Please sign in to play games."
+                loading = false
+                return@launch
             }
-            launching = false
+            when (val res = repository.launchGameUrl(game)) {
+                is ApiResult.Success -> {
+                    val raw = res.data
+                    if (!isValidPlayforFunUrl(raw)) {
+                        error = "Received an invalid game launch URL."
+                        loading = false
+                    } else {
+                        launchUrl = appendPublicKey(raw)
+                        error = null
+                    }
+                }
+                is ApiResult.Error -> {
+                    error = res.message.ifBlank { "Unable to launch games right now. Please try again." }
+                    loading = false
+                }
+            }
         }
     }
 
-    Box(
+    LaunchedEffect(game) {
+        fetchLaunchUrl()
+    }
+
+    // Fire-and-forget subscription coin top-up whenever the arena launches
+    LaunchedEffect(launchUrl) {
+        if (!launchUrl.isNullOrBlank()) {
+            repository.claimSubscriptionCoins()
+        }
+    }
+
+    // Safety timeout: never trap the user on an endless loading overlay
+    LaunchedEffect(loading, launchUrl) {
+        if (loading && !launchUrl.isNullOrBlank()) {
+            delay(25_000)
+            loading = false
+        }
+    }
+
+    BackHandler {
+        val wv = webViewRef
+        if (canGoBack && wv != null && wv.canGoBack()) {
+            wv.goBack()
+        } else {
+            onBack()
+        }
+    }
+
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaxxColors.AmbientScreenBackground)
+            .background(GAMES_BG)
+            .statusBarsPadding()
+            .navigationBarsPadding()
     ) {
-        LazyColumn(
+        // Header bar matching GamesWebViewScreen.tsx
+        Row(
             modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 116.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .fillMaxWidth()
+                .background(GAMES_BG)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(
-                            onClick = onBack,
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clip(CircleShape)
-                                .background(MaxxColors.SurfaceGlass)
-                        ) {
-                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = Color.White)
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text("MAXX GAMES", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
-                            Text("Instant Play • No Downloads", color = MaxxColors.AccentSoft, fontSize = 11.sp)
-                        }
-                    }
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(GAMES_SURFACE)
+            ) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = Color.White)
+            }
 
-                    Surface(
-                        color = MaxxColors.SurfaceGlass,
-                        shape = RoundedCornerShape(99.dp),
-                        border = BorderStroke(1.dp, MaxxColors.CoinGold.copy(alpha = 0.5f))
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+            Text(
+                text = title,
+                color = Color.White,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 0.6.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp)
+            )
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = { onOpenWallet(0) },
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(GAMES_SURFACE)
+                ) {
+                    Icon(Icons.Rounded.MonetizationOn, contentDescription = "Game Coins", tint = GAMES_COIN_GOLD)
+                }
+                Spacer(Modifier.width(8.dp))
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(GAMES_SURFACE)
+                ) {
+                    Icon(Icons.Rounded.Close, contentDescription = "Close", tint = Color.White)
+                }
+            }
+        }
+
+        HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+
+        // Main Content Area
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            val errMsg = error
+            if (errMsg != null) {
+                val lower = errMsg.lowercase()
+                val needsSignIn = lower.contains("sign in") ||
+                    lower.contains("session expired") ||
+                    lower.contains("expired token") ||
+                    lower.contains("invalid token") ||
+                    lower.contains("unauthorized")
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "Couldn't open games",
+                        color = Color.White,
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = errMsg,
+                        color = Color(0xFF94A3B8),
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 20.sp
+                    )
+                    Spacer(Modifier.height(20.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(
+                            onClick = { fetchLaunchUrl() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = GAMES_BG),
+                            shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(Icons.Rounded.MonetizationOn, null, tint = MaxxColors.CoinGold, modifier = Modifier.size(17.dp))
+                            Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("${gamer.coins} Coins", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                            Text("Try Again", fontWeight = FontWeight.Bold)
                         }
-                    }
-                }
-            }
-
-            // Stats Banner
-            item {
-                Surface(
-                    color = MaxxColors.SurfaceGlass,
-                    shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, MaxxColors.BorderSubtle),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(18.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text("PLAYFORFUN ARENA", color = MaxxColors.AccentSoft, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp)
-                                Spacer(Modifier.height(4.dp))
-                                Text("Compete & Win Coins", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Black)
-                            }
-                            Icon(Icons.Rounded.EmojiEvents, null, tint = MaxxColors.CoinGold, modifier = Modifier.size(34.dp))
-                        }
-                        Spacer(Modifier.height(14.dp))
-                        MaxxPrimaryButton(
-                            text = "Launch Full Arena",
-                            loading = launching,
-                            onClick = { startGame(null) },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        if (launchError.isNotBlank()) {
-                            Spacer(Modifier.height(8.dp))
-                            Text(launchError, color = MaxxColors.ErrorSoft, fontSize = 12.sp)
-                        }
-                    }
-                }
-            }
-
-            // 2x2 Game Tiles Grid
-            item {
-                Text("Featured Games", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(10.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    games.chunked(2).forEach { rowGames ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            rowGames.forEach { g ->
-                                Surface(
-                                    shape = RoundedCornerShape(18.dp),
-                                    border = BorderStroke(1.dp, MaxxColors.BorderStrong),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(118.dp)
-                                        .bounceClick { startGame(g.key) }
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(Brush.linearGradient(g.colors))
-                                            .padding(14.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Rounded.SportsEsports,
-                                            null,
-                                            tint = Color.White.copy(alpha = 0.25f),
-                                            modifier = Modifier
-                                                .size(54.dp)
-                                                .align(Alignment.TopEnd)
-                                        )
-                                        Column(modifier = Modifier.align(Alignment.BottomStart)) {
-                                            Text(g.name, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black)
-                                            Text(g.tagline, color = Color.White.copy(alpha = 0.85f), fontSize = 11.sp)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (packs.isNotEmpty()) {
-                item {
-                    Text("Coin Packs", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(10.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        packs.forEach { pack ->
-                            Surface(
-                                color = MaxxColors.SurfaceGlass,
-                                shape = RoundedCornerShape(16.dp),
-                                border = BorderStroke(1.dp, MaxxColors.BorderSubtle),
-                                modifier = Modifier.fillMaxWidth()
+                        if (needsSignIn) {
+                            OutlinedButton(
+                                onClick = onRequireLogin,
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                                shape = RoundedCornerShape(12.dp)
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(14.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Rounded.MonetizationOn, null, tint = MaxxColors.CoinGold, modifier = Modifier.size(22.dp))
-                                        Spacer(Modifier.width(10.dp))
-                                        Column {
-                                            Text("${pack.coins} Coins", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
-                                            if (pack.label.isNotBlank()) {
-                                                Text(pack.label, color = MaxxColors.TextSecondary, fontSize = 11.sp)
+                                Text("Sign In", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            } else if (launchUrl.isNullOrBlank()) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator(color = GAMES_ACCENT)
+                    Spacer(Modifier.height(14.dp))
+                    Text("Launching PlayforFun arena…", color = Color(0xFFCBD5E1), fontSize = 13.sp)
+                }
+            } else {
+                val mainHandler = remember { Handler(Looper.getMainLooper()) }
+                val activeUrl = launchUrl!!
+
+                AndroidView(
+                    factory = { ctx ->
+                        WebView(ctx).apply {
+                            webViewRef = this
+                            setBackgroundColor(android.graphics.Color.parseColor("#050A15"))
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.mediaPlaybackRequiresUserGesture = false
+                            settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                            settings.setSupportMultipleWindows(false)
+                            settings.cacheMode = WebSettings.LOAD_DEFAULT
+                            CookieManager.getInstance().setAcceptCookie(true)
+                            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+
+                            // Expose ReactNativeWebView bridge so PlayforFun's PFF_BUY_COINS event works 1:1
+                            addJavascriptInterface(
+                                object {
+                                    @JavascriptInterface
+                                    fun postMessage(raw: String?) {
+                                        if (raw.isNullOrBlank()) return
+                                        try {
+                                            val data = JSONObject(raw)
+                                            val type = data.optString("type").ifBlank { data.optString("event") }
+                                            if (type == "PFF_BUY_COINS") {
+                                                val deficit = if (data.isNull("deficitCoins")) -1 else data.optInt("deficitCoins", -1)
+                                                val required = if (data.isNull("requiredCoins")) -1 else data.optInt("requiredCoins", -1)
+                                                val rawRec = if (deficit > 0) deficit else if (required > 0) required else 500
+                                                mainHandler.post { onOpenWallet(rawRec) }
                                             }
+                                        } catch (_: Exception) {
+                                            // Ignore non-JSON messages
                                         }
                                     }
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(99.dp))
-                                            .background(MaxxColors.BrandGradient)
-                                            .padding(horizontal = 14.dp, vertical = 6.dp)
-                                    ) {
-                                        Text("₹${pack.amountInr.toInt()}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                },
+                                "ReactNativeWebView"
+                            )
+
+                            webViewClient = object : WebViewClient() {
+                                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                                    loading = true
+                                    canGoBack = view?.canGoBack() == true
+                                }
+
+                                override fun onPageFinished(view: WebView?, url: String?) {
+                                    loading = false
+                                    canGoBack = view?.canGoBack() == true
+                                }
+
+                                override fun onReceivedError(
+                                    view: WebView?,
+                                    request: WebResourceRequest?,
+                                    webError: WebResourceError?
+                                ) {
+                                    if (request?.isForMainFrame == true) {
+                                        loading = false
                                     }
                                 }
+
+                                override fun shouldOverrideUrlLoading(
+                                    view: WebView?,
+                                    request: WebResourceRequest?
+                                ): Boolean {
+                                    val target = request?.url?.toString().orEmpty()
+                                    if (target.isBlank()) return false
+                                    if (target.startsWith("https://playforfun.in") || target.startsWith("http://playforfun.in")) {
+                                        return false
+                                    }
+                                    if (target.startsWith("intent:") || target.startsWith("mailto:") || target.startsWith("tel:")) {
+                                        runCatching {
+                                            ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
+                                        }
+                                        return true
+                                    }
+                                    return false
+                                }
                             }
+
+                            loadUrl(activeUrl)
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                if (loading) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(GAMES_BG.copy(alpha = 0.85f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(color = GAMES_ACCENT)
+                            Spacer(Modifier.height(12.dp))
+                            Text("Loading games…", color = Color(0xFFCBD5E1), fontSize = 13.sp)
                         }
                     }
                 }

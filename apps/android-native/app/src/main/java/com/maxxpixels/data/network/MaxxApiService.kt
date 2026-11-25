@@ -180,4 +180,7 @@ interface MaxxApiService {
 
     @POST("games/coins/verify")
     suspend fun verifyCoinPayment(@Body body: JsonObject): JsonElement
+
+    @POST("games/coins/subscription-grant")
+    suspend fun claimSubscriptionCoins(@Body body: JsonObject): JsonElement
 }

@@ -183,6 +183,23 @@ data class CoinPackItem(
     val label: String = ""
 )
 
+@Serializable
+data class CoinOrderData(
+    val razorpayOrderId: String,
+    val keyId: String,
+    val amountPaise: Int,
+    val currency: String = "INR",
+    val coins: Int = 0
+)
+
+@Serializable
+data class MaintenanceStatus(
+    val active: Boolean = false,
+    val message: String = "We are currently performing scheduled maintenance. Please check back shortly.",
+    val appName: String = "MaxxPixels",
+    val logoUrl: String = ""
+)
+
 object MediaUrlNormalizer {
     private val apiOrigin: String = BuildConfig.API_BASE_URL
         .removeSuffix("/")

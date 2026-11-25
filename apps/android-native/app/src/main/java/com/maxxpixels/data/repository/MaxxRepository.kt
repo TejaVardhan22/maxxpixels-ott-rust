@@ -3,6 +3,7 @@ package com.maxxpixels.data.repository
 import com.maxxpixels.data.local.SessionManager
 import com.maxxpixels.data.model.BrandIdentity
 import com.maxxpixels.data.model.CatalogItem
+import com.maxxpixels.data.model.CoinOrderData
 import com.maxxpixels.data.model.CoinPackItem
 import com.maxxpixels.data.model.ContentTypeItem
 import com.maxxpixels.data.model.CreatedOrder
@@ -10,6 +11,7 @@ import com.maxxpixels.data.model.EpisodeItem
 import com.maxxpixels.data.model.GamerProfile
 import com.maxxpixels.data.model.HomeSection
 import com.maxxpixels.data.model.JsonParsers
+import com.maxxpixels.data.model.MaintenanceStatus
 import com.maxxpixels.data.model.MediaUrlNormalizer
 import com.maxxpixels.data.model.NotificationEntry
 import com.maxxpixels.data.model.PlaybackAuth
@@ -703,15 +705,99 @@ class MaxxRepository(
         }.getOrDefault(emptyList())
     }
 
+    suspend fun checkMaintenanceStatus(): MaintenanceStatus {
+        return try {
+            val res = api.getSettings()
+            val obj = JsonParsers.unwrapObject(res)
+            if (obj != null) {
+                val active = JsonParsers.bool(obj, "maintenanceMode", "maintenance_mode", "maintenance_mode_enabled")
+                val msg = JsonParsers.str(obj, "maintenanceMessage", "maintenance_message")
+                    .ifBlank { "We are currently performing scheduled maintenance to improve your experience. Please check back shortly." }
+                val name = JsonParsers.str(obj, "APP_NAME", "app_name", "appName", "appShortName")
+                    .ifBlank { sessionManager.brand.value.name.ifBlank { "MaxxPixels" } }
+                val logo = MediaUrlNormalizer.normalize(
+                    JsonParsers.str(obj, "darkLogoUrl", "dark_logo_url", "logoUrl", "logo_url", "APP_LOGO_URL")
+                ).ifBlank { sessionManager.brand.value.logoUrl }
+                MaintenanceStatus(active = active, message = msg, appName = name, logoUrl = logo)
+            } else {
+                MaintenanceStatus()
+            }
+        } catch (_: Exception) {
+            MaintenanceStatus()
+        }
+    }
+
     suspend fun launchGameUrl(game: String? = null): ApiResult<String> {
         return try {
             val res = api.launchGame(game)
+            checkEnvelopeError(res)?.let { return ApiResult.Error(it) }
             val obj = JsonParsers.unwrapObject(res)
             val url = JsonParsers.str(obj, "launchUrl", "launch_url", "url")
             if (url.isBlank()) ApiResult.Error("Could not launch game arena right now.")
             else ApiResult.Success(url)
         } catch (e: Throwable) {
             extractError(e)
+        }
+    }
+
+    suspend fun createCoinOrder(packId: String): ApiResult<CoinOrderData> {
+        return try {
+            val res = api.createCoinOrder(buildJsonObject { put("packId", packId) })
+            checkEnvelopeError(res)?.let { return ApiResult.Error(it) }
+            val obj = JsonParsers.unwrapObject(res)
+                ?: return ApiResult.Error("Could not start coin recharge order.")
+            val orderId = JsonParsers.str(obj, "razorpayOrderId", "razorpay_order_id", "id")
+            val keyId = JsonParsers.str(obj, "keyId", "key_id", "key", "razorpayKeyId")
+            val amount = JsonParsers.int(obj, "amount")
+            val currency = JsonParsers.str(obj, "currency").ifBlank { "INR" }
+            val coins = JsonParsers.int(obj, "coins")
+            if (orderId.isBlank()) return ApiResult.Error("Could not start payment (missing order id).")
+            if (keyId.isBlank()) return ApiResult.Error("Payment gateway is not configured (missing Razorpay key).")
+            ApiResult.Success(
+                CoinOrderData(
+                    razorpayOrderId = orderId,
+                    keyId = keyId,
+                    amountPaise = amount,
+                    currency = currency,
+                    coins = coins
+                )
+            )
+        } catch (e: Throwable) {
+            extractError(e)
+        }
+    }
+
+    suspend fun verifyCoinPayment(
+        razorpayOrderId: String,
+        razorpayPaymentId: String,
+        razorpaySignature: String
+    ): ApiResult<Int> {
+        return try {
+            val res = api.verifyCoinPayment(buildJsonObject {
+                put("razorpayOrderId", razorpayOrderId)
+                put("razorpayPaymentId", razorpayPaymentId)
+                put("razorpaySignature", razorpaySignature)
+            })
+            checkEnvelopeError(res)?.let { return ApiResult.Error(it) }
+            val obj = JsonParsers.unwrapObject(res)
+            val coins = JsonParsers.int(obj, "coins")
+            ApiResult.Success(coins)
+        } catch (e: Throwable) {
+            extractError(e)
+        }
+    }
+
+    suspend fun claimSubscriptionCoins(
+        paymentId: String? = null,
+        subscriptionId: String? = null,
+        validUntil: String? = null
+    ) {
+        runCatching {
+            api.claimSubscriptionCoins(buildJsonObject {
+                if (!paymentId.isNullOrBlank()) put("paymentId", paymentId)
+                if (!subscriptionId.isNullOrBlank()) put("subscriptionId", subscriptionId)
+                if (!validUntil.isNullOrBlank()) put("validUntil", validUntil)
+            })
         }
     }
 }
