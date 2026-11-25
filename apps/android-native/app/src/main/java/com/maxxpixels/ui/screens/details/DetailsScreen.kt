@@ -376,18 +376,15 @@ fun DetailsScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaxxColors.AmbientScreenBackground)
-            .windowInsetsPadding(
-                WindowInsets.statusBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top)
-            )
             .navigationBarsPadding(),
-        contentPadding = PaddingValues(top = 12.dp, bottom = 36.dp)
+        contentPadding = PaddingValues(bottom = 36.dp)
     ) {
-        // 1. Clean Top Cinema Hero Banner (with top margin, burgundy-to-black seamless inline fade)
+        // 1. Edge-to-Edge 16:9 Hero Banner (occupies full top, no burgundy top gap, no stretched zoom)
         item {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(310.dp)
+                    .aspectRatio(16f / 9f)
                     .clickable { triggerPlay() }
             ) {
                 AsyncImage(
@@ -398,42 +395,32 @@ fun DetailsScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Soft top burgundy blend from the top margin into the banner
+                // Short smooth bottom fade into the details section (no card border)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(54.dp)
-                        .align(Alignment.TopCenter)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color(0x99351924), Color.Transparent)
-                            )
-                        )
-                )
-
-                // Smooth inline bottom fade matching AmbientScreenBackground burgundy-plum mid-tone
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(175.dp)
+                        .height(72.dp)
                         .align(Alignment.BottomCenter)
                         .background(
                             Brush.verticalGradient(
                                 listOf(
                                     Color.Transparent,
-                                    Color(0x991A1219),
+                                    Color(0xAA1A1219),
                                     Color(0xFF1A1219)
                                 )
                             )
                         )
                 )
 
-                // Top-left circular frosted back chevron
+                // Top-left circular frosted back chevron (clears status bar & camera notch)
                 Surface(
                     color = Color.Black.copy(alpha = 0.44f),
                     shape = CircleShape,
                     border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)),
                     modifier = Modifier
+                        .windowInsetsPadding(
+                            WindowInsets.statusBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top)
+                        )
                         .padding(14.dp)
                         .size(40.dp)
                         .clickable(onClick = onBack)
