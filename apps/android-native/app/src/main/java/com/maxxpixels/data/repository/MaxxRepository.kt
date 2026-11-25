@@ -328,7 +328,7 @@ class MaxxRepository(
 
             val cw = JsonParsers.unwrapArray(cwRes)
                 .map(JsonParsers::parseCatalogItem)
-                .filter { matchesLanguagePortal(it, language) }
+                .filter { it.language.isBlank() || matchesLanguagePortal(it, language) }
             val effectiveBanners = banners.ifEmpty { fallbackSections.firstOrNull()?.items?.take(6).orEmpty() }
 
             if (typeId == 0 && (language == null || language == "kannada") && fallbackSections.isNotEmpty()) {

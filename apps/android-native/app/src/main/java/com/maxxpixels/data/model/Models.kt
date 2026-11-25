@@ -396,10 +396,10 @@ object JsonParsers {
 
         val rawLandscape = str(
             obj,
-            "mobileImageUrl", "bannerImageUrl", "bannerUrl", "banner_url", "landscapeImageUrl",
-            "landscape_image_url", "landscape", "imageUrl", "banner"
+            "mobileImageUrl", "bannerImageUrl", "bannerUrl", "banner_url", "backdropUrl", "backdrop_url",
+            "landscapeImageUrl", "landscape_image_url", "landscape", "imageUrl", "banner"
         ).ifBlank {
-            str(contentObj, "landscapeImageUrl", "landscape_image_url", "landscape", "bannerUrl", "banner")
+            str(contentObj, "backdropUrl", "backdrop_url", "landscapeImageUrl", "landscape_image_url", "landscape", "bannerUrl", "banner")
         }.ifBlank { rawPoster }
 
         val durationSec = int(contentObj, "durationSeconds", "duration_seconds", "video_duration")
