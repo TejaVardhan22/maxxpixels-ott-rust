@@ -142,119 +142,9 @@ fun PortalSelectionScreen(
                 WindowInsets.statusBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top)
             )
             .navigationBarsPadding(),
-        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        // Frosted Cinema Header Branding
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                        color = Color.White.copy(alpha = 0.08f),
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
-                        modifier = Modifier.size(44.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Image(
-                                painter = painterResource(R.drawable.app_logo),
-                                contentDescription = "MaxxPixels",
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier.size(30.dp)
-                            )
-                        }
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = "MAXXPIXELS",
-                            color = Color.White,
-                            fontSize = 19.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 1.5.sp
-                        )
-                        Text(
-                            text = "Next-Gen Digital Ecosystem",
-                            color = MaxxColors.TextSecondary,
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Frosted Gold Coin Wallet Pill
-                    Surface(
-                        color = Color.White.copy(alpha = 0.09f),
-                        shape = RoundedCornerShape(999.dp),
-                        border = BorderStroke(1.dp, MaxxColors.Primary.copy(alpha = 0.45f)),
-                        modifier = Modifier.clickable { showGamesDisclaimer = true }
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp)
-                        ) {
-                            Icon(Icons.Rounded.MonetizationOn, null, tint = MaxxColors.Primary, modifier = Modifier.size(15.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("${gamer.coins}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-
-                    // Golden VIP / Subscribe Pill
-                    val isVip = session?.hasActiveSubscription == true
-                    if (isVip) {
-                        Surface(
-                            color = MaxxColors.PrimaryTint,
-                            shape = RoundedCornerShape(999.dp),
-                            border = BorderStroke(1.dp, MaxxColors.Primary),
-                            modifier = Modifier.clickable(onClick = onOpenSubscription)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp)
-                            ) {
-                                Icon(Icons.Rounded.WorkspacePremium, null, tint = MaxxColors.Primary, modifier = Modifier.size(14.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("VIP", color = MaxxColors.Primary, fontSize = 11.5.sp, fontWeight = FontWeight.Black)
-                            }
-                        }
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(999.dp))
-                                .background(MaxxColors.BrandGradient)
-                                .clickable(onClick = onOpenSubscription)
-                                .padding(horizontal = 12.dp, vertical = 7.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.WorkspacePremium, null, tint = MaxxColors.OnPrimaryDark, modifier = Modifier.size(14.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("Subscribe", color = MaxxColors.OnPrimaryDark, fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        item {
-            Text(
-                text = "EXPLORE PORTALS",
-                color = MaxxColors.PrimaryLight.copy(alpha = 0.85f),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Black,
-                letterSpacing = 1.6.sp,
-                modifier = Modifier.padding(top = 2.dp)
-            )
-        }
-
         // 1. MAXX MOVIES & ENTERTAINMENT (KANNADA OTT)
         item {
             PortalBannerCard(
@@ -288,18 +178,6 @@ fun PortalSelectionScreen(
                 subtitle = allIndianBanner?.subtitle.orEmpty(),
                 ctaLabel = allIndianBanner?.buttonLabel.orEmpty(),
                 onClick = { onOpenOttPortal("all-indian", 0) }
-            )
-        }
-
-        // 4. MAXX AI CINEMA
-        item {
-            PortalBannerCard(
-                remoteImageUrl = aiBanner?.imageUrl.orEmpty(),
-                fallbackDrawable = R.drawable.banner_ai_movies,
-                title = aiBanner?.title.orEmpty(),
-                subtitle = aiBanner?.subtitle.orEmpty(),
-                ctaLabel = aiBanner?.buttonLabel.orEmpty(),
-                onClick = { onOpenOttPortal("kannada", 7) }
             )
         }
     }

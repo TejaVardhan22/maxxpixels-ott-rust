@@ -122,6 +122,7 @@ data class SubscriptionPlan(
     val billingPeriod: String = "MONTHLY",
     val maxScreens: Int = 1,
     val maxQuality: String = "Full HD",
+    val allowOfflineDownload: Boolean = false,
     val isActivePlan: Boolean = false,
     val isPopular: Boolean = false,
     val features: List<String> = emptyList()
@@ -403,22 +404,38 @@ object JsonParsers {
         val catName = str(contentObj, "category_name", "categoryName", "genre")
         if (catName.isNotBlank() && genresList.isEmpty()) genresList.add(catName)
 
-        val castList = (contentObj["cast"] as? JsonArray ?: contentObj["castMembers"] as? JsonArray)
-            ?.mapNotNull { entry ->
+        val rawCastElem = contentObj["cast"]
+            ?: contentObj["castMembers"]
+            ?: contentObj["cast_members"]
+            ?: contentObj["cast_crew"]
+            ?: contentObj["castAndCrew"]
+            ?: contentObj["actors"]
+            ?: contentObj["starring"]
+            ?: obj["cast"]
+        val castList = when (rawCastElem) {
+            is JsonArray -> rawCastElem.mapNotNull { entry ->
                 when (entry) {
                     is JsonPrimitive -> entry.contentOrNull?.takeIf { it.isNotBlank() }?.let { CastMember(name = it) }
                     is JsonObject -> {
-                        val n = str(entry, "name", "fullName", "title")
+                        val n = str(entry, "name", "fullName", "full_name", "actorName", "title")
                         if (n.isBlank()) null else CastMember(
                             id = long(entry, "id"),
                             name = n,
-                            role = str(entry, "role", "character", "designation").ifBlank { "Cast" },
-                            photoUrl = MediaUrlNormalizer.normalize(str(entry, "imageUrl", "image_url", "image", "avatarUrl", "photo"))
+                            role = str(entry, "role", "character", "designation", "type").ifBlank { "Cast" },
+                            photoUrl = MediaUrlNormalizer.normalize(str(entry, "imageUrl", "image_url", "image", "avatarUrl", "photo", "profileImage"))
                         )
                     }
                     else -> null
                 }
-            } ?: emptyList()
+            }
+            is JsonPrimitive -> rawCastElem.contentOrNull
+                ?.split(",", "•", "|")
+                ?.map { it.trim() }
+                ?.filter { it.isNotBlank() }
+                ?.map { CastMember(name = it, role = "Cast") }
+                ?: emptyList()
+            else -> emptyList()
+        }
 
         val seasonsList = (contentObj["seasons"] as? JsonArray ?: contentObj["season"] as? JsonArray)
             ?.mapIndexedNotNull { idx, entry ->
@@ -476,8 +493,11 @@ object JsonParsers {
             id = id,
             title = str(contentObj, "title", "name").ifBlank { str(obj, "title", "name").ifBlank { "Untitled" } },
             slug = str(contentObj, "slug").ifBlank { str(obj, "slug") },
-            description = str(contentObj, "description", "synopsis", "shortDescription", "short_description")
-                .ifBlank { str(obj, "description", "subtitle") },
+            description = str(
+                contentObj,
+                "description", "synopsis", "longDescription", "long_description",
+                "shortDescription", "short_description", "overview", "storyline"
+            ).ifBlank { str(obj, "description", "synopsis", "subtitle") },
             posterUrl = MediaUrlNormalizer.normalize(rawPoster),
             landscapeUrl = MediaUrlNormalizer.normalize(rawLandscape),
             contentType = ctRaw,
@@ -529,6 +549,15 @@ object JsonParsers {
             features.add("All Movies, Web Series & Originals")
         }
 
+        val allowOffline = bool(
+            obj,
+            "allowDownloads", "allow_downloads", "allowOfflineDownload", "allow_offline_download",
+            "offlineDownloads", "offline_downloads", "downloadEnabled", "download_enabled", "canDownload"
+        ) || features.any { f ->
+            val fl = f.lowercase()
+            (fl.contains("download") || fl.contains("offline")) && !fl.contains("no download") && !fl.contains("no offline")
+        }
+
         return SubscriptionPlan(
             id = long(obj, "id"),
             name = name,
@@ -540,6 +569,7 @@ object JsonParsers {
             billingPeriod = str(obj, "billingPeriod", "billing_period", "billingCycle").ifBlank { "MONTHLY" },
             maxScreens = maxScreens,
             maxQuality = maxQuality,
+            allowOfflineDownload = allowOffline,
             isActivePlan = bool(obj, "is_active_plan", "isActivePlan"),
             isPopular = name.contains("annual", true) || name.contains("platinum", true) || name.contains("premium", true),
             features = features

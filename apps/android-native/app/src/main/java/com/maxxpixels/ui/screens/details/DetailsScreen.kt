@@ -1,6 +1,11 @@
 package com.maxxpixels.ui.screens.details
 
+import android.app.DownloadManager
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.Environment
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -130,6 +135,29 @@ fun DetailsScreen(
     var tvodLoading by remember { mutableStateOf(false) }
     var tvodError by remember { mutableStateOf("") }
     var rentUnlocked by remember { mutableStateOf(false) }
+
+    // Plan-gated Offline Download state (hidden unless user's active plan includes offline downloads)
+    var canOfflineDownload by remember { mutableStateOf(false) }
+    var isDownloading by remember { mutableStateOf(false) }
+    var isDownloaded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(session?.id, session?.hasActiveSubscription, session?.packageName) {
+        if (session?.hasActiveSubscription == true) {
+            canOfflineDownload = when (val plansRes = repository.getPlans()) {
+                is ApiResult.Success -> {
+                    val activePlan = plansRes.data.firstOrNull { it.isActivePlan }
+                        ?: plansRes.data.firstOrNull {
+                            !session?.packageName.isNullOrBlank() &&
+                                it.name.equals(session?.packageName, ignoreCase = true)
+                        }
+                    activePlan?.allowOfflineDownload == true
+                }
+                is ApiResult.Error -> false
+            }
+        } else {
+            canOfflineDownload = false
+        }
+    }
 
     fun load() {
         loading = true
@@ -379,12 +407,12 @@ fun DetailsScreen(
             .navigationBarsPadding(),
         contentPadding = PaddingValues(bottom = 36.dp)
     ) {
-        // 1. Edge-to-Edge 16:9 Hero Banner (occupies full top, no burgundy top gap, no stretched zoom)
+        // 1. Edge-to-Edge Tall Hero Banner (4:3 cinema proportion, occupies full top without burgundy gap)
         item {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
+                    .aspectRatio(4f / 3f)
                     .clickable { triggerPlay() }
             ) {
                 AsyncImage(
@@ -558,29 +586,97 @@ fun DetailsScreen(
                                 onClick = {
                                     val next = !inWatchlist
                                     inWatchlist = next
+                                    Toast.makeText(
+                                        context,
+                                        if (next) "Added to Watchlist" else "Removed from Watchlist",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
                                     scope.launch { repository.toggleWatchlist(content.id, content.title, next) }
                                 }
                             )
-                            FrostedActionCircle(
-                                icon = Icons.Rounded.Download,
-                                onClick = { triggerPlay() }
-                            )
+                            // Offline Download button — shown ONLY if user's active plan includes offline downloads
+                            if (canOfflineDownload) {
+                                FrostedActionCircle(
+                                    icon = if (isDownloaded) Icons.Rounded.Check else Icons.Rounded.Download,
+                                    tint = if (isDownloaded) MaxxColors.Primary else Color.White,
+                                    onClick = {
+                                        if (isDownloading) return@FrostedActionCircle
+                                        isDownloading = true
+                                        scope.launch {
+                                            when (val auth = repository.authorizePlayback(content.id, null)) {
+                                                is ApiResult.Success -> {
+                                                    val url = auth.data.streamUrl
+                                                    if (url.startsWith("http", ignoreCase = true)) {
+                                                        runCatching {
+                                                            val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                                                            val safeName = content.title.replace(Regex("[^A-Za-z0-9._-]"), "_").take(40)
+                                                            val ext = if (url.contains(".m3u8", true)) "m3u8" else "mp4"
+                                                            val req = DownloadManager.Request(Uri.parse(url))
+                                                                .setTitle(content.title)
+                                                                .setDescription("Downloading for offline viewing on MaxxPixels")
+                                                                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                                                .setDestinationInExternalFilesDir(
+                                                                    context,
+                                                                    Environment.DIRECTORY_DOWNLOADS,
+                                                                    "${safeName}_${content.id}.$ext"
+                                                                )
+                                                            dm.enqueue(req)
+                                                            isDownloaded = true
+                                                            Toast.makeText(context, "Downloading ${content.title}...", Toast.LENGTH_SHORT).show()
+                                                        }.onFailure { err ->
+                                                            Toast.makeText(context, err.message ?: "Download failed", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    } else {
+                                                        Toast.makeText(context, "Offline stream not available for this title", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                                is ApiResult.Error -> {
+                                                    Toast.makeText(context, auth.message, Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                            isDownloading = false
+                                        }
+                                    }
+                                )
+                            }
                             FrostedActionCircle(
                                 icon = Icons.Rounded.Share,
                                 onClick = {
+                                    val slugOrId = content.slug.ifBlank { content.id.toString() }
+                                    val shareUrl = "https://maxxpixels.com/watch/$slugOrId"
+                                    val snippet = content.description.trim().take(120)
+                                    val shareBody = buildString {
+                                        append("Watch \"${content.title}\" on MaxxPixels!")
+                                        if (snippet.isNotBlank()) {
+                                            append("\n\n")
+                                            append(snippet)
+                                            if (content.description.trim().length > 120) append("...")
+                                        }
+                                        append("\n\n")
+                                        append(shareUrl)
+                                    }
                                     val intent = Intent(Intent.ACTION_SEND).apply {
                                         type = "text/plain"
-                                        putExtra(Intent.EXTRA_TEXT, "Watch ${content.title} on MaxxPixels!")
+                                        putExtra(Intent.EXTRA_SUBJECT, content.title)
+                                        putExtra(Intent.EXTRA_TEXT, shareBody)
                                     }
-                                    context.startActivity(Intent.createChooser(intent, "Share"))
+                                    context.startActivity(Intent.createChooser(intent, "Share ${content.title}"))
                                 }
                             )
                         }
 
+                        // Description / Storyline
                         val cleanDesc = content.description.trim()
                         if (cleanDesc.isNotBlank()) {
                             Spacer(Modifier.height(16.dp))
-                            val isLong = cleanDesc.length > 110
+                            Text(
+                                text = "Storyline",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(Modifier.height(5.dp))
+                            val isLong = cleanDesc.length > 120
                             Column(
                                 modifier = if (isLong) Modifier.clickable { expandedSynopsis = !expandedSynopsis } else Modifier
                             ) {
@@ -600,6 +696,72 @@ fun DetailsScreen(
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold
                                     )
+                                }
+                            }
+                        }
+                    }
+
+                    // Inline Cast & Crew strip related to this content (always visible when cast exists)
+                    if (content.cast.isNotEmpty()) {
+                        Spacer(Modifier.height(18.dp))
+                        Text(
+                            text = "Cast & Crew",
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 18.dp)
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 18.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(content.cast) { member ->
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier.width(74.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(58.dp)
+                                            .clip(CircleShape)
+                                            .background(MaxxColors.SurfaceElevated),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (member.photoUrl.isNotBlank()) {
+                                            AsyncImage(
+                                                model = member.photoUrl,
+                                                contentDescription = member.name,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        } else {
+                                            Text(
+                                                text = member.name.take(1).uppercase(),
+                                                color = MaxxColors.Primary,
+                                                fontSize = 18.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                    Spacer(Modifier.height(5.dp))
+                                    Text(
+                                        text = member.name,
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (member.role.isNotBlank()) {
+                                        Text(
+                                            text = member.role,
+                                            color = MaxxColors.TextMuted,
+                                            fontSize = 9.5.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                             }
                         }
