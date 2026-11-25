@@ -50,7 +50,7 @@ export interface AuditHistoryRecord {
         <div>
           <span class="category-tag"><mat-icon>settings</mat-icon> PLATFORM INFRASTRUCTURE & CONFIGURATION</span>
           <h1>System Settings & Central Control Studio</h1>
-          <p>Master controls for branding, cloud storage (Bunny/S3), payment gateways, maintenance mode, player rules, and audit rollback</p>
+          <p>Manage branding, currency, AdMob, maintenance mode, player rules, device limits, APK versions, and audit rollback (infrastructure secrets like Bunny, Razorpay, MSG91 &amp; Email are managed via server .env)</p>
         </div>
         <div class="header-actions">
           <span *ngIf="settingsForm.dirty" class="unsaved-badge">
@@ -68,10 +68,10 @@ export interface AuditHistoryRecord {
       <!-- 2. EXECUTIVE KPI SUMMARY CARDS -->
       <div class="kpi-grid">
         <div class="kpi-card green">
-          <div class="kpi-icon"><mat-icon>cloud_done</mat-icon></div>
+          <div class="kpi-icon"><mat-icon>language</mat-icon></div>
           <div>
-            <span class="kpi-label">Active Storage</span>
-            <div class="kpi-val text-green">{{ settingsForm.value.storageProvider === 'AWS' || settingsForm.value.storageProvider === 'S3' ? '☁️ AWS S3' : '🐰 Bunny.net Edge' }}</div>
+            <span class="kpi-label">Platform Brand</span>
+            <div class="kpi-val text-green">{{ settingsForm.value.appName || 'Not Set' }}</div>
           </div>
         </div>
 
@@ -86,10 +86,10 @@ export interface AuditHistoryRecord {
         </div>
 
         <div class="kpi-card gold">
-          <div class="kpi-icon"><mat-icon>payment</mat-icon></div>
+          <div class="kpi-icon"><mat-icon>currency_exchange</mat-icon></div>
           <div>
-            <span class="kpi-label">Payment Gateway</span>
-            <div class="kpi-val font-mono" style="font-size: 13px;">{{ (settingsForm.value.paymentGatewayProvider === 'STRIPE' || settingsForm.value.paymentProvider === 'STRIPE') ? '💳 Stripe Global' : '🇮🇳 Razorpay Active' }}</div>
+            <span class="kpi-label">Default Currency</span>
+            <div class="kpi-val font-mono" style="font-size: 13px;">{{ settingsForm.value.defaultCurrency || 'INR' }}</div>
           </div>
         </div>
 
@@ -105,7 +105,7 @@ export interface AuditHistoryRecord {
       <!-- 3. SEARCH & QUICK FILTER BAR -->
       <div class="search-filter-box">
         <mat-icon>search</mat-icon>
-        <input type="text" [(ngModel)]="searchQuery" placeholder="Search configuration keys, settings, or credentials (e.g. razorpay, s3, bunny, player, watermark, maintenance)..." (input)="onSearchChange()">
+        <input type="text" [(ngModel)]="searchQuery" placeholder="Search settings (e.g. branding, currency, admob, player, watermark, maintenance, device, apk)..." (input)="onSearchChange()">
         <button *ngIf="searchQuery" mat-icon-button (click)="searchQuery = ''; onSearchChange()"><mat-icon>close</mat-icon></button>
       </div>
 
@@ -114,14 +114,8 @@ export interface AuditHistoryRecord {
         <button class="tab-btn" [class.active]="activeTab === 'BRANDING'" (click)="activeTab = 'BRANDING'">
           <mat-icon>language</mat-icon> Branding & Identity
         </button>
-        <button class="tab-btn" [class.active]="activeTab === 'STORAGE'" (click)="activeTab = 'STORAGE'">
-          <mat-icon>cloud</mat-icon> Bunny & AWS Storage
-        </button>
         <button class="tab-btn" [class.active]="activeTab === 'PAYMENTS'" (click)="activeTab = 'PAYMENTS'">
-          <mat-icon>payment</mat-icon> Payments & Currency
-        </button>
-        <button class="tab-btn" [class.active]="activeTab === 'NOTIFICATIONS'" (click)="activeTab = 'NOTIFICATIONS'">
-          <mat-icon>mark_email_read</mat-icon> SMS, Email & Push
+          <mat-icon>currency_exchange</mat-icon> Currency & Billing
         </button>
         <button class="tab-btn" [class.active]="activeTab === 'ADMOB'" (click)="activeTab = 'ADMOB'">
           <mat-icon>monetization_on</mat-icon> Google AdMob & Ads
@@ -298,244 +292,19 @@ export interface AuditHistoryRecord {
         </div>
       </div>
 
-      <!-- TAB 2: STORAGE & CDN (BUNNY & S3) -->
-      <div *ngIf="activeTab === 'STORAGE'" class="tab-content">
-        <div class="form-card">
-          <div class="card-header">
-            <div class="header-icon-box blue"><mat-icon>cloud</mat-icon></div>
-            <div>
-              <h3>Cloud Storage & Video Streaming Provider</h3>
-              <p>Switch between Bunny.net Edge CDN and AWS S3 / CloudFront with zero backend redeployment</p>
-            </div>
-          </div>
-
-          <form [formGroup]="settingsForm" (ngSubmit)="onSaveSettings()" class="settings-form">
-            <!-- Active Provider Toggle -->
-            <div class="section-title"><mat-icon>toggle_on</mat-icon><span>Active Storage & Streaming Provider</span></div>
-            <div class="form-row">
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Active Storage Provider</mat-label>
-                  <mat-select formControlName="storageProvider" panelClass="custom-select-panel" required>
-                    <mat-option value="BUNNY">🐰 Bunny.net (Edge Storage & Bunny Stream)</mat-option>
-                    <mat-option value="AWS">☁️ AWS S3 & CloudFront Distribution</mat-option>
-                    <mat-option value="S3">☁️ Generic S3 / Cloudflare R2 / MinIO</mat-option>
-                  </mat-select>
-                </mat-form-field>
-              </div>
-              <div class="half-width">
-                <div class="info-box-sm">
-                  <mat-icon>info</mat-icon>
-                  <span>Active Provider: <b>{{ settingsForm.value.storageProvider }}</b>. Changing this routes uploads and playback manifests automatically.</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- BUNNY CONFIG -->
-            <div class="section-divider">
-              <div class="divider-header">
-                <h4><mat-icon>folder_special</mat-icon> Bunny.net Storage & Video Stream</h4>
-                <div style="display: flex; gap: 8px;">
-                  <button type="button" mat-stroked-button color="accent" class="test-btn" (click)="testBunnyStorageConnection()">
-                    <mat-icon>speed</mat-icon> Test Bunny Storage
-                  </button>
-                  <button type="button" mat-stroked-button color="primary" class="test-btn" (click)="testBunnyStreamConnection()">
-                    <mat-icon>play_circle</mat-icon> Test Bunny Stream
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div class="form-row">
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Bunny Storage Zone Name</mat-label>
-                  <input matInput formControlName="bunnyStorageZoneName" placeholder="maxxpixels-images">
-                </mat-form-field>
-              </div>
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Bunny Storage Zone Password / API Key</mat-label>
-                  <input matInput [type]="hideBunnyStoragePassword ? 'password' : 'text'" formControlName="bunnyStorageZonePassword">
-                  <button mat-icon-button matSuffix type="button" (click)="hideBunnyStoragePassword = !hideBunnyStoragePassword">
-                    <mat-icon>{{ hideBunnyStoragePassword ? 'visibility_off' : 'visibility' }}</mat-icon>
-                  </button>
-                </mat-form-field>
-              </div>
-            </div>
-
-            <div class="form-row">
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Bunny CDN Domain (Pull Zone)</mat-label>
-                  <input matInput formControlName="bunnyCdnHostname" placeholder="https://maxxpixels-images.b-cdn.net">
-                </mat-form-field>
-              </div>
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Bunny Storage Region</mat-label>
-                  <input matInput formControlName="bunnyStorageRegion" placeholder="de, ny, sg, etc.">
-                </mat-form-field>
-              </div>
-            </div>
-
-            <div class="form-row">
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Bunny Stream Video Library ID</mat-label>
-                  <input matInput formControlName="bunnyStreamLibraryId" placeholder="Enter Bunny Stream Library ID">
-                </mat-form-field>
-              </div>
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Bunny Stream API Key</mat-label>
-                  <input matInput [type]="hideBunnyStreamApiKey ? 'password' : 'text'" formControlName="bunnyStreamApiKey">
-                  <button mat-icon-button matSuffix type="button" (click)="hideBunnyStreamApiKey = !hideBunnyStreamApiKey">
-                    <mat-icon>{{ hideBunnyStreamApiKey ? 'visibility_off' : 'visibility' }}</mat-icon>
-                  </button>
-                </mat-form-field>
-              </div>
-            </div>
-
-            <!-- AWS S3 CONFIG -->
-            <div class="section-divider">
-              <div class="divider-header">
-                <h4><mat-icon>storage</mat-icon> AWS S3 / CloudFront / Cloudflare R2 Configuration</h4>
-                <button type="button" mat-stroked-button color="accent" class="test-btn" (click)="testS3Connection()">
-                  <mat-icon>cloud_sync</mat-icon> Test S3 Setup
-                </button>
-              </div>
-            </div>
-
-            <div class="form-row">
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>S3 Master Bucket Name</mat-label>
-                  <input matInput formControlName="s3MasterBucket" placeholder="maxxpixels-ott-assets">
-                </mat-form-field>
-              </div>
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>AWS Region</mat-label>
-                  <input matInput formControlName="s3AwsRegion" placeholder="us-east-1, ap-south-1">
-                </mat-form-field>
-              </div>
-            </div>
-
-            <div class="form-row">
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>AWS Access Key ID</mat-label>
-                  <input matInput formControlName="s3AccessKey" placeholder="AKIA...">
-                </mat-form-field>
-              </div>
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>AWS Secret Access Key</mat-label>
-                  <input matInput [type]="hideS3Secret ? 'password' : 'text'" formControlName="s3SecretKey">
-                  <button mat-icon-button matSuffix type="button" (click)="hideS3Secret = !hideS3Secret">
-                    <mat-icon>{{ hideS3Secret ? 'visibility_off' : 'visibility' }}</mat-icon>
-                  </button>
-                </mat-form-field>
-              </div>
-            </div>
-
-            <button mat-raised-button class="full-width submit-btn" type="submit" [disabled]="isSaving">
-              <mat-icon>save</mat-icon> Save Storage & CDN Settings
-            </button>
-          </form>
-        </div>
-      </div>
-
-      <!-- TAB 3: PAYMENTS -->
+      <!-- TAB 2: CURRENCY & BILLING -->
       <div *ngIf="activeTab === 'PAYMENTS'" class="tab-content">
         <div class="form-card">
           <div class="card-header">
-            <div class="header-icon-box gold"><mat-icon>payment</mat-icon></div>
+            <div class="header-icon-box gold"><mat-icon>currency_exchange</mat-icon></div>
             <div>
-              <h3>Payment Gateways, Currency & Billing Rules</h3>
-              <p>Configure Razorpay, Stripe, subscription renewals, tax percentages, and invoice prefixes</p>
+              <h3>Currency &amp; Billing Preferences</h3>
+              <p>Configure default storefront currency (Razorpay API keys and webhook secrets are managed in the server .env file)</p>
             </div>
           </div>
 
           <form [formGroup]="settingsForm" (ngSubmit)="onSaveSettings()" class="settings-form">
-            <!-- Active Payment Gateway Selector -->
-            <div class="section-title"><mat-icon>toggle_on</mat-icon><span>Active Payment Gateway Provider</span></div>
-            <div class="form-row">
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Active Payment Gateway</mat-label>
-                  <mat-select formControlName="paymentGatewayProvider" panelClass="custom-select-panel" required>
-                    <mat-option value="RAZORPAY">🇮🇳 Razorpay (UPI, NetBanking, Cards, Wallets)</mat-option>
-                    <mat-option value="STRIPE">💳 Stripe (Global Cards, Apple Pay, Google Pay)</mat-option>
-                  </mat-select>
-                </mat-form-field>
-              </div>
-              <div class="half-width">
-                <div class="info-box-sm">
-                  <mat-icon>info</mat-icon>
-                  <span>Active Gateway: <b>{{ settingsForm.value.paymentGatewayProvider || 'RAZORPAY' }}</b>. User subscription checkouts and orders will route to this gateway.</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- RAZORPAY CONFIG -->
-            <div class="section-divider">
-              <div class="divider-header">
-                <h4><mat-icon>account_balance_wallet</mat-icon> Razorpay Integration</h4>
-                <button type="button" mat-stroked-button color="accent" class="test-btn" (click)="testRazorpayConnection()">
-                  <mat-icon>verified</mat-icon> Test Razorpay Credentials
-                </button>
-              </div>
-            </div>
-
-            <div class="form-row">
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Razorpay Key ID</mat-label>
-                  <input matInput formControlName="razorpayKeyId" placeholder="rzp_live_...">
-                </mat-form-field>
-              </div>
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Razorpay Key Secret</mat-label>
-                  <input matInput [type]="hideRazorpaySecret ? 'password' : 'text'" formControlName="razorpayKeySecret">
-                  <button mat-icon-button matSuffix type="button" (click)="hideRazorpaySecret = !hideRazorpaySecret">
-                    <mat-icon>{{ hideRazorpaySecret ? 'visibility_off' : 'visibility' }}</mat-icon>
-                  </button>
-                </mat-form-field>
-              </div>
-            </div>
-
-            <!-- STRIPE CONFIG -->
-            <div class="section-divider">
-              <div class="divider-header">
-                <h4><mat-icon>credit_card</mat-icon> Stripe Global Gateway Configuration</h4>
-                <button type="button" mat-stroked-button color="accent" class="test-btn" (click)="testStripeConnection()">
-                  <mat-icon>cloud_sync</mat-icon> Test Stripe Setup
-                </button>
-              </div>
-            </div>
-
-            <div class="form-row">
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Stripe Publishable Key</mat-label>
-                  <input matInput formControlName="stripePublicKey" placeholder="pk_live_...">
-                </mat-form-field>
-              </div>
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Stripe Secret Key</mat-label>
-                  <input matInput [type]="hideStripeSecret ? 'password' : 'text'" formControlName="stripeSecretKey">
-                  <button mat-icon-button matSuffix type="button" (click)="hideStripeSecret = !hideStripeSecret">
-                    <mat-icon>{{ hideStripeSecret ? 'visibility_off' : 'visibility' }}</mat-icon>
-                  </button>
-                </mat-form-field>
-              </div>
-            </div>
-
-            <div class="section-title"><mat-icon>currency_exchange</mat-icon><span>Currency & Billing Preferences</span></div>
+            <div class="section-title"><mat-icon>currency_exchange</mat-icon><span>Currency &amp; Billing Preferences</span></div>
             <div class="form-row">
               <div class="half-width">
                 <mat-form-field appearance="outline" class="full-width custom-field">
@@ -558,94 +327,7 @@ export interface AuditHistoryRecord {
             </div>
 
             <button mat-raised-button class="full-width submit-btn" type="submit" [disabled]="isSaving">
-              <mat-icon>save</mat-icon> Save Payment Configuration
-            </button>
-          </form>
-        </div>
-      </div>
-
-      <!-- TAB 4: NOTIFICATIONS -->
-      <div *ngIf="activeTab === 'NOTIFICATIONS'" class="tab-content">
-        <div class="form-card">
-          <div class="card-header">
-            <div class="header-icon-box purple"><mat-icon>mark_email_read</mat-icon></div>
-            <div>
-              <h3>SMS, Email SMTP, WhatsApp & Push Notifications</h3>
-              <p>Configure MSG91 OTP gateway, SendGrid / SMTP email delivery, and Firebase Cloud Messaging</p>
-            </div>
-          </div>
-
-          <form [formGroup]="settingsForm" (ngSubmit)="onSaveSettings()" class="settings-form">
-            <!-- MSG91 SMS -->
-            <div class="section-divider">
-              <div class="divider-header">
-                <h4><mat-icon>sms</mat-icon> MSG91 SMS OTP Gateway</h4>
-                <button type="button" mat-stroked-button color="accent" class="test-btn" (click)="testGatewayConnection('SMS')">
-                  <mat-icon>send</mat-icon> Test SMS OTP
-                </button>
-              </div>
-            </div>
-
-            <div class="form-row">
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>MSG91 Auth Key</mat-label>
-                  <input matInput [type]="hideMsg91AuthKey ? 'password' : 'text'" formControlName="msg91AuthKey">
-                  <button mat-icon-button matSuffix type="button" (click)="hideMsg91AuthKey = !hideMsg91AuthKey">
-                    <mat-icon>{{ hideMsg91AuthKey ? 'visibility_off' : 'visibility' }}</mat-icon>
-                  </button>
-                </mat-form-field>
-              </div>
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Sender ID (Header)</mat-label>
-                  <input matInput formControlName="msg91SenderId" placeholder="MAXXPX" maxlength="6">
-                </mat-form-field>
-              </div>
-            </div>
-
-            <div class="form-row">
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>MSG91 OTP Flow / Template ID</mat-label>
-                  <input matInput formControlName="msg91TemplateId" placeholder="Enter MSG91 Template ID">
-                </mat-form-field>
-              </div>
-              <div class="half-width">
-                <div class="info-box-sm">
-                  <mat-icon>verified</mat-icon>
-                  <span>Flow template must have variables VAR1 or OTP mapped in MSG91 console.</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- SMTP EMAIL -->
-            <div class="section-divider">
-              <div class="divider-header">
-                <h4><mat-icon>mail</mat-icon> Transactional Email (SMTP)</h4>
-                <button type="button" mat-stroked-button color="accent" class="test-btn" (click)="testGatewayConnection('EMAIL')">
-                  <mat-icon>send</mat-icon> Test Email
-                </button>
-              </div>
-            </div>
-
-            <div class="form-row">
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>SMTP Host</mat-label>
-                  <input matInput formControlName="smtpHost" placeholder="smtp.sendgrid.net">
-                </mat-form-field>
-              </div>
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>From Email Address</mat-label>
-                  <input matInput formControlName="smtpFromEmail" placeholder="no-reply@maxxpixels.com">
-                </mat-form-field>
-              </div>
-            </div>
-
-            <button mat-raised-button class="full-width submit-btn" type="submit" [disabled]="isSaving">
-              <mat-icon>save</mat-icon> Save Notification Settings
+              <mat-icon>save</mat-icon> Save Currency Settings
             </button>
           </form>
         </div>
@@ -1334,13 +1016,6 @@ export class SystemSettingsPage implements OnInit {
   isLoadingHistory = false;
   historyRecords: AuditHistoryRecord[] = [];
 
-  hideRazorpaySecret = true;
-  hideStripeSecret = true;
-  hideBunnyStoragePassword = true;
-  hideBunnyStreamApiKey = true;
-  hideS3Secret = true;
-  hideMsg91AuthKey = true;
-
   settingsForm = this.fb.group({
     // All values are populated dynamically from GET /api/v1/admin/settings
     appName: ['', [Validators.required]],
@@ -1370,45 +1045,9 @@ export class SystemSettingsPage implements OnInit {
     defaultLanguage: ['en', [Validators.required]],
     defaultRegion: ['GLOBAL', [Validators.required]],
 
-    // Storage (populated dynamically from backend settings)
-    storageProvider: ['BUNNY', [Validators.required]],
-    bunnyStorageZoneName: [''],
-    bunnyStorageZonePassword: [''],
-    bunnyStorageRegion: [''],
-    bunnyCdnHostname: [''],
-    bunnyStreamLibraryId: [''],
-    bunnyStreamApiKey: [''],
-    bunnyStreamCdnHostname: [''],
-    s3MasterBucket: [''],
-    s3StreamingBucket: [''],
-    s3AwsRegion: [''],
-    s3EndpointUrl: [''],
-    s3AccessKey: [''],
-    s3SecretKey: [''],
-
-    // Payments
-    paymentGatewayProvider: ['RAZORPAY', [Validators.required]],
-    paymentProvider: ['RAZORPAY'],
-    razorpayKeyId: [''],
-    razorpayKeySecret: [''],
-    stripePublicKey: [''],
-    stripeSecretKey: [''],
+    // Currency & Billing (payment gateway secrets are managed via server .env)
     defaultCurrency: ['INR', [Validators.required]],
     autoRetryFailedRenewals: [false],
-
-    // Notifications (populated dynamically from backend settings)
-    smsProvider: ['MSG91', [Validators.required]],
-    msg91AuthKey: [''],
-    msg91SenderId: [''],
-    msg91TemplateId: [''],
-    smtpHost: [''],
-    smtpPort: [587],
-    smtpUsername: [''],
-    smtpPassword: [''],
-    smtpFromEmail: [''],
-    smtpFromName: [''],
-    fcmPushServerKey: [''],
-    fcmProjectId: [''],
 
     // Ads (populated dynamically from backend settings)
     admobEnabled: ['false', [Validators.required]],
@@ -1472,13 +1111,10 @@ export class SystemSettingsPage implements OnInit {
   private coerceSettingsPayload(raw: Record<string, any>): Record<string, any> {
     const normalized: Record<string, any> = { ...raw };
 
-    // Map common backend DB / env alias keys to form control names
+    // Map common backend DB alias keys to form control names
     const aliases: Record<string, string[]> = {
       logoUrl: ['logoUrl', 'APP_LOGO_URL', 'appLogoUrl', 'logo_url'],
       darkLogoUrl: ['darkLogoUrl', 'DARK_LOGO_URL', 'dark_logo_url'],
-      bunnyStorageZoneName: ['bunnyStorageZoneName', 'BUNNY_STORAGE_ZONE', 'bunnyStorageZone'],
-      bunnyCdnHostname: ['bunnyCdnHostname', 'BUNNY_STORAGE_CDN_URL', 'bunnyStorageCdnUrl', 'BUNNY_PULL_ZONE_DOMAIN'],
-      paymentGatewayProvider: ['paymentGatewayProvider', 'PAYMENT_ACTIVE_GATEWAY', 'paymentActiveGateway', 'paymentProvider'],
       maintenanceMode: ['maintenanceMode', 'MAINTENANCE_MODE_ENABLED', 'maintenanceModeEnabled'],
       apkLatestVersionName: ['apkLatestVersionName', 'ANDROID_LATEST_VERSION', 'androidLatestVersion'],
     };
@@ -1496,12 +1132,6 @@ export class SystemSettingsPage implements OnInit {
     for (const key of this.booleanControlKeys) {
       if (key in normalized && typeof normalized[key] === 'string') {
         normalized[key] = normalized[key].toLowerCase() === 'true' || normalized[key] === '1';
-      }
-    }
-    if ('smtpPort' in normalized && typeof normalized['smtpPort'] === 'string') {
-      const parsed = Number(normalized['smtpPort']);
-      if (!Number.isNaN(parsed) && parsed > 0) {
-        normalized['smtpPort'] = parsed;
       }
     }
     return normalized;
@@ -1533,12 +1163,10 @@ export class SystemSettingsPage implements OnInit {
     const q = this.searchQuery.toLowerCase().trim();
     if (!q) return;
 
-    if (q.includes('bunny') || q.includes('s3') || q.includes('storage') || q.includes('cdn')) {
-      this.activeTab = 'STORAGE';
-    } else if (q.includes('pay') || q.includes('razorpay') || q.includes('stripe') || q.includes('currency')) {
+    if (q.includes('brand') || q.includes('logo') || q.includes('seo') || q.includes('social')) {
+      this.activeTab = 'BRANDING';
+    } else if (q.includes('currency') || q.includes('billing') || q.includes('pay')) {
       this.activeTab = 'PAYMENTS';
-    } else if (q.includes('sms') || q.includes('mail') || q.includes('smtp') || q.includes('fcm') || q.includes('push')) {
-      this.activeTab = 'NOTIFICATIONS';
     } else if (q.includes('ad') || q.includes('admob') || q.includes('vast') || q.includes('banner')) {
       this.activeTab = 'ADMOB';
     } else if (q.includes('maint') || q.includes('flag') || q.includes('download') || q.includes('casting')) {
@@ -1553,131 +1181,6 @@ export class SystemSettingsPage implements OnInit {
       this.activeTab = 'HISTORY';
       this.loadHistory();
     }
-  }
-
-  testBunnyStorageConnection(): void {
-    const storageZone = this.settingsForm.value.bunnyStorageZoneName;
-    const accessKey = this.settingsForm.value.bunnyStorageZonePassword;
-    const region = this.settingsForm.value.bunnyStorageRegion;
-
-    this.notificationService.info('Testing Bunny.net Storage connection...');
-    this.http.post<any>(`${environment.apiBaseUrl}/admin/settings/test-bunny-storage`, {
-      storageZone,
-      accessKey,
-      region
-    }).subscribe({
-      next: (res) => {
-        const msg = res?.data?.message || res?.message || 'Bunny Storage connected successfully!';
-        this.notificationService.success(`✅ ${msg}`);
-      },
-      error: (err) => {
-        const msg = err?.error?.message || err?.message || 'Storage connection test failed.';
-        this.notificationService.error(`❌ ${msg}`);
-      }
-    });
-  }
-
-  testBunnyStreamConnection(): void {
-    const libraryId = this.settingsForm.value.bunnyStreamLibraryId;
-    const apiKey = this.settingsForm.value.bunnyStreamApiKey;
-
-    this.notificationService.info('Testing Bunny.net Stream API connection...');
-    this.http.post<any>(`${environment.apiBaseUrl}/admin/settings/test-bunny-stream`, {
-      libraryId,
-      apiKey
-    }).subscribe({
-      next: (res) => {
-        const msg = res?.data?.message || res?.message || 'Bunny Stream authenticated successfully!';
-        this.notificationService.success(`✅ ${msg}`);
-      },
-      error: (err) => {
-        const msg = err?.error?.message || err?.message || 'Bunny Stream connection failed.';
-        this.notificationService.error(`❌ ${msg}`);
-      }
-    });
-  }
-
-  testS3Connection(): void {
-    const bucket = this.settingsForm.value.s3MasterBucket;
-    const region = this.settingsForm.value.s3AwsRegion;
-    const accessKey = this.settingsForm.value.s3AccessKey;
-    const secretKey = this.settingsForm.value.s3SecretKey;
-
-    this.notificationService.info('Testing S3 Storage configuration...');
-    this.http.post<any>(`${environment.apiBaseUrl}/admin/settings/test-s3`, {
-      bucket,
-      region,
-      accessKey,
-      secretKey
-    }).subscribe({
-      next: (res) => {
-        const msg = res?.data?.message || res?.message || 'S3 configuration validated!';
-        this.notificationService.success(`✅ ${msg}`);
-      },
-      error: (err) => {
-        const msg = err?.error?.message || err?.message || 'S3 test failed.';
-        this.notificationService.error(`❌ ${msg}`);
-      }
-    });
-  }
-
-  testRazorpayConnection(): void {
-    const keyId = this.settingsForm.value.razorpayKeyId;
-    const keySecret = this.settingsForm.value.razorpayKeySecret;
-
-    this.notificationService.info('Testing Razorpay gateway authentication...');
-    this.http.post<any>(`${environment.apiBaseUrl}/admin/settings/test-razorpay`, {
-      keyId,
-      keySecret
-    }).subscribe({
-      next: (res) => {
-        const msg = res?.data?.message || res?.message || 'Razorpay authenticated successfully!';
-        this.notificationService.success(`✅ ${msg}`);
-      },
-      error: (err) => {
-        const msg = err?.error?.message || err?.message || 'Razorpay authentication failed.';
-        this.notificationService.error(`❌ ${msg}`);
-      }
-    });
-  }
-
-  testStripeConnection(): void {
-    const publicKey = this.settingsForm.value.stripePublicKey;
-    const secretKey = this.settingsForm.value.stripeSecretKey;
-
-    this.notificationService.info('Testing Stripe gateway authentication...');
-    this.http.post<any>(`${environment.apiBaseUrl}/admin/settings/test-stripe`, {
-      publicKey,
-      secretKey
-    }).subscribe({
-      next: (res) => {
-        const msg = res?.data?.message || res?.message || 'Stripe authenticated successfully!';
-        this.notificationService.success(`✅ ${msg}`);
-      },
-      error: (err) => {
-        const msg = err?.error?.message || err?.message || 'Stripe authentication failed.';
-        this.notificationService.error(`❌ ${msg}`);
-      }
-    });
-  }
-
-  testGatewayConnection(channel: 'SMS' | 'EMAIL' | 'FCM'): void {
-    this.notificationService.info(`Testing ${channel} Gateway ping...`);
-    const appLabel = this.settingsForm.value.appName || 'Platform';
-    this.http.post<any>(`${environment.apiBaseUrl}/admin/notifications/test`, {
-      channel,
-      testTarget: this.settingsForm.value.supportPhone || '',
-      message: `Test ping from ${appLabel} Settings Studio`
-    }).subscribe({
-      next: (res) => {
-        const d = res?.data || res;
-        this.notificationService.success(`✅ ${channel} Gateway Test: [${d.status || 'OK'}] ${d.details || 'Connected!'}`);
-      },
-      error: (err) => {
-        const msg = err?.error?.message || err?.message || 'Gateway connection failed';
-        this.notificationService.error(`❌ ${channel} Gateway Error: ${msg}`);
-      }
-    });
   }
 
   loadHistory(): void {
