@@ -1,5 +1,8 @@
 package com.maxxpixels.ui.components
 
+import android.content.Intent
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -28,14 +31,21 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AirplanemodeInactive
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SignalCellularAlt
+import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material.icons.rounded.WifiOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -55,6 +65,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -174,6 +186,257 @@ fun MaxxPrimaryButton(
                 )
             }
         }
+    }
+}
+
+/**
+ * Amazon / Prime Video-style Dedicated Full-Screen No-Internet Experience:
+ * Shown automatically whenever network or internet connectivity is lost.
+ */
+@Composable
+fun NoInternetScreen(
+    checking: Boolean = false,
+    onRetry: () -> Unit,
+    onOpenDownloads: (() -> Unit)? = null
+) {
+    val context = LocalContext.current
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaxxColors.AmbientScreenBackground)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(horizontal = 24.dp, vertical = 20.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // Layered Glowing Signal Rings (Amazon/Prime Video inspired offline hero visual)
+            Box(
+                modifier = Modifier.size(136.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(136.dp)
+                        .clip(CircleShape)
+                        .background(MaxxColors.Primary.copy(alpha = 0.07f))
+                        .border(1.dp, MaxxColors.Primary.copy(alpha = 0.16f), CircleShape)
+                )
+                Box(
+                    modifier = Modifier
+                        .size(98.dp)
+                        .clip(CircleShape)
+                        .background(MaxxColors.Primary.copy(alpha = 0.12f))
+                        .border(1.dp, MaxxColors.Primary.copy(alpha = 0.28f), CircleShape)
+                )
+                Box(
+                    modifier = Modifier
+                        .size(66.dp)
+                        .clip(CircleShape)
+                        .background(MaxxColors.BrandGradient),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.WifiOff,
+                        contentDescription = "No Internet",
+                        tint = MaxxColors.OnPrimaryDark,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(22.dp))
+
+            // Status Pill
+            Surface(
+                color = MaxxColors.PrimaryTint,
+                shape = RoundedCornerShape(999.dp),
+                border = BorderStroke(1.dp, MaxxColors.Primary.copy(alpha = 0.45f))
+            ) {
+                Text(
+                    text = "NO INTERNET CONNECTION",
+                    color = MaxxColors.PrimaryLight,
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.2.sp,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                )
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            Text(
+                text = "Uh-oh! You're Offline",
+                color = Color.White,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            Text(
+                text = "We can't reach MaxxPixels right now. Check your Wi-Fi or mobile data connection and try again.",
+                color = MaxxColors.TextSecondary,
+                fontSize = 13.5.sp,
+                lineHeight = 20.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
+
+            Spacer(Modifier.height(22.dp))
+
+            // Quick Troubleshooting Frosted Card
+            Surface(
+                color = Color.White.copy(alpha = 0.06f),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OfflineTipRow(Icons.Rounded.Wifi, "Check your Wi-Fi router or reconnect")
+                    OfflineTipRow(Icons.Rounded.SignalCellularAlt, "Verify mobile data is turned on")
+                    OfflineTipRow(Icons.Rounded.AirplanemodeInactive, "Make sure Airplane Mode is off")
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            // Primary Golden "Try Again" Button
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(MaxxColors.BrandGradient)
+                    .clickable(enabled = !checking, onClick = onRetry),
+                contentAlignment = Alignment.Center
+            ) {
+                if (checking) {
+                    CircularProgressIndicator(
+                        color = MaxxColors.OnPrimaryDark,
+                        strokeWidth = 2.2.dp,
+                        modifier = Modifier.size(20.dp)
+                    )
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(7.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = null,
+                            tint = MaxxColors.OnPrimaryDark,
+                            modifier = Modifier.size(19.dp)
+                        )
+                        Text(
+                            text = "Try Again",
+                            color = MaxxColors.OnPrimaryDark,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            // Secondary Frosted "Network Settings" Button
+            Surface(
+                color = Color.White.copy(alpha = 0.08f),
+                shape = RoundedCornerShape(999.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .clickable {
+                        runCatching {
+                            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY)
+                            } else {
+                                Intent(Settings.ACTION_WIRELESS_SETTINGS)
+                            }
+                            context.startActivity(intent)
+                        }.onFailure {
+                            runCatching { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
+                        }
+                    }
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Settings,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(17.dp)
+                    )
+                    Spacer(Modifier.width(7.dp))
+                    Text(
+                        text = "Open Network Settings",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            if (onOpenDownloads != null) {
+                Spacer(Modifier.height(14.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .clickable(onClick = onOpenDownloads)
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.CloudDownload,
+                        contentDescription = null,
+                        tint = MaxxColors.PrimaryLight,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "Go to My Downloads",
+                        color = MaxxColors.PrimaryLight,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OfflineTipRow(icon: ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(MaxxColors.PrimaryTint),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = MaxxColors.Primary, modifier = Modifier.size(15.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = text,
+            color = Color.White.copy(alpha = 0.88f),
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
 

@@ -68,6 +68,7 @@ import com.maxxpixels.data.model.CreatedOrder
 import com.maxxpixels.data.model.MaintenanceStatus
 import com.maxxpixels.data.model.SubscriptionPlan
 import com.maxxpixels.data.repository.ApiResult
+import com.maxxpixels.ui.components.NoInternetScreen
 import com.maxxpixels.ui.components.OfflineStatusBanner
 import com.maxxpixels.ui.screens.auth.LoginScreen
 import com.maxxpixels.ui.screens.auth.SignUpScreen
@@ -337,6 +338,14 @@ private fun MaxxPixelsApp(
 
     var maintenance by remember { mutableStateOf(MaintenanceStatus()) }
     var checkingMaintenance by remember { mutableStateOf(false) }
+    var viewingOfflineDownloads by remember { mutableStateOf(false) }
+    var checkingNetwork by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isOnline) {
+        if (isOnline) {
+            viewingOfflineDownloads = false
+        }
+    }
 
     fun refreshMaintenance() {
         scope.launch {
@@ -443,6 +452,37 @@ private fun MaxxPixelsApp(
                     }
                 }
             }
+        }
+        return
+    }
+
+    // Full-Screen Amazon/Prime-style Offline Screen when no network / internet is available
+    if (!isOnline) {
+        if (viewingOfflineDownloads) {
+            MyDownloadsScreen(
+                onBack = { viewingOfflineDownloads = false },
+                onExplore = {
+                    if (app.networkMonitor.refresh()) {
+                        viewingOfflineDownloads = false
+                    }
+                }
+            )
+        } else {
+            NoInternetScreen(
+                checking = checkingNetwork,
+                onRetry = {
+                    checkingNetwork = true
+                    scope.launch {
+                        kotlinx.coroutines.delay(350)
+                        val backOnline = app.networkMonitor.refresh()
+                        checkingNetwork = false
+                        if (backOnline) {
+                            refreshMaintenance()
+                        }
+                    }
+                },
+                onOpenDownloads = { viewingOfflineDownloads = true }
+            )
         }
         return
     }

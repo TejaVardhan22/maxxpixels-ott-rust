@@ -34,7 +34,7 @@ class NetworkMonitor(context: Context) {
                 }
 
                 override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-                    _isOnline.value = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    _isOnline.value = hasUsableInternet(caps)
                 }
             })
         } catch (_: Exception) {
@@ -42,9 +42,21 @@ class NetworkMonitor(context: Context) {
         }
     }
 
+    fun refresh(): Boolean {
+        val online = checkCurrentlyOnline()
+        _isOnline.value = online
+        return online
+    }
+
     private fun checkCurrentlyOnline(): Boolean {
         val active = cm.activeNetwork ?: return false
         val caps = cm.getNetworkCapabilities(active) ?: return false
-        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        return hasUsableInternet(caps)
+    }
+
+    private fun hasUsableInternet(caps: NetworkCapabilities): Boolean {
+        val hasInternet = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        val validated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        return hasInternet && validated
     }
 }
