@@ -5,6 +5,18 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -495,7 +507,25 @@ private fun MaxxPixelsApp(
         OfflineStatusBanner(isOffline = !isOnline)
 
         Box(modifier = Modifier.weight(1f)) {
-            NavHost(navController = navController, startDestination = "splash") {
+            NavHost(
+                navController = navController,
+                startDestination = "splash",
+                enterTransition = {
+                    fadeIn(tween(200, easing = FastOutSlowInEasing)) +
+                        slideInHorizontally(tween(220, easing = FastOutSlowInEasing)) { it / 12 }
+                },
+                exitTransition = {
+                    fadeOut(tween(150, easing = FastOutSlowInEasing))
+                },
+                popEnterTransition = {
+                    fadeIn(tween(180, easing = FastOutSlowInEasing)) +
+                        slideInHorizontally(tween(200, easing = FastOutSlowInEasing)) { -it / 14 }
+                },
+                popExitTransition = {
+                    fadeOut(tween(170, easing = FastOutSlowInEasing)) +
+                        slideOutHorizontally(tween(190, easing = FastOutSlowInEasing)) { it / 12 }
+                }
+            ) {
                 composable("splash") {
                     SplashScreen(
                         repository = app.repository,
@@ -803,48 +833,57 @@ private fun RnMainTabsShell(
             .fillMaxSize()
             .background(MaxxColors.CinemaBlack)
     ) {
-        when (selectedTab) {
-            0 -> HomeScreen(
-                repository = app.repository,
-                initialLanguage = initialLanguage,
-                initialTypeId = initialTypeId,
-                onOpenDetails = onOpenDetails,
-                onPlayItem = onPlay,
-                onOpenSearch = { selectedTab = 1 },
-                onOpenNotifications = onOpenNotifications,
-                onOpenCategory = onOpenCategory,
-                onOpenSubscription = onOpenSubscription,
-                onOpenGames = onOpenGames,
-                onOpenPortalHub = onOpenPortalHub,
-                onOpenAccount = onOpenAccount
-            )
-            1 -> SearchScreen(
-                repository = app.repository,
-                onOpenDetails = onOpenDetails
-            )
-            2 -> NewHotScreen(
-                repository = app.repository,
-                language = initialLanguage,
-                onOpenDetails = onOpenDetails,
-                onPlayItem = onPlay
-            )
-            else -> ProfileScreen(
-                repository = app.repository,
-                onOpenDetails = onOpenDetails,
-                onOpenSubscription = onOpenSubscription,
-                onOpenAccount = onOpenAccount,
-                onOpenWatchlist = onOpenWatchlist,
-                onOpenRentals = onOpenRentals,
-                onOpenDownloads = onOpenDownloads,
-                onOpenStorage = onOpenStorage,
-                onOpenSettings = onOpenSettings,
-                onOpenHelp = onOpenHelp,
-                onOpenLegal = onOpenLegal,
-                onSignedOut = onSignedOut
-            )
+        AnimatedContent(
+            targetState = selectedTab,
+            transitionSpec = {
+                fadeIn(tween(170, easing = FastOutSlowInEasing)) togetherWith
+                    fadeOut(tween(120, easing = FastOutSlowInEasing))
+            },
+            label = "mainTabTransition"
+        ) { tabIdx ->
+            when (tabIdx) {
+                0 -> HomeScreen(
+                    repository = app.repository,
+                    initialLanguage = initialLanguage,
+                    initialTypeId = initialTypeId,
+                    onOpenDetails = onOpenDetails,
+                    onPlayItem = onPlay,
+                    onOpenSearch = { selectedTab = 1 },
+                    onOpenNotifications = onOpenNotifications,
+                    onOpenCategory = onOpenCategory,
+                    onOpenSubscription = onOpenSubscription,
+                    onOpenGames = onOpenGames,
+                    onOpenPortalHub = onOpenPortalHub,
+                    onOpenAccount = onOpenAccount
+                )
+                1 -> SearchScreen(
+                    repository = app.repository,
+                    onOpenDetails = onOpenDetails
+                )
+                2 -> NewHotScreen(
+                    repository = app.repository,
+                    language = initialLanguage,
+                    onOpenDetails = onOpenDetails,
+                    onPlayItem = onPlay
+                )
+                else -> ProfileScreen(
+                    repository = app.repository,
+                    onOpenDetails = onOpenDetails,
+                    onOpenSubscription = onOpenSubscription,
+                    onOpenAccount = onOpenAccount,
+                    onOpenWatchlist = onOpenWatchlist,
+                    onOpenRentals = onOpenRentals,
+                    onOpenDownloads = onOpenDownloads,
+                    onOpenStorage = onOpenStorage,
+                    onOpenSettings = onOpenSettings,
+                    onOpenHelp = onOpenHelp,
+                    onOpenLegal = onOpenLegal,
+                    onSignedOut = onSignedOut
+                )
+            }
         }
 
-        // Floating Frosted Pill Bottom Navigation Bar (Matching Reference UI)
+        // Floating Frosted Pill Bottom Navigation Bar with Smooth Spring Motion
         val tabs = listOf(
             Triple("Home", Icons.Rounded.Home, 0),
             Triple("Search", Icons.Rounded.Search, 1),
@@ -864,51 +903,59 @@ private fun RnMainTabsShell(
                 shadowElevation = 18.dp
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp, vertical = 7.dp)
+                        .animateContentSize(
+                            animationSpec = spring(
+                                stiffness = Spring.StiffnessMediumLow,
+                                dampingRatio = Spring.DampingRatioNoBouncy
+                            )
+                        ),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     tabs.forEach { (label, icon, idx) ->
                         val active = selectedTab == idx
-                        if (active) {
-                            Surface(
-                                color = Color.White,
-                                shape = RoundedCornerShape(999.dp),
-                                modifier = Modifier.clickable { selectedTab = idx }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 11.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(7.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = icon,
-                                        contentDescription = label,
-                                        tint = MaxxColors.OnPrimaryDark,
-                                        modifier = Modifier.size(20.dp)
+                        val pillBg by animateColorAsState(
+                            targetValue = if (active) Color.White else Color.White.copy(alpha = 0.09f),
+                            animationSpec = tween(180),
+                            label = "navPillBg"
+                        )
+                        val iconTint by animateColorAsState(
+                            targetValue = if (active) MaxxColors.OnPrimaryDark else Color.White.copy(alpha = 0.85f),
+                            animationSpec = tween(180),
+                            label = "navIconTint"
+                        )
+                        Surface(
+                            color = pillBg,
+                            shape = RoundedCornerShape(999.dp),
+                            modifier = Modifier
+                                .height(46.dp)
+                                .animateContentSize(
+                                    animationSpec = spring(
+                                        stiffness = Spring.StiffnessMediumLow,
+                                        dampingRatio = Spring.DampingRatioNoBouncy
                                     )
+                                )
+                                .clickable { selectedTab = idx }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = if (active) 18.dp else 13.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(7.dp)
+                            ) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = label,
+                                    tint = iconTint,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                if (active) {
                                     Text(
                                         text = label,
                                         color = MaxxColors.OnPrimaryDark,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        } else {
-                            Surface(
-                                color = Color.White.copy(alpha = 0.09f),
-                                shape = RoundedCornerShape(999.dp),
-                                modifier = Modifier
-                                    .size(46.dp)
-                                    .clickable { selectedTab = idx }
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = icon,
-                                        contentDescription = label,
-                                        tint = Color.White.copy(alpha = 0.85f),
-                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
                             }
