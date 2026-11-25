@@ -1101,22 +1101,53 @@ impl AdvertisingService {
         let title = body
             .get("title")
             .and_then(|v| v.as_str())
-            .unwrap_or("Untitled Submission")
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| AppError::BadRequest("Title is required".to_string()))?
             .to_string();
 
-        let content_type = body
+        let raw_content_type = body
             .get("contentType")
             .or_else(|| body.get("content_type"))
             .or_else(|| body.get("type"))
             .and_then(|v| v.as_str())
             .unwrap_or("MOVIE")
-            .to_uppercase();
+            .trim()
+            .to_uppercase()
+            .replace('-', "_");
+        let content_type = match raw_content_type.as_str() {
+            "MOVIES" | "FILM" => "MOVIE".to_string(),
+            "SHORT_FILMS" | "SHORTS" | "SHORT" => "SHORT_FILM".to_string(),
+            "MICRO_DRAMA" | "MICRO_DRAMAS" | "MICRODRAMAS" => "MICRODRAMA".to_string(),
+            "WEB_SERIES" | "SHOWS" | "SHOW" => "SERIES".to_string(),
+            "ALBUMS" | "SONGS" | "MUSIC" => "ALBUM".to_string(),
+            "PODCASTS" => "PODCAST".to_string(),
+            "STAGE_DRAMAS" | "STAGEDRAMA" => "STAGE_DRAMA".to_string(),
+            "DOCUMENTARIES" => "DOCUMENTARY".to_string(),
+            other => other.to_string(),
+        };
 
-        let language = body
+        let raw_language = body
             .get("language")
+            .or_else(|| body.get("originalLanguage"))
             .or_else(|| body.get("originalLanguageCode"))
             .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
             .map(|s| s.to_string());
+        let language = raw_language.as_deref().map(|l| match l.to_lowercase().as_str() {
+            "kannada" | "kan" => "kn".to_string(),
+            "tamil" | "tam" => "ta".to_string(),
+            "telugu" | "tel" => "te".to_string(),
+            "hindi" | "hin" => "hi".to_string(),
+            "malayalam" | "mal" => "ml".to_string(),
+            "marathi" | "mar" => "mr".to_string(),
+            "bengali" | "ben" => "bn".to_string(),
+            "punjabi" | "pan" => "pa".to_string(),
+            "gujarati" | "guj" => "gu".to_string(),
+            "english" | "eng" => "en".to_string(),
+            other => other.to_string(),
+        });
 
         let poster_1 = body
             .get("posterUrl")
@@ -1199,6 +1230,9 @@ impl AdvertisingService {
             original_language_code: Set(language.clone()),
             poster_url: Set(poster_1.clone()),
             poster_2_url: Set(poster_2.clone()),
+            banner_image_url: Set(poster_2.clone().or_else(|| poster_1.clone())),
+            landscape_image_url: Set(poster_2.clone().or_else(|| poster_1.clone())),
+            backdrop_url: Set(poster_2.clone().or_else(|| poster_1.clone())),
             trailer_url: Set(trailer_url.clone()),
             production_name: Set(production_name.clone()),
             producer_contact_phone: Set(contact_phone.clone()),
