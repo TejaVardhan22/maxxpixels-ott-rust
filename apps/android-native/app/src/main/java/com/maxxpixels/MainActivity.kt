@@ -7,9 +7,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -20,17 +21,22 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Home
@@ -57,7 +63,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -883,7 +891,7 @@ private fun RnMainTabsShell(
             }
         }
 
-        // Floating Frosted Pill Bottom Navigation Bar with Smooth Spring Motion
+        // OTT-Style Fixed-Slot Floating Cinema Navbar with Smooth Sliding Golden Highlight
         val tabs = listOf(
             Triple("Home", Icons.Rounded.Home, 0),
             Triple("Search", Icons.Rounded.Search, 1),
@@ -893,71 +901,112 @@ private fun RnMainTabsShell(
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
+                .fillMaxWidth()
                 .navigationBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 12.dp)
         ) {
             Surface(
                 color = MaxxColors.FloatingDockBg,
-                shape = RoundedCornerShape(999.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
-                shadowElevation = 18.dp
+                shape = RoundedCornerShape(28.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+                shadowElevation = 20.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(64.dp)
             ) {
-                Row(
+                BoxWithConstraints(
                     modifier = Modifier
-                        .padding(horizontal = 8.dp, vertical = 7.dp)
-                        .animateContentSize(
-                            animationSpec = spring(
-                                stiffness = Spring.StiffnessMediumLow,
-                                dampingRatio = Spring.DampingRatioNoBouncy
-                            )
-                        ),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .fillMaxSize()
+                        .padding(horizontal = 6.dp, vertical = 6.dp)
                 ) {
-                    tabs.forEach { (label, icon, idx) ->
-                        val active = selectedTab == idx
-                        val pillBg by animateColorAsState(
-                            targetValue = if (active) Color.White else Color.White.copy(alpha = 0.09f),
-                            animationSpec = tween(180),
-                            label = "navPillBg"
-                        )
-                        val iconTint by animateColorAsState(
-                            targetValue = if (active) MaxxColors.OnPrimaryDark else Color.White.copy(alpha = 0.85f),
-                            animationSpec = tween(180),
-                            label = "navIconTint"
-                        )
-                        Surface(
-                            color = pillBg,
-                            shape = RoundedCornerShape(999.dp),
+                    val slotWidth = maxWidth / tabs.size
+                    val indicatorOffset by animateDpAsState(
+                        targetValue = slotWidth * selectedTab,
+                        animationSpec = spring(
+                            dampingRatio = 0.78f,
+                            stiffness = Spring.StiffnessMediumLow
+                        ),
+                        label = "navIndicatorSlide"
+                    )
+
+                    // Smoothly Gliding Golden Frosted Highlight Capsule behind fixed icons
+                    Box(
+                        modifier = Modifier
+                            .offset(x = indicatorOffset)
+                            .width(slotWidth)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(22.dp))
+                            .background(MaxxColors.Primary.copy(alpha = 0.16f)),
+                        contentAlignment = Alignment.TopCenter
+                    ) {
+                        // Crisp golden top accent bar (OTT signature glow)
+                        Box(
                             modifier = Modifier
-                                .height(46.dp)
-                                .animateContentSize(
-                                    animationSpec = spring(
-                                        stiffness = Spring.StiffnessMediumLow,
-                                        dampingRatio = Spring.DampingRatioNoBouncy
-                                    )
-                                )
-                                .clickable { selectedTab = idx }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = if (active) 18.dp else 13.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(7.dp)
+                                .padding(top = 2.dp)
+                                .width(22.dp)
+                                .height(2.5.dp)
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(MaxxColors.Primary)
+                        )
+                    }
+
+                    // Fixed-Position Icon + Label Slots (never jump or shift horizontally)
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        tabs.forEach { (label, icon, idx) ->
+                            val active = selectedTab == idx
+                            val iconScale by animateFloatAsState(
+                                targetValue = if (active) 1.15f else 1.0f,
+                                animationSpec = spring(
+                                    dampingRatio = 0.55f,
+                                    stiffness = Spring.StiffnessMedium
+                                ),
+                                label = "navIconScale_$idx"
+                            )
+                            val iconTint by animateColorAsState(
+                                targetValue = if (active) MaxxColors.Primary else Color.White.copy(alpha = 0.58f),
+                                animationSpec = tween(200),
+                                label = "navIconTint_$idx"
+                            )
+                            val labelColor by animateColorAsState(
+                                targetValue = if (active) Color.White else Color.White.copy(alpha = 0.52f),
+                                animationSpec = tween(200),
+                                label = "navLabelColor_$idx"
+                            )
+
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(22.dp))
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) { selectedTab = idx },
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
                             ) {
                                 Icon(
                                     imageVector = icon,
                                     contentDescription = label,
                                     tint = iconTint,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .graphicsLayer {
+                                            scaleX = iconScale
+                                            scaleY = iconScale
+                                        }
                                 )
-                                if (active) {
-                                    Text(
-                                        text = label,
-                                        color = MaxxColors.OnPrimaryDark,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = label,
+                                    color = labelColor,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                                    maxLines = 1
+                                )
                             }
                         }
                     }
