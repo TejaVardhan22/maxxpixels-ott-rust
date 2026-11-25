@@ -193,7 +193,7 @@ export interface AuditHistoryRecord {
                   <mat-label>Primary Logo URL</mat-label>
                   <input matInput type="url" formControlName="logoUrl" placeholder="https://.../logo.png" required>
                 </mat-form-field>
-                <app-media-upload [folder]="'branding'" [label]="'Upload Logo'" (uploadComplete)="onBrandAssetUploaded('logoUrl', $event)"></app-media-upload>
+                <app-media-upload [folder]="'branding'" [label]="'Upload Logo'" [initialUrl]="settingsForm.value.logoUrl || ''" (uploadComplete)="onBrandAssetUploaded('logoUrl', $event)"></app-media-upload>
               </div>
 
               <div class="half-width asset-field">
@@ -201,7 +201,7 @@ export interface AuditHistoryRecord {
                   <mat-label>Dark Mode / Mobile Logo URL</mat-label>
                   <input matInput type="url" formControlName="darkLogoUrl" placeholder="https://.../logo_dark.png">
                 </mat-form-field>
-                <app-media-upload [folder]="'branding'" [label]="'Upload Dark Logo'" (uploadComplete)="onBrandAssetUploaded('darkLogoUrl', $event)"></app-media-upload>
+                <app-media-upload [folder]="'branding'" [label]="'Upload Dark Logo'" [initialUrl]="settingsForm.value.darkLogoUrl || ''" (uploadComplete)="onBrandAssetUploaded('darkLogoUrl', $event)"></app-media-upload>
               </div>
             </div>
 
@@ -1342,29 +1342,30 @@ export class SystemSettingsPage implements OnInit {
   hideMsg91AuthKey = true;
 
   settingsForm = this.fb.group({
-    appName: ['MaxxPixels OTT', [Validators.required]],
-    appShortName: ['MaxxPixels', [Validators.required, Validators.maxLength(30)]],
-    companyName: ['MaxxPixels Entertainment Pvt Ltd', [Validators.required]],
-    websiteUrl: ['https://maxxpixels.com', [Validators.required]],
-    logoUrl: ['/branding/logo.png', [Validators.required]],
-    darkLogoUrl: ['/branding/logo_dark.png'],
-    faviconUrl: ['/branding/favicon.ico'],
-    supportEmail: ['support@maxxpixels.com', [Validators.required]],
-    supportPhone: ['+919999999999', [Validators.required]],
-    supportWhatsapp: ['+919999999999'],
-    supportUrl: ['https://maxxpixels.com/support', [Validators.required]],
-    privacyPolicyUrl: ['https://maxxpixels.com/legal/privacy-policy', [Validators.required]],
-    termsUrl: ['https://maxxpixels.com/legal/terms-of-service', [Validators.required]],
-    companyAddress: ['Hyderabad, Telangana, India'],
+    // All values are populated dynamically from GET /api/v1/admin/settings
+    appName: ['', [Validators.required]],
+    appShortName: ['', [Validators.required, Validators.maxLength(30)]],
+    companyName: ['', [Validators.required]],
+    websiteUrl: ['', [Validators.required]],
+    logoUrl: ['', [Validators.required]],
+    darkLogoUrl: [''],
+    faviconUrl: [''],
+    supportEmail: ['', [Validators.required]],
+    supportPhone: ['', [Validators.required]],
+    supportWhatsapp: [''],
+    supportUrl: ['', [Validators.required]],
+    privacyPolicyUrl: ['', [Validators.required]],
+    termsUrl: ['', [Validators.required]],
+    companyAddress: [''],
     defaultTimezone: ['Asia/Kolkata', [Validators.required]],
-    seoTitle: ['MaxxPixels OTT - Watch 4K Blockbusters, Originals & Live Shows', [Validators.required, Validators.maxLength(70)]],
-    seoDescription: ['Stream movies, series and live entertainment on MaxxPixels.', [Validators.required, Validators.maxLength(170)]],
-    androidAppUrl: ['https://play.google.com/store/apps/details?id=com.maxxpixels'],
-    iosAppUrl: ['https://apps.apple.com/app/maxxpixels'],
-    facebookUrl: ['https://www.facebook.com/maxxpixels'],
-    instagramUrl: ['https://www.instagram.com/maxxpixels'],
-    twitterUrl: ['https://x.com/maxxpixels'],
-    youtubeUrl: ['https://www.youtube.com/@maxxpixels'],
+    seoTitle: ['', [Validators.required, Validators.maxLength(70)]],
+    seoDescription: ['', [Validators.required, Validators.maxLength(170)]],
+    androidAppUrl: [''],
+    iosAppUrl: [''],
+    facebookUrl: [''],
+    instagramUrl: [''],
+    twitterUrl: [''],
+    youtubeUrl: [''],
     cdnBaseUrl: [''],
     defaultLanguage: ['en', [Validators.required]],
     defaultRegion: ['GLOBAL', [Validators.required]],
@@ -1393,7 +1394,7 @@ export class SystemSettingsPage implements OnInit {
     stripePublicKey: [''],
     stripeSecretKey: [''],
     defaultCurrency: ['INR', [Validators.required]],
-    autoRetryFailedRenewals: [true],
+    autoRetryFailedRenewals: [false],
 
     // Notifications (populated dynamically from backend settings)
     smsProvider: ['MSG91', [Validators.required]],
@@ -1417,35 +1418,35 @@ export class SystemSettingsPage implements OnInit {
     admobInterstitialId: [''],
     admobRewardedId: [''],
     admobAppOpenId: [''],
-    vastAdTagUrl: ['/api/v1/ads/vast.xml'],
+    vastAdTagUrl: [''],
 
     // Maintenance & Feature Flags
     maintenanceMode: [false],
-    maintenanceMessage: ['MaxxPixels OTT is currently undergoing scheduled platform upgrades. We will be back shortly.'],
-    featureDownloadsEnabled: [true],
-    featureWatchPartyEnabled: [true],
-    featurePipEnabled: [true],
-    featureCastingEnabled: [true],
-    featureTvLoginEnabled: [true],
-    featureKidProfilesEnabled: [true],
-    featureRentalsEnabled: [true],
-    featureGamesEnabled: [true],
+    maintenanceMessage: [''],
+    featureDownloadsEnabled: [false],
+    featureWatchPartyEnabled: [false],
+    featurePipEnabled: [false],
+    featureCastingEnabled: [false],
+    featureTvLoginEnabled: [false],
+    featureKidProfilesEnabled: [false],
+    featureRentalsEnabled: [false],
+    featureGamesEnabled: [false],
 
     // Player
-    playerAutoplay: [true],
+    playerAutoplay: [false],
     playerDefaultQuality: ['1080p'],
-    playerWatermarkEnabled: [true],
-    playerWatermarkText: ['MaxxPixels OTT'],
+    playerWatermarkEnabled: [false],
+    playerWatermarkText: [''],
 
     // Restrictions
-    maxDevicesPerUser: ['4'],
-    maxConcurrentStreamsPerUser: ['2'],
+    maxDevicesPerUser: [''],
+    maxConcurrentStreamsPerUser: [''],
     allowScreenRecording: [false],
 
     // Games & APK
-    apkLatestVersionCode: ['12'],
-    apkLatestVersionName: ['1.2.0'],
-    apkDownloadUrl: ['https://maxxpixels.com/downloads/maxxpixels-ott-latest.apk']
+    apkLatestVersionCode: [''],
+    apkLatestVersionName: [''],
+    apkDownloadUrl: ['']
   });
 
   ngOnInit(): void {
@@ -1470,6 +1471,28 @@ export class SystemSettingsPage implements OnInit {
 
   private coerceSettingsPayload(raw: Record<string, any>): Record<string, any> {
     const normalized: Record<string, any> = { ...raw };
+
+    // Map common backend DB / env alias keys to form control names
+    const aliases: Record<string, string[]> = {
+      logoUrl: ['logoUrl', 'APP_LOGO_URL', 'appLogoUrl', 'logo_url'],
+      darkLogoUrl: ['darkLogoUrl', 'DARK_LOGO_URL', 'dark_logo_url'],
+      bunnyStorageZoneName: ['bunnyStorageZoneName', 'BUNNY_STORAGE_ZONE', 'bunnyStorageZone'],
+      bunnyCdnHostname: ['bunnyCdnHostname', 'BUNNY_STORAGE_CDN_URL', 'bunnyStorageCdnUrl', 'BUNNY_PULL_ZONE_DOMAIN'],
+      paymentGatewayProvider: ['paymentGatewayProvider', 'PAYMENT_ACTIVE_GATEWAY', 'paymentActiveGateway', 'paymentProvider'],
+      maintenanceMode: ['maintenanceMode', 'MAINTENANCE_MODE_ENABLED', 'maintenanceModeEnabled'],
+      apkLatestVersionName: ['apkLatestVersionName', 'ANDROID_LATEST_VERSION', 'androidLatestVersion'],
+    };
+    for (const [target, keys] of Object.entries(aliases)) {
+      if (normalized[target] === undefined || normalized[target] === null || normalized[target] === '') {
+        for (const k of keys) {
+          if (normalized[k] !== undefined && normalized[k] !== null && normalized[k] !== '') {
+            normalized[target] = normalized[k];
+            break;
+          }
+        }
+      }
+    }
+
     for (const key of this.booleanControlKeys) {
       if (key in normalized && typeof normalized[key] === 'string') {
         normalized[key] = normalized[key].toLowerCase() === 'true' || normalized[key] === '1';
@@ -1640,10 +1663,11 @@ export class SystemSettingsPage implements OnInit {
 
   testGatewayConnection(channel: 'SMS' | 'EMAIL' | 'FCM'): void {
     this.notificationService.info(`Testing ${channel} Gateway ping...`);
+    const appLabel = this.settingsForm.value.appName || 'Platform';
     this.http.post<any>(`${environment.apiBaseUrl}/admin/notifications/test`, {
       channel,
-      testTarget: this.settingsForm.value.supportPhone || '+919999999999',
-      message: 'Test ping from MaxxPixels Settings Studio'
+      testTarget: this.settingsForm.value.supportPhone || '',
+      message: `Test ping from ${appLabel} Settings Studio`
     }).subscribe({
       next: (res) => {
         const d = res?.data || res;

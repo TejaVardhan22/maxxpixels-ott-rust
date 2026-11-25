@@ -223,10 +223,26 @@ impl AdminService {
         let mut items = Vec::with_capacity(rows.len());
         let mut map = Map::new();
 
-        // Populate base defaults for Admin Settings FormGroup
+        // Populate base defaults for Admin Settings FormGroup (DB rows below override)
         if let Value::Object(pub_defaults) = Self::get_public_settings(state).await? {
             for (k, v) in pub_defaults {
                 map.insert(k, v);
+            }
+        }
+
+        // Non-secret runtime env fallbacks so Admin Settings reflects live server config dynamically
+        let env_fallbacks: [(&str, Option<String>); 7] = [
+            ("bunnyCdnHostname", std::env::var("BUNNY_PULL_ZONE_DOMAIN").ok()),
+            ("bunnyStorageRegion", std::env::var("BUNNY_STORAGE_REGION").ok()),
+            ("razorpayKeyId", Some(state.config.razorpay_key_id.clone())),
+            ("smsProvider", std::env::var("SMS_PROVIDER").ok()),
+            ("msg91TemplateId", std::env::var("MSG91_TEMPLATE_ID").ok()),
+            ("fcmProjectId", std::env::var("FCM_PROJECT_ID").ok()),
+            ("smtpFromEmail", std::env::var("EMAIL_FROM").ok()),
+        ];
+        for (key, val_opt) in env_fallbacks {
+            if let Some(val) = val_opt.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+                map.entry(key.to_string()).or_insert_with(|| json!(val));
             }
         }
 
