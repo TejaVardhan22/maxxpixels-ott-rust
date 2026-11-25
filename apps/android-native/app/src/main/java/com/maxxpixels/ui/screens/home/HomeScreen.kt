@@ -55,6 +55,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -62,6 +63,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.maxxpixels.R
 import com.maxxpixels.data.model.CatalogItem
@@ -321,14 +323,15 @@ fun HomeScreen(
                 }
             }
 
-            // 3. Hotstar-Style Full-Width Hero Carousel
+            // 3. JioHotstar-Style Stacked Deck Hero Carousel
             item {
                 if (loading && banners.isEmpty()) {
                     ShimmerBox(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .aspectRatio(0.95f),
-                        shape = RoundedCornerShape(0.dp)
+                            .padding(start = 18.dp, end = 48.dp)
+                            .aspectRatio(0.75f),
+                        shape = RoundedCornerShape(22.dp)
                     )
                 } else if (banners.isNotEmpty()) {
                     val pagerState = rememberPagerState(pageCount = { banners.size })
@@ -343,56 +346,49 @@ fun HomeScreen(
                         }
                     }
 
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        HorizontalPager(
-                            state = pagerState,
-                            contentPadding = PaddingValues(0.dp),
-                            pageSpacing = 0.dp,
-                            beyondViewportPageCount = 1,
-                            modifier = Modifier.fillMaxWidth()
-                        ) { page ->
-                            val item = banners[page]
-                            val isSaved = savedIds.contains(item.id) || item.isBookmarked
-                            HeroCinemaPosterCard(
-                                item = item,
-                                isSaved = isSaved,
-                                onWatchNow = { onOpenDetails(item.id) },
-                                onToggleWatchlist = {
-                                    val next = !isSaved
-                                    savedIds = if (next) savedIds + item.id else savedIds - item.id
-                                    scope.launch { repository.toggleWatchlist(item.id, item.title, next) }
-                                }
-                            )
+                    HorizontalPager(
+                        state = pagerState,
+                        contentPadding = PaddingValues(start = 18.dp, end = 48.dp),
+                        pageSpacing = 0.dp,
+                        beyondViewportPageCount = 2,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { page ->
+                        val item = banners[page]
+                        val isSaved = savedIds.contains(item.id) || item.isBookmarked
+                        // Positive offset = upcoming cards stacked behind on the right (JioHotstar deck)
+                        val relOffset = (page - pagerState.currentPage) - pagerState.currentPageOffsetFraction
+                        val scale = when {
+                            relOffset > 0f -> (1f - (relOffset * 0.07f)).coerceIn(0.84f, 1f)
+                            else -> (1f + (relOffset * 0.04f)).coerceIn(0.92f, 1f)
                         }
+                        val cardAlpha = when {
+                            relOffset > 0f -> (1f - (relOffset * 0.28f)).coerceIn(0.38f, 1f)
+                            else -> (1f + (relOffset * 0.35f)).coerceIn(0.45f, 1f)
+                        }
+                        val cardZ = if (relOffset >= 0f) 10f - relOffset else 10f + relOffset
 
-                        if (banners.size > 1) {
-                            Spacer(Modifier.height(10.dp))
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                val count = banners.size.coerceAtMost(8)
-                                repeat(count) { idx ->
-                                    val active = pagerState.currentPage % banners.size == idx
-                                    val dotWidth by animateDpAsState(
-                                        targetValue = if (active) 22.dp else 6.dp,
-                                        label = "hotstarDot"
-                                    )
-                                    Box(
-                                        modifier = Modifier
-                                            .height(5.dp)
-                                            .width(dotWidth)
-                                            .clip(CircleShape)
-                                            .background(
-                                                if (active) MaxxColors.Primary else Color.White.copy(alpha = 0.28f)
-                                            )
-                                            .clickable {
-                                                scope.launch { pagerState.animateScrollToPage(idx) }
-                                            }
-                                    )
+                        HeroCinemaPosterCard(
+                            item = item,
+                            rankIndex = page + 1,
+                            isSaved = isSaved,
+                            onWatchNow = { onOpenDetails(item.id) },
+                            onToggleWatchlist = {
+                                val next = !isSaved
+                                savedIds = if (next) savedIds + item.id else savedIds - item.id
+                                scope.launch { repository.toggleWatchlist(item.id, item.title, next) }
+                            },
+                            modifier = Modifier
+                                .zIndex(cardZ)
+                                .graphicsLayer {
+                                    scaleX = scale
+                                    scaleY = scale
+                                    alpha = cardAlpha
+                                    if (relOffset > 0f) {
+                                        // Pull upcoming cards left so they stack neatly behind the right edge
+                                        translationX = -relOffset * size.width * 0.86f + (relOffset * 26.dp.toPx())
+                                    }
                                 }
-                            }
-                        }
+                        )
                     }
                 }
             }
@@ -400,7 +396,7 @@ fun HomeScreen(
             // 4. Continue Watching Rail
             if (continueWatching.isNotEmpty()) {
                 item {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         HomeSectionRowHeader(title = "Continue Watching", actionLabel = null, onAction = {})
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 18.dp),
@@ -409,8 +405,7 @@ fun HomeScreen(
                             items(continueWatching, key = { "cw_${it.id}" }) { cwItem ->
                                 ContinueWatchingCard(
                                     item = cwItem,
-                                    onPlay = { onPlayItem(cwItem.id, cwItem.title) },
-                                    onOpenDetails = { onOpenDetails(cwItem.id) }
+                                    onPlay = { onPlayItem(cwItem.id, cwItem.title) }
                                 )
                             }
                         }
@@ -556,15 +551,17 @@ private fun HomeSectionRowHeader(
 @Composable
 private fun HeroCinemaPosterCard(
     item: CatalogItem,
+    rankIndex: Int,
     isSaved: Boolean,
     onWatchNow: () -> Unit,
-    onToggleWatchlist: () -> Unit
+    onToggleWatchlist: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val badgeText = when {
+    val topBadgeText = when {
         item.isNewlyAdded -> "NEWLY ADDED"
         item.isRent -> if (item.rentPrice > 0) "RENT ₹${item.rentPrice.toInt()}" else "RENT"
-        item.isPremium -> "MAXXPIXELS VIP"
-        else -> ""
+        item.isPremium -> "#$rankIndex in ${item.language.ifBlank { "Trending" }} Today"
+        else -> "#$rankIndex Trending Today"
     }
     val meta = listOfNotNull(
         item.releaseYear.takeIf { it.isNotBlank() },
@@ -573,149 +570,144 @@ private fun HeroCinemaPosterCard(
         item.genres.firstOrNull()?.takeIf { it.isNotBlank() }
     ).joinToString(" • ")
 
-    Box(
-        modifier = Modifier
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+        shadowElevation = 18.dp,
+        modifier = modifier
             .fillMaxWidth()
-            .aspectRatio(0.92f)
-            .background(MaxxColors.CinemaBlack)
-            .clickable(onClick = onWatchNow)
+            .aspectRatio(0.75f)
+            .bounceClick(scaleDown = 0.985f, onClick = onWatchNow)
     ) {
-        AsyncImage(
-            model = item.posterUrl.ifBlank { item.landscapeUrl },
-            contentDescription = item.title,
-            contentScale = ContentScale.Crop,
-            alignment = Alignment.TopCenter,
-            modifier = Modifier.fillMaxSize()
-        )
-
-        // Subtle top fade for smooth blend under category pills
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(64.dp)
-                .align(Alignment.TopCenter)
-                .background(
-                    Brush.verticalGradient(listOf(Color(0x991A1219), Color.Transparent))
-                )
-        )
-
-        // Hotstar-style deep bottom vignette fading smoothly into the screen
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(235.dp)
-                .align(Alignment.BottomCenter)
-                .background(
-                    Brush.verticalGradient(
-                        colorStops = arrayOf(
-                            0.0f to Color.Transparent,
-                            0.45f to Color(0xCC0E0C12),
-                            0.82f to Color(0xF50A090E),
-                            1.0f to MaxxColors.CinemaBlack
-                        )
-                    )
-                )
-        )
-
-        // Centered Hotstar-style Bottom Info Stack + Watch Now & + My List CTA Row
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(horizontal = 22.dp, vertical = 14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .fillMaxSize()
+                .background(MaxxColors.SurfaceDark)
         ) {
-            if (badgeText.isNotBlank()) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(MaxxColors.PrimaryTint)
-                        .padding(horizontal = 10.dp, vertical = 3.dp)
-                ) {
-                    Text(
-                        text = badgeText,
-                        color = MaxxColors.PrimaryLight,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 1.sp
-                    )
-                }
-                Spacer(Modifier.height(7.dp))
-            }
-
-            Text(
-                text = item.title,
-                color = Color.White,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Black,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+            AsyncImage(
+                model = item.posterUrl.ifBlank { item.landscapeUrl },
+                contentDescription = item.title,
+                contentScale = ContentScale.Crop,
+                alignment = Alignment.TopCenter,
+                modifier = Modifier.fillMaxSize()
             )
 
-            if (meta.isNotBlank()) {
-                Spacer(Modifier.height(5.dp))
+            // Deep cinema bottom vignette for crisp left-aligned title & CTA
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(230.dp)
+                    .align(Alignment.BottomCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            colorStops = arrayOf(
+                                0.0f to Color.Transparent,
+                                0.45f to Color(0xCC0B0A10),
+                                0.85f to Color(0xF50A090E),
+                                1.0f to Color(0xFF0A090E)
+                            )
+                        )
+                    )
+            )
+
+            // Top-left frosted ranking / status pill (JioHotstar style)
+            Surface(
+                color = Color.Black.copy(alpha = 0.62f),
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(12.dp)
+            ) {
                 Text(
-                    text = meta,
-                    color = Color.White.copy(alpha = 0.80f),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    text = topBadgeText,
+                    color = MaxxColors.PrimaryLight,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                 )
             }
 
-            Spacer(Modifier.height(14.dp))
-
-            // Hotstar CTA Row: Golden Watch Now + Frosted + My List button
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
+            // Bottom Left-Aligned JioHotstar Info + Full-Width Watch Now + Square '+' Button
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 14.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .height(44.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaxxColors.BrandGradient)
-                        .clickable(onClick = onWatchNow)
-                        .padding(horizontal = 28.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.PlayArrow,
-                            contentDescription = null,
-                            tint = MaxxColors.OnPrimaryDark,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Text(
-                            text = "Watch Now",
-                            color = MaxxColors.OnPrimaryDark,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                    }
+                Text(
+                    text = item.title.uppercase(),
+                    color = Color.White,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 0.8.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                if (meta.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = meta,
+                        color = Color.White.copy(alpha = 0.78f),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
 
-                Surface(
-                    color = Color.White.copy(alpha = 0.14f),
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.20f)),
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clickable(onClick = onToggleWatchlist)
+                Spacer(Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(9.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = if (isSaved) Icons.Rounded.Check else Icons.Rounded.Add,
-                            contentDescription = "My List",
-                            tint = if (isSaved) MaxxColors.Primary else Color.White,
-                            modifier = Modifier.size(21.dp)
-                        )
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaxxColors.BrandGradient)
+                            .clickable(onClick = onWatchNow),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.PlayArrow,
+                                contentDescription = null,
+                                tint = MaxxColors.OnPrimaryDark,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "Watch Now",
+                                color = MaxxColors.OnPrimaryDark,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                    }
+
+                    Surface(
+                        color = Color.White.copy(alpha = 0.14f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)),
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clickable(onClick = onToggleWatchlist)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (isSaved) Icons.Rounded.Check else Icons.Rounded.Add,
+                                contentDescription = "My List",
+                                tint = if (isSaved) MaxxColors.Primary else Color.White,
+                                modifier = Modifier.size(21.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -797,148 +789,66 @@ fun PortraitPosterCard(
 @Composable
 private fun ContinueWatchingCard(
     item: CatalogItem,
-    onPlay: () -> Unit,
-    onOpenDetails: () -> Unit
+    onPlay: () -> Unit
 ) {
-    val pct = (item.progressPercent.coerceIn(0.05f, 1f) * 100).toInt()
-    val subtitle = listOfNotNull(
-        item.durationLabel.takeIf { it.isNotBlank() },
-        item.language.takeIf { it.isNotBlank() }
-    ).joinToString(" • ").ifBlank { "$pct% watched" }
-
-    Surface(
-        color = MaxxColors.SurfaceGlass,
-        shape = RoundedCornerShape(20.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
-        shadowElevation = 10.dp,
+    Column(
         modifier = Modifier
-            .width(244.dp)
+            .width(196.dp)
             .bounceClick(onClick = onPlay)
     ) {
-        Column {
+        // Pure 16:9 landscape image with progress line at bottom edge (no card below image)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaxxColors.SurfaceDark)
+        ) {
+            AsyncImage(
+                model = item.landscapeUrl.ifBlank { item.posterUrl },
+                contentDescription = item.title,
+                contentScale = ContentScale.Crop,
+                alignment = Alignment.TopCenter,
+                modifier = Modifier.fillMaxSize()
+            )
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
-            ) {
-                AsyncImage(
-                    model = item.landscapeUrl.ifBlank { item.posterUrl },
-                    contentDescription = item.title,
-                    contentScale = ContentScale.Crop,
-                    alignment = Alignment.TopCenter,
-                    modifier = Modifier.fillMaxSize()
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(64.dp)
-                        .align(Alignment.BottomCenter)
-                        .background(
-                            Brush.verticalGradient(listOf(Color.Transparent, Color(0xDD0B0A10)))
-                        )
-                )
-
-                // Top-left frosted % watched badge
-                Surface(
-                    color = Color.Black.copy(alpha = 0.62f),
-                    shape = RoundedCornerShape(999.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(10.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(MaxxColors.Primary)
-                        )
-                        Text("$pct% watched", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                // Top-right frosted Info circle
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(10.dp)
-                        .size(30.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.56f))
-                        .clickable(onClick = onOpenDetails),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Rounded.Info, contentDescription = "Details", tint = Color.White, modifier = Modifier.size(16.dp))
-                }
-
-                // Bottom-right golden Play button
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 10.dp, bottom = 12.dp)
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(MaxxColors.BrandGradient)
-                        .clickable(onClick = onPlay),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Rounded.PlayArrow, null, tint = MaxxColors.OnPrimaryDark, modifier = Modifier.size(21.dp))
-                }
-
-                // Rounded amber progress bar (no stop dot)
-                LinearProgressIndicator(
-                    progress = { item.progressPercent.coerceIn(0.05f, 1f) },
-                    color = MaxxColors.Primary,
-                    trackColor = Color.White.copy(alpha = 0.22f),
-                    strokeCap = StrokeCap.Round,
-                    drawStopIndicator = {},
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                        .height(4.dp)
-                        .align(Alignment.BottomCenter)
-                )
-            }
-
-            Row(
+                    .height(44.dp)
+                    .align(Alignment.BottomCenter)
+                    .background(
+                        Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC0A090E)))
+                    )
+            )
+            Icon(
+                imageVector = Icons.Rounded.PlayArrow,
+                contentDescription = "Resume",
+                tint = Color.White,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 8.dp, bottom = 8.dp)
+                    .size(20.dp)
+            )
+            LinearProgressIndicator(
+                progress = { item.progressPercent.coerceIn(0.05f, 1f) },
+                color = MaxxColors.Primary,
+                trackColor = Color.White.copy(alpha = 0.28f),
+                strokeCap = StrokeCap.Butt,
+                drawStopIndicator = {},
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 13.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = item.title,
-                        color = Color.White,
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = subtitle,
-                        color = MaxxColors.TextSecondary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "Resume",
-                    color = MaxxColors.Primary,
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-            }
+                    .height(3.dp)
+                    .align(Alignment.BottomCenter)
+            )
         }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = item.title,
+            color = Color.White,
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
