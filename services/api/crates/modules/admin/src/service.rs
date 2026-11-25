@@ -57,9 +57,7 @@ fn mask_secret_value(v: &str) -> String {
 
 fn infer_setting_group(key: &str) -> &'static str {
     let k = key.to_lowercase();
-    if k.contains("currency") || k.contains("payment") {
-        "PAYMENTS"
-    } else if k.contains("admob") {
+    if k.contains("admob") {
         "ADMOB"
     } else if k.contains("maintenance") {
         "MAINTENANCE"
@@ -132,8 +130,6 @@ impl AdminService {
             .unwrap_or_default();
 
         let mut map = Map::new();
-        map.insert("default_currency".into(), json!("INR"));
-        map.insert("defaultCurrency".into(), json!("INR"));
         map.insert("admob_enabled".into(), json!("false"));
         map.insert("admobEnabled".into(), json!("false"));
         map.insert("maintenance_mode".into(), json!("false"));

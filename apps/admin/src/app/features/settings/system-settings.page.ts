@@ -50,7 +50,7 @@ export interface AuditHistoryRecord {
         <div>
           <span class="category-tag"><mat-icon>settings</mat-icon> PLATFORM INFRASTRUCTURE & CONFIGURATION</span>
           <h1>System Settings & Central Control Studio</h1>
-          <p>Manage platform branding, currency, Google AdMob, Maintenance Mode, and configuration audit rollback</p>
+          <p>Manage platform branding, Google AdMob, Maintenance Mode, and configuration audit rollback</p>
         </div>
         <div class="header-actions">
           <span *ngIf="settingsForm.dirty" class="unsaved-badge">
@@ -85,14 +85,6 @@ export interface AuditHistoryRecord {
           </div>
         </div>
 
-        <div class="kpi-card gold">
-          <div class="kpi-icon"><mat-icon>currency_exchange</mat-icon></div>
-          <div>
-            <span class="kpi-label">Default Currency</span>
-            <div class="kpi-val font-mono" style="font-size: 13px;">{{ settingsForm.value.defaultCurrency || 'INR' }}</div>
-          </div>
-        </div>
-
         <div class="kpi-card purple">
           <div class="kpi-icon"><mat-icon>monetization_on</mat-icon></div>
           <div>
@@ -107,7 +99,7 @@ export interface AuditHistoryRecord {
       <!-- 3. SEARCH & QUICK FILTER BAR -->
       <div class="search-filter-box">
         <mat-icon>search</mat-icon>
-        <input type="text" [(ngModel)]="searchQuery" placeholder="Search settings (e.g. branding, currency, admob, maintenance, audit)..." (input)="onSearchChange()">
+        <input type="text" [(ngModel)]="searchQuery" placeholder="Search settings (e.g. branding, admob, maintenance, audit)..." (input)="onSearchChange()">
         <button *ngIf="searchQuery" mat-icon-button (click)="searchQuery = ''; onSearchChange()"><mat-icon>close</mat-icon></button>
       </div>
 
@@ -115,9 +107,6 @@ export interface AuditHistoryRecord {
       <div class="sec-tabs">
         <button class="tab-btn" [class.active]="activeTab === 'BRANDING'" (click)="activeTab = 'BRANDING'">
           <mat-icon>language</mat-icon> Branding & Identity
-        </button>
-        <button class="tab-btn" [class.active]="activeTab === 'PAYMENTS'" (click)="activeTab = 'PAYMENTS'">
-          <mat-icon>currency_exchange</mat-icon> Currency & Billing
         </button>
         <button class="tab-btn" [class.active]="activeTab === 'ADMOB'" (click)="activeTab = 'ADMOB'">
           <mat-icon>monetization_on</mat-icon> Google AdMob
@@ -285,48 +274,7 @@ export interface AuditHistoryRecord {
         </div>
       </div>
 
-      <!-- TAB 2: CURRENCY & BILLING -->
-      <div *ngIf="activeTab === 'PAYMENTS'" class="tab-content">
-        <div class="form-card">
-          <div class="card-header">
-            <div class="header-icon-box gold"><mat-icon>currency_exchange</mat-icon></div>
-            <div>
-              <h3>Currency &amp; Billing Preferences</h3>
-              <p>Configure default storefront currency (Razorpay API keys and webhook secrets are managed in the server .env file)</p>
-            </div>
-          </div>
-
-          <form [formGroup]="settingsForm" (ngSubmit)="onSaveSettings()" class="settings-form">
-            <div class="section-title"><mat-icon>currency_exchange</mat-icon><span>Currency &amp; Billing Preferences</span></div>
-            <div class="form-row">
-              <div class="half-width">
-                <mat-form-field appearance="outline" class="full-width custom-field">
-                  <mat-label>Default Currency</mat-label>
-                  <mat-select formControlName="defaultCurrency" panelClass="custom-select-panel" required>
-                    <mat-option value="INR">₹ INR (Indian Rupee)</mat-option>
-                    <mat-option value="USD">$ USD (US Dollar)</mat-option>
-                    <mat-option value="EUR">€ EUR (Euro)</mat-option>
-                    <mat-option value="AED">AED (UAE Dirham)</mat-option>
-                    <mat-option value="GBP">£ GBP (British Pound)</mat-option>
-                  </mat-select>
-                </mat-form-field>
-              </div>
-              <div class="half-width">
-                <div class="info-box-sm">
-                  <mat-icon>info</mat-icon>
-                  <span>Subscription plans and rental transactions will quote prices in this currency.</span>
-                </div>
-              </div>
-            </div>
-
-            <button mat-raised-button class="full-width submit-btn" type="submit" [disabled]="isSaving">
-              <mat-icon>save</mat-icon> Save Currency Settings
-            </button>
-          </form>
-        </div>
-      </div>
-
-      <!-- TAB 3: GOOGLE ADMOB -->
+      <!-- TAB 2: GOOGLE ADMOB -->
       <div *ngIf="activeTab === 'ADMOB'" class="tab-content">
         <div class="form-card">
           <div class="card-header">
@@ -812,9 +760,6 @@ export class SystemSettingsPage implements OnInit {
     twitterUrl: [''],
     youtubeUrl: [''],
 
-    // Currency & Billing
-    defaultCurrency: ['INR', [Validators.required]],
-
     // Google AdMob (remotely read by Mobile App)
     admobEnabled: ['false', [Validators.required]],
     admobTestMode: ['false'],
@@ -891,8 +836,6 @@ export class SystemSettingsPage implements OnInit {
 
     if (q.includes('brand') || q.includes('logo') || q.includes('seo') || q.includes('social')) {
       this.activeTab = 'BRANDING';
-    } else if (q.includes('currency') || q.includes('billing') || q.includes('pay')) {
-      this.activeTab = 'PAYMENTS';
     } else if (q.includes('ad') || q.includes('admob') || q.includes('banner')) {
       this.activeTab = 'ADMOB';
     } else if (q.includes('maint')) {
