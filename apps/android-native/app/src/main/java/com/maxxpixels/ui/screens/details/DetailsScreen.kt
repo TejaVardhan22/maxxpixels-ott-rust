@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,15 +28,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Fullscreen
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Share
-import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.WorkspacePremium
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
@@ -72,13 +74,27 @@ import com.maxxpixels.ui.screens.home.PortraitPosterCard
 import com.maxxpixels.ui.theme.MaxxColors
 import kotlinx.coroutines.launch
 
+private fun formatMaturityRating(raw: String): String {
+    val clean = raw.trim().uppercase()
+    return when {
+        clean.isBlank() -> ""
+        clean == "UA_13+" || clean == "U/A_13+" -> "U/A 13+"
+        clean == "UA_16+" || clean == "U/A_16+" -> "U/A 16+"
+        clean == "UA_7+" || clean == "U/A_7+" -> "U/A 7+"
+        clean == "A" || clean == "18+" -> "A 18+"
+        else -> clean.replace("_", " ")
+    }
+}
+
 /**
- * Modern Frosted-Glass Cinema Details Screen (Matching Reference Screen 3):
- * - Top Cinema Hero preview (360.dp) with frosted collapse chevron & mini playback scrubber bar
- * - Overlapping rounded frosted dark sheet (28.dp top corners) with subtle drag handle
- * - Golden amber pill "Watch Now" CTA + frosted circular My List / Download / Share buttons
- * - Golden/glass category pill tabs (More Like This | Cast & Crew | Episodes) + 20.dp portrait rail
+ * Polished Cinema Details Screen:
+ * - Clean edge-to-edge hero artwork with soft vignette (no fake scrubber on static poster)
+ * - Top frosted Back + Share buttons; real resume progress bar only when user has watch history
+ * - Smooth overlapping warm dark sheet with clean formatted badges (U/A 13+, HD, VIP), genre chips,
+ *   full-width golden pill Watch Now CTA, labeled frosted action bar (My List, Like, Download, Share),
+ *   smart synopsis expand (only for long descriptions), and golden/glass tabs.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DetailsScreen(
     contentId: Long,
@@ -98,6 +114,7 @@ fun DetailsScreen(
     var errorMsg by remember { mutableStateOf<String?>(null) }
 
     var inWatchlist by remember { mutableStateOf(false) }
+    var isLiked by remember { mutableStateOf(false) }
     var expandedSynopsis by remember { mutableStateOf(false) }
     var activeTab by remember { mutableIntStateOf(0) }
     var activeSeasonIdx by remember { mutableIntStateOf(0) }
@@ -111,6 +128,7 @@ fun DetailsScreen(
                 is ApiResult.Success -> {
                     item = res.data
                     inWatchlist = res.data.isBookmarked
+                    isLiked = res.data.isLiked
                     res.data.seasons.firstOrNull()?.let { s ->
                         episodes = repository.getSeasonEpisodes(s.id)
                     }
@@ -133,9 +151,9 @@ fun DetailsScreen(
                 .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            ShimmerBox(modifier = Modifier.fillMaxWidth().height(320.dp), shape = RoundedCornerShape(24.dp))
-            ShimmerBox(modifier = Modifier.width(210.dp).height(26.dp))
-            ShimmerBox(modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(999.dp))
+            ShimmerBox(modifier = Modifier.fillMaxWidth().height(340.dp), shape = RoundedCornerShape(24.dp))
+            ShimmerBox(modifier = Modifier.width(210.dp).height(28.dp))
+            ShimmerBox(modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(999.dp))
         }
         return
     }
@@ -150,6 +168,8 @@ fun DetailsScreen(
     }
 
     val content = item!!
+    val formattedRating = formatMaturityRating(content.maturityRating)
+    val hasResume = content.progressPercent > 0.02f
 
     fun triggerPlay(episodeId: Long? = null, titleOverride: String = content.title) {
         if (session?.hasActiveSubscription == true) {
@@ -159,6 +179,14 @@ fun DetailsScreen(
         }
     }
 
+    fun shareTitle() {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, "Watch ${content.title} on MaxxPixels!")
+        }
+        context.startActivity(Intent.createChooser(intent, "Share"))
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -166,12 +194,12 @@ fun DetailsScreen(
             .navigationBarsPadding(),
         contentPadding = PaddingValues(bottom = 36.dp)
     ) {
-        // 1. Top Cinema Hero Preview with Mini Scrubber Overlay (Reference Screen 3)
+        // 1. Clean Edge-to-Edge Cinema Hero Artwork
         item {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(360.dp)
+                    .height(390.dp)
                     .clickable { triggerPlay() }
             ) {
                 AsyncImage(
@@ -181,216 +209,216 @@ fun DetailsScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Soft cinema vignette
+                // Top subtle scrim for status bar & back button legibility
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(180.dp)
-                        .align(Alignment.BottomCenter)
+                        .height(110.dp)
+                        .align(Alignment.TopCenter)
                         .background(
                             Brush.verticalGradient(
-                                listOf(Color.Transparent, Color(0xCC0A090E), MaxxColors.CinemaBlack)
+                                listOf(Color(0x990A090E), Color.Transparent)
                             )
                         )
                 )
 
-                // Top-left circular frosted collapse/back chevron
-                Surface(
-                    color = Color.Black.copy(alpha = 0.42f),
-                    shape = CircleShape,
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)),
+                // Deep smooth bottom cinema fade into the sheet
+                Box(
                     modifier = Modifier
-                        .statusBarsPadding()
-                        .padding(16.dp)
-                        .size(42.dp)
-                        .clickable(onClick = onBack)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Rounded.KeyboardArrowDown,
-                            contentDescription = "Back",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
-
-                // Center Play Circle
-                Surface(
-                    color = Color.Black.copy(alpha = 0.45f),
-                    shape = CircleShape,
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f)),
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .size(62.dp)
-                        .bounceClick { triggerPlay() }
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Rounded.PlayArrow,
-                            contentDescription = "Play",
-                            tint = MaxxColors.Primary,
-                            modifier = Modifier.size(34.dp)
-                        )
-                    }
-                }
-
-                // Bottom sleek mini scrubber bar (matching Reference Screen 3)
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .padding(start = 18.dp, end = 18.dp, bottom = 36.dp)
+                        .height(220.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                colorStops = arrayOf(
+                                    0.0f to Color.Transparent,
+                                    0.55f to Color(0xCC120D14),
+                                    1.0f to Color(0xFF1D131A)
+                                )
+                            )
+                        )
+                )
+
+                // Top Bar: Back (left) & Share (right)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.45f),
+                        shape = CircleShape,
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)),
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clickable(onClick = onBack)
                     ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Surface(
-                                color = Color.Black.copy(alpha = 0.48f),
-                                shape = RoundedCornerShape(999.dp)
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = "Back",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    if (content.isPremium || content.isRent) {
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.52f),
+                            shape = RoundedCornerShape(999.dp),
+                            border = BorderStroke(1.dp, MaxxColors.Primary.copy(alpha = 0.6f))
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp)
                             ) {
+                                Icon(
+                                    Icons.Rounded.WorkspacePremium,
+                                    contentDescription = null,
+                                    tint = MaxxColors.Primary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
                                 Text(
-                                    text = if (content.progressPercent > 0.02f) "Resume" else "00:00",
-                                    color = Color.White,
+                                    text = if (content.isRent) "RENT" else "VIP",
+                                    color = MaxxColors.Primary,
                                     fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    fontWeight = FontWeight.Black,
+                                    letterSpacing = 0.6.sp
                                 )
                             }
-                            if (content.durationLabel.isNotBlank()) {
-                                Surface(
-                                    color = Color.Black.copy(alpha = 0.48f),
-                                    shape = RoundedCornerShape(999.dp)
-                                ) {
-                                    Text(
-                                        text = content.durationLabel,
-                                        color = Color.White.copy(alpha = 0.8f),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            MiniHeroControlIcon(Icons.Rounded.ClosedCaption) { triggerPlay() }
-                            MiniHeroControlIcon(Icons.Rounded.VolumeUp) { triggerPlay() }
-                            MiniHeroControlIcon(Icons.Rounded.Fullscreen) { triggerPlay() }
                         }
                     }
+                }
+
+                // Bottom-aligned Title & Crisp Metadata Pills directly over hero fade
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .padding(start = 20.dp, end = 20.dp, bottom = 32.dp)
+                ) {
+                    Text(
+                        text = content.title,
+                        color = Color.White,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Black,
+                        lineHeight = 32.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
 
                     Spacer(Modifier.height(10.dp))
 
-                    LinearProgressIndicator(
-                        progress = { content.progressPercent.coerceIn(0.08f, 1f) },
-                        color = MaxxColors.Primary,
-                        trackColor = Color.White.copy(alpha = 0.25f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(999.dp))
-                    )
+                    // Crisp Metadata Pills Row (Year • Duration • Language • U/A 13+ • HD)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (content.releaseYear.isNotBlank()) {
+                            MetaChip(content.releaseYear)
+                        }
+                        if (content.durationLabel.isNotBlank()) {
+                            MetaChip(content.durationLabel)
+                        }
+                        if (content.language.isNotBlank()) {
+                            MetaChip(content.language)
+                        }
+                        if (formattedRating.isNotBlank()) {
+                            MetaChip(formattedRating, highlighted = true)
+                        }
+                        MetaChip("HD")
+                    }
+
+                    // Show real resume progress bar ONLY when user has started watching
+                    if (hasResume) {
+                        Spacer(Modifier.height(14.dp))
+                        LinearProgressIndicator(
+                            progress = { content.progressPercent.coerceIn(0.03f, 1f) },
+                            color = MaxxColors.Primary,
+                            trackColor = Color.White.copy(alpha = 0.22f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(999.dp))
+                        )
+                    }
                 }
             }
         }
 
-        // 2. Overlapping Frosted Glass Bottom Sheet (Reference Screen 3)
+        // 2. Seamless Warm Frosted Sheet Body
         item {
-            Surface(
-                color = MaxxColors.SurfaceDark,
-                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .offset(y = (-22).dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color(0xFF281822), MaxxColors.SurfaceDark, MaxxColors.CinemaBlack)
+                    .offset(y = (-16).dp)
+                    .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+                    .background(
+                        Brush.verticalGradient(
+                            colorStops = arrayOf(
+                                0.0f to Color(0xFF1D131A),
+                                0.35f to MaxxColors.SurfaceDark,
+                                1.0f to MaxxColors.CinemaBlack
                             )
                         )
-                        .padding(top = 12.dp, bottom = 8.dp)
-                ) {
-                    // Subtle glass drag handle
+                    )
+                    .padding(top = 18.dp, bottom = 8.dp)
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+                    // Full-Width Golden Pill Primary CTA
                     Box(
                         modifier = Modifier
-                            .align(Alignment.CenterHorizontally)
-                            .width(42.dp)
-                            .height(4.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.24f))
-                    )
-
-                    Spacer(Modifier.height(18.dp))
-
-                    // Title & Metadata
-                    Column(modifier = Modifier.padding(horizontal = 18.dp)) {
-                        Text(
-                            text = content.title,
-                            color = Color.White,
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Black,
-                            lineHeight = 29.sp
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        val meta = listOfNotNull(
-                            content.releaseYear.takeIf { it.isNotBlank() },
-                            content.durationLabel.takeIf { it.isNotBlank() },
-                            content.language.takeIf { it.isNotBlank() },
-                            content.maturityRating.takeIf { it.isNotBlank() }
-                        ).joinToString(" • ")
-                        if (meta.isNotBlank()) {
+                            .fillMaxWidth()
+                            .height(54.dp)
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(MaxxColors.BrandGradient)
+                            .bounceClick { triggerPlay() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Rounded.PlayArrow,
+                                contentDescription = null,
+                                tint = MaxxColors.OnPrimaryDark,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
                             Text(
-                                text = meta,
-                                color = MaxxColors.TextSecondary,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.SemiBold
+                                text = when {
+                                    hasResume -> "Resume Watching"
+                                    content.isRent && content.rentPrice > 0 -> "Rent for ₹${content.rentPrice.toInt()}"
+                                    else -> "Watch Now"
+                                },
+                                color = MaxxColors.OnPrimaryDark,
+                                fontSize = 15.5.sp,
+                                fontWeight = FontWeight.ExtraBold
                             )
                         }
+                    }
 
-                        Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(16.dp))
 
-                        // Golden Amber Pill CTA + Circular Frosted Action Buttons
+                    // Balanced 4-Column Frosted Action Bar (My List | Like | Download | Share)
+                    Surface(
+                        color = Color.White.copy(alpha = 0.06f),
+                        shape = RoundedCornerShape(20.dp),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp, horizontal = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(50.dp)
-                                    .clip(RoundedCornerShape(999.dp))
-                                    .background(MaxxColors.BrandGradient)
-                                    .bounceClick { triggerPlay() },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.Rounded.PlayArrow,
-                                        contentDescription = null,
-                                        tint = MaxxColors.OnPrimaryDark,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(
-                                        text = "Watch Now",
-                                        color = MaxxColors.OnPrimaryDark,
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.ExtraBold
-                                    )
-                                }
-                            }
-
-                            FrostedActionCircle(
+                            LabeledDetailAction(
                                 icon = if (inWatchlist) Icons.Rounded.Check else Icons.Rounded.Add,
+                                label = if (inWatchlist) "Saved" else "My List",
                                 tint = if (inWatchlist) MaxxColors.Primary else Color.White,
                                 onClick = {
                                     val next = !inWatchlist
@@ -398,294 +426,321 @@ fun DetailsScreen(
                                     scope.launch { repository.toggleWatchlist(content.id, content.title, next) }
                                 }
                             )
-                            FrostedActionCircle(
+                            LabeledDetailAction(
+                                icon = if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                                label = if (isLiked) "Liked" else "Like",
+                                tint = if (isLiked) MaxxColors.Primary else Color.White,
+                                onClick = { isLiked = !isLiked }
+                            )
+                            LabeledDetailAction(
                                 icon = Icons.Rounded.Download,
+                                label = "Download",
                                 onClick = { triggerPlay() }
                             )
-                            FrostedActionCircle(
+                            LabeledDetailAction(
                                 icon = Icons.Rounded.Share,
-                                onClick = {
-                                    val intent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(Intent.EXTRA_TEXT, "Watch ${content.title} on MaxxPixels!")
-                                    }
-                                    context.startActivity(Intent.createChooser(intent, "Share"))
-                                }
+                                label = "Share",
+                                onClick = { shareTitle() }
                             )
                         }
+                    }
 
-                        if (content.description.isNotBlank()) {
-                            Spacer(Modifier.height(16.dp))
-                            Column(modifier = Modifier.clickable { expandedSynopsis = !expandedSynopsis }) {
-                                Text(
-                                    text = content.description,
-                                    color = MaxxColors.TextSecondary,
-                                    fontSize = 13.sp,
-                                    lineHeight = 19.sp,
-                                    maxLines = if (expandedSynopsis) 12 else 3,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                    // Genre Tags (if available)
+                    if (content.genres.isNotEmpty()) {
+                        Spacer(Modifier.height(14.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            content.genres.take(4).forEach { genre ->
+                                Surface(
+                                    color = MaxxColors.PrimaryTint,
+                                    shape = RoundedCornerShape(999.dp)
+                                ) {
+                                    Text(
+                                        text = genre,
+                                        color = MaxxColors.PrimaryLight,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Synopsis (smart Read More only when text is actually long)
+                    val cleanDesc = content.description.trim()
+                    if (cleanDesc.isNotBlank()) {
+                        Spacer(Modifier.height(16.dp))
+                        val isLong = cleanDesc.length > 110
+                        Column(
+                            modifier = if (isLong) Modifier.clickable { expandedSynopsis = !expandedSynopsis } else Modifier
+                        ) {
+                            Text(
+                                text = cleanDesc,
+                                color = MaxxColors.TextSecondary,
+                                fontSize = 13.5.sp,
+                                lineHeight = 20.sp,
+                                maxLines = if (expandedSynopsis || !isLong) 12 else 3,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (isLong) {
                                 Spacer(Modifier.height(4.dp))
                                 Text(
                                     text = if (expandedSynopsis) "Show less" else "Read more",
                                     color = MaxxColors.Primary,
-                                    fontSize = 12.sp,
+                                    fontSize = 12.5.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
                         }
                     }
+                }
 
-                    Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(22.dp))
 
-                    // Pill Tabs (Golden Active Pill + Frosted Glass Inactive Pills)
-                    val tabs = buildList {
-                        add(0 to "More Like This")
-                        add(1 to "Cast & Crew")
-                        if (content.seasons.isNotEmpty()) add(2 to "Episodes")
+                // Golden / Frosted Glass Pill Tabs
+                val tabs = buildList {
+                    add(0 to "More Like This")
+                    add(1 to "Cast & Crew")
+                    if (content.seasons.isNotEmpty()) add(2 to "Episodes")
+                }
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(tabs) { (idx, label) ->
+                        val active = activeTab == idx
+                        if (active) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(MaxxColors.BrandGradient)
+                                    .clickable { activeTab = idx }
+                                    .padding(horizontal = 20.dp, vertical = 10.dp)
+                            ) {
+                                Text(
+                                    text = label,
+                                    color = MaxxColors.OnPrimaryDark,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                        } else {
+                            Surface(
+                                color = Color.White.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(999.dp),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+                                modifier = Modifier.clickable { activeTab = idx }
+                            ) {
+                                Text(
+                                    text = label,
+                                    color = Color.White.copy(alpha = 0.85f),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp)
+                                )
+                            }
+                        }
                     }
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 18.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        items(tabs) { (idx, label) ->
-                            val active = activeTab == idx
-                            if (active) {
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(999.dp))
-                                        .background(MaxxColors.BrandGradient)
-                                        .clickable { activeTab = idx }
-                                        .padding(horizontal = 18.dp, vertical = 9.dp)
-                                ) {
-                                    Text(
-                                        text = label,
-                                        color = MaxxColors.OnPrimaryDark,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            } else {
-                                Surface(
-                                    color = Color.White.copy(alpha = 0.08f),
-                                    shape = RoundedCornerShape(999.dp),
-                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
-                                    modifier = Modifier.clickable { activeTab = idx }
-                                ) {
-                                    Text(
-                                        text = label,
-                                        color = Color.White.copy(alpha = 0.85f),
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 9.dp)
+                }
+
+                Spacer(Modifier.height(18.dp))
+
+                // Tab Content
+                when (activeTab) {
+                    0 -> {
+                        if (related.isEmpty()) {
+                            Text(
+                                text = "No similar titles available yet.",
+                                color = MaxxColors.TextMuted,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(horizontal = 20.dp)
+                            )
+                        } else {
+                            Text(
+                                text = "Watch Similar",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 20.dp)
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 20.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(related, key = { it.id }) { rel ->
+                                    PortraitPosterCard(
+                                        item = rel,
+                                        onClick = { onOpenDetails(rel.id) },
+                                        showTitleBelow = true
                                     )
                                 }
                             }
                         }
                     }
 
-                    Spacer(Modifier.height(18.dp))
-
-                    // Tab Body
-                    when (activeTab) {
-                        0 -> {
-                            if (related.isEmpty()) {
-                                Text(
-                                    text = "No similar titles available yet.",
-                                    color = MaxxColors.TextMuted,
-                                    fontSize = 13.sp,
-                                    modifier = Modifier.padding(horizontal = 18.dp)
-                                )
-                            } else {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 18.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "Watch Similar",
-                                        color = Color.White,
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "See All",
-                                        color = MaxxColors.TextSecondary,
-                                        fontSize = 12.5.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
+                    1 -> {
+                        val cast = content.cast
+                        if (cast.isEmpty()) {
+                            Text(
+                                text = "Cast & crew details coming soon.",
+                                color = MaxxColors.TextMuted,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(horizontal = 20.dp)
+                            )
+                        } else {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 20.dp),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                items(cast) { member ->
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier.width(80.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(66.dp)
+                                                .clip(CircleShape)
+                                                .background(MaxxColors.SurfaceElevated),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (member.photoUrl.isNotBlank()) {
+                                                AsyncImage(
+                                                    model = member.photoUrl,
+                                                    contentDescription = member.name,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            } else {
+                                                Text(
+                                                    text = member.name.take(1).uppercase(),
+                                                    color = MaxxColors.Primary,
+                                                    fontSize = 22.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                        Spacer(Modifier.height(6.dp))
+                                        Text(
+                                            text = member.name,
+                                            color = Color.White,
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        if (member.role.isNotBlank()) {
+                                            Text(
+                                                text = member.role,
+                                                color = MaxxColors.TextMuted,
+                                                fontSize = 10.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
                                 }
-                                Spacer(Modifier.height(12.dp))
-                                LazyRow(
-                                    contentPadding = PaddingValues(horizontal = 18.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    items(related, key = { it.id }) { rel ->
-                                        PortraitPosterCard(
-                                            item = rel,
-                                            onClick = { onOpenDetails(rel.id) },
-                                            showTitleBelow = true
+                            }
+                        }
+                    }
+
+                    2 -> {
+                        if (content.seasons.size > 1) {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 20.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(content.seasons.indices.toList()) { idx ->
+                                    val s = content.seasons[idx]
+                                    val selected = activeSeasonIdx == idx
+                                    Surface(
+                                        color = if (selected) MaxxColors.Primary else Color.White.copy(alpha = 0.08f),
+                                        shape = RoundedCornerShape(999.dp),
+                                        modifier = Modifier.clickable {
+                                            activeSeasonIdx = idx
+                                            scope.launch { episodes = repository.getSeasonEpisodes(s.id) }
+                                        }
+                                    ) {
+                                        Text(
+                                            text = s.name.ifBlank { "Season ${s.seasonNumber}" },
+                                            color = if (selected) MaxxColors.OnPrimaryDark else Color.White,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
                                         )
                                     }
                                 }
                             }
+                            Spacer(Modifier.height(14.dp))
                         }
 
-                        1 -> {
-                            val cast = content.cast
-                            if (cast.isEmpty()) {
-                                Text(
-                                    text = "Cast & crew details coming soon.",
-                                    color = MaxxColors.TextMuted,
-                                    fontSize = 13.sp,
-                                    modifier = Modifier.padding(horizontal = 18.dp)
-                                )
-                            } else {
-                                LazyRow(
-                                    contentPadding = PaddingValues(horizontal = 18.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        Column(
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            episodes.forEach { ep ->
+                                Surface(
+                                    color = Color.White.copy(alpha = 0.06f),
+                                    shape = RoundedCornerShape(18.dp),
+                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .bounceClick { triggerPlay(ep.id, "${content.title} - E${ep.episodeNumber}") }
                                 ) {
-                                    items(cast) { member ->
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            modifier = Modifier.width(78.dp)
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .width(124.dp)
+                                                .aspectRatio(16f / 9f)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(MaxxColors.SurfaceDark)
                                         ) {
+                                            AsyncImage(
+                                                model = ep.thumbnailUrl.ifBlank { content.landscapeUrl },
+                                                contentDescription = ep.name,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
                                             Box(
                                                 modifier = Modifier
-                                                    .size(64.dp)
+                                                    .align(Alignment.Center)
+                                                    .size(34.dp)
                                                     .clip(CircleShape)
-                                                    .background(MaxxColors.SurfaceElevated),
+                                                    .background(Color.Black.copy(alpha = 0.55f)),
                                                 contentAlignment = Alignment.Center
                                             ) {
-                                                if (member.photoUrl.isNotBlank()) {
-                                                    AsyncImage(
-                                                        model = member.photoUrl,
-                                                        contentDescription = member.name,
-                                                        contentScale = ContentScale.Crop,
-                                                        modifier = Modifier.fillMaxSize()
-                                                    )
-                                                } else {
-                                                    Text(
-                                                        text = member.name.take(1).uppercase(),
-                                                        color = MaxxColors.Primary,
-                                                        fontSize = 20.sp,
-                                                        fontWeight = FontWeight.Bold
-                                                    )
-                                                }
-                                            }
-                                            Spacer(Modifier.height(6.dp))
-                                            Text(
-                                                text = member.name,
-                                                color = Color.White,
-                                                fontSize = 11.5.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            if (member.role.isNotBlank()) {
-                                                Text(
-                                                    text = member.role,
-                                                    color = MaxxColors.TextMuted,
-                                                    fontSize = 10.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        2 -> {
-                            if (content.seasons.size > 1) {
-                                LazyRow(
-                                    contentPadding = PaddingValues(horizontal = 18.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    items(content.seasons.indices.toList()) { idx ->
-                                        val s = content.seasons[idx]
-                                        val selected = activeSeasonIdx == idx
-                                        Surface(
-                                            color = if (selected) MaxxColors.Primary else Color.White.copy(alpha = 0.08f),
-                                            shape = RoundedCornerShape(999.dp),
-                                            modifier = Modifier.clickable {
-                                                activeSeasonIdx = idx
-                                                scope.launch { episodes = repository.getSeasonEpisodes(s.id) }
-                                            }
-                                        ) {
-                                            Text(
-                                                text = s.name.ifBlank { "Season ${s.seasonNumber}" },
-                                                color = if (selected) MaxxColors.OnPrimaryDark else Color.White,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                                Spacer(Modifier.height(14.dp))
-                            }
-
-                            Column(
-                                modifier = Modifier.padding(horizontal = 18.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                episodes.forEach { ep ->
-                                    Surface(
-                                        color = MaxxColors.SurfaceElevated,
-                                        shape = RoundedCornerShape(16.dp),
-                                        border = BorderStroke(1.dp, MaxxColors.BorderSubtle),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .bounceClick { triggerPlay(ep.id, "${content.title} - E${ep.episodeNumber}") }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(10.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .width(120.dp)
-                                                    .aspectRatio(16f / 9f)
-                                                    .clip(RoundedCornerShape(10.dp))
-                                                    .background(MaxxColors.SurfaceDark)
-                                            ) {
-                                                AsyncImage(
-                                                    model = ep.thumbnailUrl.ifBlank { content.landscapeUrl },
-                                                    contentDescription = ep.name,
-                                                    contentScale = ContentScale.Crop,
-                                                    modifier = Modifier.fillMaxSize()
-                                                )
                                                 Icon(
                                                     Icons.Rounded.PlayArrow,
                                                     contentDescription = null,
                                                     tint = MaxxColors.Primary,
-                                                    modifier = Modifier
-                                                        .align(Alignment.Center)
-                                                        .size(28.dp)
+                                                    modifier = Modifier.size(20.dp)
                                                 )
                                             }
-                                            Spacer(Modifier.width(12.dp))
-                                            Column(modifier = Modifier.weight(1f)) {
+                                        }
+                                        Spacer(Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "E${ep.episodeNumber}. ${ep.name}",
+                                                color = Color.White,
+                                                fontSize = 13.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            if (ep.durationLabel.isNotBlank()) {
+                                                Spacer(Modifier.height(4.dp))
                                                 Text(
-                                                    text = "E${ep.episodeNumber}. ${ep.name}",
-                                                    color = Color.White,
-                                                    fontSize = 13.5.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    maxLines = 2,
-                                                    overflow = TextOverflow.Ellipsis
+                                                    text = ep.durationLabel,
+                                                    color = MaxxColors.TextSecondary,
+                                                    fontSize = 11.5.sp
                                                 )
-                                                if (ep.durationLabel.isNotBlank()) {
-                                                    Spacer(Modifier.height(4.dp))
-                                                    Text(
-                                                        text = ep.durationLabel,
-                                                        color = MaxxColors.TextSecondary,
-                                                        fontSize = 11.5.sp
-                                                    )
-                                                }
                                             }
                                         }
                                     }
@@ -700,40 +755,49 @@ fun DetailsScreen(
 }
 
 @Composable
-private fun MiniHeroControlIcon(
-    icon: ImageVector,
-    onClick: () -> Unit
+private fun MetaChip(
+    text: String,
+    highlighted: Boolean = false
 ) {
     Surface(
-        color = Color.Black.copy(alpha = 0.45f),
-        shape = CircleShape,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
-        modifier = Modifier
-            .size(32.dp)
-            .clickable(onClick = onClick)
+        color = if (highlighted) MaxxColors.PrimaryTint else Color.White.copy(alpha = 0.12f),
+        shape = RoundedCornerShape(999.dp),
+        border = BorderStroke(
+            1.dp,
+            if (highlighted) MaxxColors.Primary.copy(alpha = 0.55f) else Color.White.copy(alpha = 0.16f)
+        )
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-        }
+        Text(
+            text = text,
+            color = if (highlighted) MaxxColors.PrimaryLight else Color.White.copy(alpha = 0.92f),
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+        )
     }
 }
 
 @Composable
-private fun FrostedActionCircle(
+private fun LabeledDetailAction(
     icon: ImageVector,
+    label: String,
     tint: Color = Color.White,
     onClick: () -> Unit
 ) {
-    Surface(
-        color = Color.White.copy(alpha = 0.09f),
-        shape = CircleShape,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .size(48.dp)
+            .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 4.dp)
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(21.dp))
-        }
+        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.height(5.dp))
+        Text(
+            text = label,
+            color = if (tint == MaxxColors.Primary) MaxxColors.Primary else MaxxColors.TextSecondary,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
