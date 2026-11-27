@@ -19,7 +19,11 @@ import (
 func main() {
 	cfg := games.LoadConfig()
 	if cfg.GamesDatabaseURL == "" {
-		slog.Error("GAMES_DATABASE_URL (or DATABASE_URL) is required")
+		slog.Error("GAMES_DATABASE_URL (or DATABASE_URL) is required (set it in .env)")
+		os.Exit(1)
+	}
+	if cfg.JWTSecret == "" {
+		slog.Error("JWT_SECRET is required (set it in .env)")
 		os.Exit(1)
 	}
 

@@ -99,10 +99,7 @@ func LoadConfig() Config {
 		pffSecret = strings.TrimSpace(os.Getenv("PFF_SECRET"))
 	}
 
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret == "" {
-		jwtSecret = "maxxpixels_secret_key_change_in_production"
-	}
+	jwtSecret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
 
 	dbURL := strings.TrimSpace(os.Getenv("GAMES_DATABASE_URL"))
 	if dbURL == "" {

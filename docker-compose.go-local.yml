@@ -5,8 +5,8 @@ services:
     image: postgres:16-alpine
     container_name: maxx-go-postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: localdevpassword
+      POSTGRES_USER: ${LOCAL_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${LOCAL_DB_PASSWORD:-${DB_PASSWORD:?Set DB_PASSWORD in .env}}
       POSTGRES_DB: maxxpixels_ott
     ports:
       - "127.0.0.1:5433:5432"
@@ -52,9 +52,9 @@ services:
     environment:
       PORT: 8081
       GO_ENV: development
-      DATABASE_URL: postgres://postgres:localdevpassword@postgres:5432/maxxpixels_ott?sslmode=disable
+      DATABASE_URL: postgres://${LOCAL_DB_USER:-postgres}:${LOCAL_DB_PASSWORD:-${DB_PASSWORD:?Set DB_PASSWORD in .env}}@postgres:5432/maxxpixels_ott?sslmode=disable
       REDIS_URL: redis://redis:6379/0
-      JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-maxxpixels-2026}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       MSG91_AUTH_KEY: ${MSG91_AUTH_KEY:-}
       MSG91_TEMPLATE_ID: ${MSG91_TEMPLATE_ID:-}
       MSG91_SENDER_ID: ${MSG91_SENDER_ID:-MAXXPX}
@@ -73,9 +73,9 @@ services:
     environment:
       PORT: 8082
       GO_ENV: development
-      DATABASE_URL: postgres://postgres:localdevpassword@postgres:5432/maxxpixels_ott?sslmode=disable
+      DATABASE_URL: postgres://${LOCAL_DB_USER:-postgres}:${LOCAL_DB_PASSWORD:-${DB_PASSWORD:?Set DB_PASSWORD in .env}}@postgres:5432/maxxpixels_ott?sslmode=disable
       REDIS_URL: redis://redis:6379/0
-      JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-maxxpixels-2026}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       PUBLIC_BASE_URL: http://127.0.0.1:4200
       BUNNY_STREAM_LIBRARY_ID: ${BUNNY_STREAM_LIBRARY_ID:-}
       BUNNY_STREAM_API_KEY: ${BUNNY_STREAM_API_KEY:-}
@@ -102,8 +102,8 @@ services:
     environment:
       PORT: 8083
       GO_ENV: development
-      DATABASE_URL: postgres://postgres:localdevpassword@postgres:5432/maxxpixels_ott?sslmode=disable
-      JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-maxxpixels-2026}
+      DATABASE_URL: postgres://${LOCAL_DB_USER:-postgres}:${LOCAL_DB_PASSWORD:-${DB_PASSWORD:?Set DB_PASSWORD in .env}}@postgres:5432/maxxpixels_ott?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       PUBLIC_BASE_URL: http://127.0.0.1:4200
       BUNNY_STREAM_CDN_HOSTNAME: ${BUNNY_STREAM_CDN_HOSTNAME:-}
       BUNNY_STREAM_TOKEN_AUTH_KEY: ${BUNNY_STREAM_TOKEN_AUTH_KEY:-}
@@ -122,9 +122,12 @@ services:
     environment:
       PORT: 8084
       GO_ENV: development
-      DATABASE_URL: postgres://postgres:localdevpassword@postgres:5432/maxxpixels_ott?sslmode=disable
+      DATABASE_URL: postgres://${LOCAL_DB_USER:-postgres}:${LOCAL_DB_PASSWORD:-${DB_PASSWORD:?Set DB_PASSWORD in .env}}@postgres:5432/maxxpixels_ott?sslmode=disable
       REDIS_URL: redis://redis:6379/0
-      JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-maxxpixels-2026}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
     networks:
       - maxx-go-net
 
@@ -140,9 +143,9 @@ services:
     environment:
       PORT: 8085
       GO_ENV: development
-      DATABASE_URL: postgres://postgres:localdevpassword@postgres:5432/maxxpixels_ott?sslmode=disable
+      DATABASE_URL: postgres://${LOCAL_DB_USER:-postgres}:${LOCAL_DB_PASSWORD:-${DB_PASSWORD:?Set DB_PASSWORD in .env}}@postgres:5432/maxxpixels_ott?sslmode=disable
       REDIS_URL: redis://redis:6379/0
-      JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-maxxpixels-2026}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       PUBLIC_BASE_URL: http://127.0.0.1:8081
     networks:
       - maxx-go-net
@@ -159,9 +162,9 @@ services:
     environment:
       PORT: 8086
       GO_ENV: development
-      DATABASE_URL: postgres://postgres:localdevpassword@postgres:5432/maxxpixels_ott?sslmode=disable
+      DATABASE_URL: postgres://${LOCAL_DB_USER:-postgres}:${LOCAL_DB_PASSWORD:-${DB_PASSWORD:?Set DB_PASSWORD in .env}}@postgres:5432/maxxpixels_ott?sslmode=disable
       REDIS_URL: redis://redis:6379/0
-      JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-maxxpixels-2026}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       MSG91_AUTH_KEY: ${MSG91_AUTH_KEY:-}
       MSG91_TEMPLATE_ID: ${MSG91_TEMPLATE_ID:-}
       MSG91_SENDER_ID: ${MSG91_SENDER_ID:-MAXXPX}
@@ -183,8 +186,11 @@ services:
     environment:
       PORT: 8087
       GO_ENV: development
-      DATABASE_URL: postgres://postgres:localdevpassword@postgres:5432/maxxpixels_ott?sslmode=disable
+      DATABASE_URL: postgres://${LOCAL_DB_USER:-postgres}:${LOCAL_DB_PASSWORD:-${DB_PASSWORD:?Set DB_PASSWORD in .env}}@postgres:5432/maxxpixels_ott?sslmode=disable
       REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
       FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
       FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
       FCM_SERVICE_ACCOUNT_PATH: ${FCM_SERVICE_ACCOUNT_PATH:-}
@@ -216,6 +222,7 @@ services:
       PORT: 8081
       GO_ENV: development
       REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       IDENTITY_SERVICE_URL: http://identity-service:8081
       CATALOG_SERVICE_URL: http://catalog-service:8082
       STREAMING_SERVICE_URL: http://streaming-service:8083
@@ -250,11 +257,11 @@ services:
     environment:
       GO_ENV: development
       GAMES_SERVICE_PORT: 8090
-      GAMES_DATABASE_URL: postgres://postgres:localdevpassword@postgres:5432/maxxpixels_games?sslmode=disable
+      GAMES_DATABASE_URL: postgres://${LOCAL_DB_USER:-postgres}:${LOCAL_DB_PASSWORD:-${DB_PASSWORD:?Set DB_PASSWORD in .env}}@postgres:5432/maxxpixels_games?sslmode=disable
       MAIN_API_URL: http://api:8081
-      JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-maxxpixels-2026}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       PLAYFORFUN_TENANT_ID: ${PLAYFORFUN_TENANT_ID:-maxxpixels}
-      PLAYFORFUN_SECRET: ${PLAYFORFUN_SECRET:-local-dev-pff-secret}
+      PLAYFORFUN_SECRET: ${PLAYFORFUN_SECRET:-}
       PLAYER_TTL_SECONDS: ${PLAYER_TTL_SECONDS:-86400}
       CORS_ALLOWED_ORIGINS: http://localhost:3001,http://127.0.0.1:3001,http://localhost:4200,http://127.0.0.1:4200
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}

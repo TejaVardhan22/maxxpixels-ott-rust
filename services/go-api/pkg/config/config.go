@@ -86,17 +86,11 @@ func Load(defaultPort int) (*AppConfig, error) {
 		}
 	}
 
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" && envMode != "test" {
-		dbURL = "postgres://postgres:postgres@localhost:5432/maxxpixels?sslmode=disable"
-	}
+	dbURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret == "" {
-		if envMode == "production" {
-			return nil, fmt.Errorf("JWT_SECRET environment variable is required in production")
-		}
-		jwtSecret = "dev-insecure-jwt-secret-change-in-production"
+	jwtSecret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
+	if jwtSecret == "" && envMode != "test" {
+		return nil, fmt.Errorf("JWT_SECRET environment variable is required (set it in .env)")
 	}
 
 	brokersRaw := getEnv("KAFKA_BROKERS", "kafka:9092")
