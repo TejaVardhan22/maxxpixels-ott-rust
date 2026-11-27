@@ -1,0 +1,35 @@
+services:
+  api-gateway:
+    build:
+      context: .
+      args:
+        SERVICE: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - IDENTITY_SERVICE_URL=http://identity-service:8081
+      - CATALOG_SERVICE_URL=http://catalog-service:8082
+      - STREAMING_SERVICE_URL=http://streaming-service:8083
+      - COMMERCE_SERVICE_URL=http://commerce-service:8084
+      - MONETIZATION_SERVICE_URL=http://monetization-service:8085
+      - PLATFORM_SERVICE_URL=http://platform-service:8086
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:4200}
+    depends_on:
+      - identity-service
+    restart: unless-stopped
+
+  identity-service:
+    build:
+      context: .
+      args:
+        SERVICE: identity-service
+    ports:
+      - "8081:8081"
+    environment:
+      - PORT=8081
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - JWT_SECRET=${JWT_SECRET}
+    restart: unless-stopped
