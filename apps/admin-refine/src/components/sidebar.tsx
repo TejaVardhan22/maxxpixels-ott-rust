@@ -50,25 +50,41 @@ export const Sidebar: React.FC = () => {
   const navigate = useNavigate();
   const user = getUser();
   const [pendingReviews, setPendingReviews] = useState(0);
+  const [contentTypes, setContentTypes] = useState<{ slug: string; label: string }[]>([]);
 
   useEffect(() => {
     let active = true;
-    const loadPending = async () => {
+    const loadDynamicNav = async () => {
       try {
-        const res = await apiGet("/admin/content/submissions?status=ALL");
-        const list = extractArray(res);
+        const [subRes, ctRes] = await Promise.all([
+          apiGet("/admin/content/submissions?status=ALL").catch(() => []),
+          apiGet("/admin/content-types").catch(() => []),
+        ]);
         if (!active) return;
+        const list = extractArray(subRes);
         const count = list.filter((item: any) => {
           const st = String(item?.status || "").toUpperCase();
           return st === "SUBMITTED" || st === "KYC_SUBMITTED";
         }).length;
         setPendingReviews(count);
+
+        const cts = extractArray(ctRes)
+          .map((c: any) => {
+            const label = c.title || c.name || c.slug || "";
+            const slug = String(c.slug || c.code || c.title || c.name || "")
+              .trim()
+              .toUpperCase()
+              .replace(/[\s-]+/g, "_");
+            return { slug, label };
+          })
+          .filter((c: any) => c.slug && c.label);
+        setContentTypes(cts);
       } catch {
-        // ignore background badge error
+        // ignore background nav error
       }
     };
-    loadPending();
-    const timer = setInterval(loadPending, 60000);
+    loadDynamicNav();
+    const timer = setInterval(loadDynamicNav, 60000);
     return () => {
       active = false;
       clearInterval(timer);
@@ -98,11 +114,11 @@ export const Sidebar: React.FC = () => {
     },
     { key: "/admin/basic-details", label: "Basic Details", icon: <DatabaseOutlined /> },
     { key: "/admin/movies?type=ALL", label: "All Catalog", icon: <AppstoreOutlined /> },
-    { key: "/admin/movies?type=MOVIE", label: "Movies", icon: <VideoCameraOutlined /> },
-    { key: "/admin/movies?type=ALBUM", label: "Music & Songs", icon: <CustomerServiceOutlined /> },
-    { key: "/admin/movies?type=MICRODRAMA", label: "Microdramas", icon: <FundProjectionScreenOutlined /> },
-    { key: "/admin/movies?type=SHORT_FILM", label: "Short Films", icon: <PlayCircleOutlined /> },
-    { key: "/admin/movies?type=PODCAST", label: "Podcasts", icon: <AudioOutlined /> },
+    ...contentTypes.map((ct) => ({
+      key: `/admin/movies?type=${ct.slug}`,
+      label: ct.label,
+      icon: <VideoCameraOutlined />,
+    })),
     { key: "/admin/series", label: "Series", icon: <PlaySquareOutlined /> },
     { key: "/admin/live", label: "Live TV & Sports", icon: <WifiOutlined /> },
     { type: "divider" },

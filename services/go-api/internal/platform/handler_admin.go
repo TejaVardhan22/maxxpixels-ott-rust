@@ -227,7 +227,10 @@ func (h *Handler) adminDeleteRole(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) adminListContentTypes(w http.ResponseWriter, r *http.Request) {
 	var rows []models.ContentType
-	_ = h.svc.db.WithContext(r.Context()).Order("id ASC").Find(&rows).Error
+	_ = h.svc.db.WithContext(r.Context()).
+		Where("COALESCE(is_active, TRUE) = TRUE").
+		Order("display_order ASC, id ASC").
+		Find(&rows).Error
 	httpx.OK(w, rows)
 }
 

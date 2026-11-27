@@ -1,27 +1,47 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import {
-  Table, Button, Space, Tag, Input, Popconfirm, message, Typography, Image, Card,
+  Table, Button, Space, Tag, Input, Popconfirm, message, Typography, Image, Card, Select,
 } from "antd";
 import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { apiGet, apiDelete, extractArray } from "../../providers/api";
 
-const TYPE_LABELS: Record<string, string> = {
-  ALL: "All Catalog",
-  MOVIE: "Movies Catalog",
-  ALBUM: "Music & Songs",
-  MICRODRAMA: "Microdramas",
-  SHORT_FILM: "Short Films",
-  PODCAST: "Podcasts",
-};
+function formatTypeLabel(slug: string): string {
+  if (!slug || slug === "ALL") return "All Catalog";
+  return slug
+    .replace(/[_-]+/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 export const MoviesPage: React.FC = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const typeFilter = (searchParams.get("type") || "ALL").toUpperCase();
   const [rows, setRows] = useState<any[]>([]);
+  const [contentTypes, setContentTypes] = useState<{ value: string; label: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    apiGet("/admin/content-types")
+      .then((res) => {
+        const list = extractArray(res);
+        setContentTypes(
+          list
+            .map((c: any) => {
+              const label = c.title || c.name || c.slug || "";
+              const value = String(c.slug || c.code || c.title || c.name || "")
+                .trim()
+                .toUpperCase()
+                .replace(/[\s-]+/g, "_");
+              return { value, label };
+            })
+            .filter((c: any) => c.value && c.label)
+        );
+      })
+      .catch(() => {});
+  }, []);
 
   const load = async () => {
     setLoading(true);
@@ -33,7 +53,7 @@ export const MoviesPage: React.FC = () => {
       const list = extractArray(data);
       const filtered =
         typeFilter && typeFilter !== "ALL"
-          ? list.filter((item: any) => String(item.contentType || item.type || "MOVIE").toUpperCase() === typeFilter)
+          ? list.filter((item: any) => String(item.contentType || item.type || "").toUpperCase() === typeFilter)
           : list;
       setRows(filtered);
     } catch (e: any) {
@@ -48,18 +68,29 @@ export const MoviesPage: React.FC = () => {
   const handleDelete = async (id: number) => {
     try {
       await apiDelete(`/admin/movies/${id}`);
-      message.success("Movie deleted");
+      message.success("Content deleted");
       load();
     } catch (e: any) {
       message.error(e?.message || "Delete failed");
     }
   };
 
+  const pageTitle =
+    typeFilter === "ALL"
+      ? "All Catalog"
+      : contentTypes.find((t) => t.value === typeFilter)?.label || formatTypeLabel(typeFilter);
+
   return (
     <Card
-      title={<Typography.Title level={4} style={{ margin: 0 }}>{TYPE_LABELS[typeFilter] || "Movies Catalog"}</Typography.Title>}
+      title={<Typography.Title level={4} style={{ margin: 0 }}>{pageTitle}</Typography.Title>}
       extra={
-        <Space>
+        <Space wrap>
+          <Select
+            style={{ width: 170 }}
+            value={typeFilter}
+            onChange={(val) => setSearchParams(val === "ALL" ? {} : { type: val })}
+            options={[{ value: "ALL", label: "All Types" }, ...contentTypes]}
+          />
           <Input
             prefix={<SearchOutlined />}
             placeholder="Search catalog..."

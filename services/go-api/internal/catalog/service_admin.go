@@ -148,9 +148,10 @@ func (s *Service) AdminCreateMovie(ctx context.Context, payload map[string]any) 
 	if slug == "" {
 		slug = slugify(title) + "-" + strconv.FormatInt(time.Now().Unix()%10000, 10)
 	}
-	ct := strings.ToUpper(strVal(payload, "contentType", "content_type"))
-	if ct == "" {
-		ct = "MOVIE"
+	ct := strings.ToUpper(strVal(payload, "contentType", "content_type", "mainType", "main_type"))
+	var ctPtr *string
+	if ct != "" {
+		ctPtr = &ct
 	}
 	status := strings.ToUpper(strVal(payload, "status"))
 	if status == "" {
@@ -173,7 +174,7 @@ func (s *Service) AdminCreateMovie(ctx context.Context, payload map[string]any) 
 		Title:                title,
 		Slug:                 slug,
 		Description:          ptrStr(strVal(payload, "description", "synopsis")),
-		ContentType:          &ct,
+		ContentType:          ctPtr,
 		OriginalLanguageCode: &lang,
 		Status:               status,
 		PosterUrl:            ptrStr(strVal(payload, "posterUrl", "poster_url")),

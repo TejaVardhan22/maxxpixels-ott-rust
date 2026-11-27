@@ -39,17 +39,6 @@ import { MediaUpload } from "../../components/MediaUpload";
 
 const { Title, Text } = Typography;
 
-const DEFAULT_MAIN_TYPES = [
-  { value: "MOVIE", label: "Movie (Feature Film)" },
-  { value: "SHORT_FILM", label: "Short Film" },
-  { value: "ALBUM", label: "Music / Song / Album" },
-  { value: "MICRODRAMA", label: "Microdrama" },
-  { value: "PODCAST", label: "Podcast / YouTube Show" },
-  { value: "STAGE_DRAMA", label: "Stage Drama" },
-  { value: "DOCUMENTARY", label: "Documentary" },
-  { value: "SERIES", label: "Web Series" },
-];
-
 const CONTENT_WARNINGS = [
   "Violence",
   "Strong Language",
@@ -109,8 +98,8 @@ export const MovieFormPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [activeStep, setActiveStep] = useState(1);
 
-  // Master data dropdowns
-  const [mainTypes, setMainTypes] = useState(DEFAULT_MAIN_TYPES);
+  // Master data dropdowns (100% DB-driven)
+  const [mainTypes, setMainTypes] = useState<{ value: string; label: string }[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [genres, setGenres] = useState<string[]>([]);
   const [languages, setLanguages] = useState<string[]>(["Telugu", "Hindi", "Tamil", "English", "Kannada", "Malayalam"]);
@@ -145,7 +134,7 @@ export const MovieFormPage: React.FC = () => {
   const [gdriveLoading, setGdriveLoading] = useState(false);
   const [bunnyUploading, setBunnyUploading] = useState(false);
 
-  const watchedType = Form.useWatch("contentType", form) || "MOVIE";
+  const watchedType = Form.useWatch("contentType", form) || "";
   const watchedStatus = Form.useWatch("status", form) || "PUBLISHED";
   const watchedMonetization = Form.useWatch("monetization", form) || "SVOD";
   const watchedDuration = Form.useWatch("durationTime", form) || "";
@@ -167,9 +156,18 @@ export const MovieFormPage: React.FC = () => {
         apiGet("/admin/producers").catch(() => []),
       ]);
       const cts = extractArray(ctRes);
-      if (cts.length) {
-        setMainTypes(cts.map((c: any) => ({ value: c.slug?.toUpperCase() || c.code || c.name?.toUpperCase(), label: c.name })));
-      }
+      setMainTypes(
+        cts
+          .map((c: any) => {
+            const label = c.title || c.name || c.slug || "";
+            const value = String(c.slug || c.code || c.title || c.name || "")
+              .trim()
+              .toUpperCase()
+              .replace(/[\s-]+/g, "_");
+            return { value, label };
+          })
+          .filter((c: any) => c.value && c.label)
+      );
       setCategories(extractArray(catRes).map((c: any) => c.name || c).filter(Boolean));
       setGenres(extractArray(genRes).map((g: any) => g.name || g).filter(Boolean));
       const langs = extractArray(langRes).map((l: any) => l.name || l).filter(Boolean);
@@ -190,7 +188,7 @@ export const MovieFormPage: React.FC = () => {
       const durStr = secs ? `${Math.floor(secs / 3600)}h${Math.floor((secs % 3600) / 60)}m` : "";
       form.setFieldsValue({
         title: rec.title,
-        contentType: rec.contentType || "MOVIE",
+        contentType: rec.contentType || undefined,
         category: Array.isArray(rec.categories) ? rec.categories : rec.category ? [rec.category] : [],
         genres: Array.isArray(rec.genres) ? rec.genres : [],
         originalLanguage: rec.originalLanguage || rec.language || "Telugu",
@@ -236,7 +234,6 @@ export const MovieFormPage: React.FC = () => {
       loadMovie();
     } else {
       form.setFieldsValue({
-        contentType: "MOVIE",
         originalLanguage: "Telugu",
         maturityRating: "UA_13+",
         trailerType: "Server Video",
@@ -260,7 +257,7 @@ export const MovieFormPage: React.FC = () => {
   const triggerAiAutoFill = () => {
     const title = form.getFieldValue("title") || "Untitled Blockbuster";
     const lang = form.getFieldValue("originalLanguage") || "Telugu";
-    const type = form.getFieldValue("contentType") || "MOVIE";
+    const type = form.getFieldValue("contentType") || "content";
     form.setFieldsValue({
       description: `${title} is an acclaimed ${lang} ${type.toLowerCase()} delivering gripping storytelling, cinematic visuals, and unforgettable performances on MaxxPixels OTT.`,
       seoKeywords: `${title.toLowerCase()}, ${lang.toLowerCase()} ${type.toLowerCase()}, watch online, maxxpixels ott`,
@@ -591,7 +588,13 @@ export const MovieFormPage: React.FC = () => {
                 }
                 rules={[{ required: true }]}
               >
-                <Select options={mainTypes} />
+                <Select
+                  options={mainTypes}
+                  placeholder="Select main type (from Content Types)"
+                  notFoundContent="No content types yet — click + Add New"
+                  showSearch
+                  optionFilterProp="label"
+                />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
