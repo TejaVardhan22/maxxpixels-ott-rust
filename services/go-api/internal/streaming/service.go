@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -24,19 +25,43 @@ func NewService(db *gorm.DB, cfg *config.AppConfig) *Service {
 	return &Service{db: db, cfg: cfg}
 }
 
-type PlaybackAuthResult struct {
-	StreamURL             string  `json:"streamUrl"`
-	SessionToken          string  `json:"sessionToken"`
-	ResumePositionSeconds int32   `json:"resumePositionSeconds"`
-	DurationSeconds       int32   `json:"durationSeconds"`
-	ShowAds               bool    `json:"showAds"`
-	VastTagURL            *string `json:"vastTagUrl,omitempty"`
-	IsHls                 bool    `json:"isHls"`
+type AuthorizeInput struct {
+	UserID     *int64
+	ContentID  int64
+	EpisodeID  *int64
+	ProfileID  *int64
+	DeviceID   string
+	DeviceType string
+	IsTrailer  bool
+	IPAddress  string
 }
 
-func (s *Service) AuthorizePlayback(ctx context.Context, userID, contentID int64, episodeID *int64) (*PlaybackAuthResult, error) {
+type PlaybackAuthResult struct {
+	Authorized            bool             `json:"authorized"`
+	ContentID             int64            `json:"contentId"`
+	SessionID             string           `json:"sessionId"`
+	SessionToken          string           `json:"sessionToken"`
+	StreamURL             string           `json:"streamUrl"`
+	HlsURL                string           `json:"hlsUrl"`
+	MasterPlaylistURL     string           `json:"masterPlaylistUrl"`
+	BunnyVideoID          string           `json:"bunnyVideoId"`
+	ResumePositionSeconds int32            `json:"resumePositionSeconds"`
+	DurationSeconds       int32            `json:"durationSeconds"`
+	IsTrailer             bool             `json:"isTrailer"`
+	Subtitles             []map[string]any `json:"subtitles"`
+	AudioTracks           []map[string]any `json:"audioTracks"`
+	ContentWarnings       []string         `json:"contentWarnings"`
+	SkipIntroStart        *int32           `json:"skipIntroStart,omitempty"`
+	SkipIntroEnd          *int32           `json:"skipIntroEnd,omitempty"`
+	SkipOutroStart        *int32           `json:"skipOutroStart,omitempty"`
+	ShowAds               bool             `json:"showAds"`
+	VastTagURL            *string          `json:"vastTagUrl,omitempty"`
+	IsHls                 bool             `json:"isHls"`
+}
+
+func (s *Service) AuthorizePlayback(ctx context.Context, in AuthorizeInput) (*PlaybackAuthResult, error) {
 	var content models.Content
-	if err := s.db.WithContext(ctx).First(&content, contentID).Error; err != nil {
+	if err := s.db.WithContext(ctx).First(&content, in.ContentID).Error; err != nil {
 		return nil, errors.New("content not found")
 	}
 
@@ -45,33 +70,60 @@ func (s *Service) AuthorizePlayback(ctx context.Context, userID, contentID int64
 		monetization = strings.ToUpper(deref(content.AccessType))
 	}
 
-	hasActiveSub := s.hasActiveSubscription(ctx, userID)
-	hasTvod := s.hasActiveTvod(ctx, userID, contentID)
+	var hasActiveSub bool
+	if !in.IsTrailer {
+		if in.UserID == nil || *in.UserID <= 0 {
+			return nil, errors.New("authentication required to watch content")
+		}
+		uid := *in.UserID
+		isAdmin := s.isAdminUser(ctx, uid)
+		hasActiveSub = s.hasActiveSubscription(ctx, uid)
+		hasTvod := s.hasActiveTvod(ctx, uid, in.ContentID)
 
-	isTVOD := monetization == "TVOD" || monetization == "RENT"
-	isSVOD := monetization == "SVOD" || (!isTVOD && monetization != "AVOD" && monetization != "FREE" && content.IsPremium != nil && *content.IsPremium)
+		if !isAdmin {
+			isTVOD := monetization == "TVOD" || monetization == "RENT"
+			isSVOD := monetization == "SVOD" || (!isTVOD && monetization != "AVOD" && monetization != "FREE" && content.IsPremium != nil && *content.IsPremium)
 
-	if isTVOD && !hasTvod {
-		return nil, errors.New("TVOD rental or purchase required to watch this title")
+			if isTVOD && !hasTvod {
+				return nil, errors.New("rental required: please rent this title to watch")
+			}
+			if isSVOD && !hasActiveSub && !hasTvod {
+				return nil, errors.New("active subscription required to watch this premium title")
+			}
+
+			// Enforce plan max_concurrent_streams (2-minute heartbeat window on other devices)
+			if err := s.enforceConcurrentStreamLimit(ctx, uid, in.DeviceID); err != nil {
+				return nil, err
+			}
+		}
 	}
-	if isSVOD && !hasActiveSub && !hasTvod {
-		return nil, errors.New("active VIP subscription required to watch this title")
-	}
 
-	streamURL := s.resolveStreamURL(ctx, contentID, episodeID)
+	var streamURL, bunnyVideoID string
+	if in.IsTrailer {
+		streamURL = deref(content.TrailerUrl)
+	} else {
+		streamURL, bunnyVideoID = s.resolveStreamURL(ctx, in.ContentID, in.EpisodeID)
+		if streamURL == "" {
+			streamURL = deref(content.TrailerUrl)
+		}
+	}
 	if streamURL == "" {
 		return nil, errors.New("stream URL unavailable for this title")
 	}
 	streamURL = s.signBunnyURL(streamURL)
 
-	// Resolve resume position from watch_history
-	var hist models.WatchHistory
 	var resumeSec int32
-	if s.db.WithContext(ctx).
-		Where("user_id = ? AND content_id = ?", userID, contentID).
-		Order("last_watched_at DESC").
-		First(&hist).Error == nil && hist.PositionSeconds != nil {
-		resumeSec = *hist.PositionSeconds
+	if in.UserID != nil && *in.UserID > 0 {
+		var hist models.WatchHistory
+		if s.db.WithContext(ctx).
+			Where("user_id = ? AND content_id = ?", *in.UserID, in.ContentID).
+			Order("last_watched_at DESC").
+			First(&hist).Error == nil {
+			alreadyDone := (hist.IsCompleted != nil && *hist.IsCompleted) || (hist.Completed != nil && *hist.Completed)
+			if !alreadyDone && hist.PositionSeconds != nil {
+				resumeSec = *hist.PositionSeconds
+			}
+		}
 	}
 
 	var durSec int32
@@ -79,106 +131,217 @@ func (s *Service) AuthorizePlayback(ctx context.Context, userID, contentID int64
 		durSec = *content.DurationSeconds
 	}
 
-	// Create playback session token
-	sessionTok := uuid.NewString()
+	sessionID := uuid.NewString()
 	now := time.Now().UTC()
 	active := true
 	status := "ACTIVE"
-	_ = s.db.WithContext(ctx).Create(&models.PlaybackSession{
-		SessionId:       sessionTok,
-		SessionToken:    &sessionTok,
-		UserId:          &userID,
-		ContentId:       contentID,
-		EpisodeId:       episodeID,
-		Status:          &status,
-		IsActive:        &active,
-		StartedAt:       &now,
-		LastHeartbeat:   &now,
-		LastHeartbeatAt: &now,
-	}).Error
+	sess := models.PlaybackSession{
+		SessionId:              sessionID,
+		SessionToken:           &sessionID,
+		UserId:                 in.UserID,
+		ProfileId:              in.ProfileID,
+		ContentId:              in.ContentID,
+		EpisodeId:              in.EpisodeID,
+		CurrentPositionSeconds: &resumeSec,
+		TotalDurationSeconds:   &durSec,
+		Status:                 &status,
+		IsActive:               &active,
+		StartedAt:              &now,
+		LastHeartbeat:          &now,
+		LastHeartbeatAt:        &now,
+	}
+	if strings.TrimSpace(in.DeviceID) != "" {
+		d := strings.TrimSpace(in.DeviceID)
+		sess.DeviceId = &d
+	}
+	if strings.TrimSpace(in.DeviceType) != "" {
+		dt := strings.TrimSpace(in.DeviceType)
+		sess.DeviceType = &dt
+	}
+	if strings.TrimSpace(in.IPAddress) != "" {
+		ip := strings.TrimSpace(in.IPAddress)
+		sess.IpAddress = &ip
+	}
+	_ = s.db.WithContext(ctx).Create(&sess).Error
 
-	showAds := (monetization == "AVOD" || monetization == "FREE") && !hasActiveSub
+	// Idempotent view count ledger (matches Rust content_view_events)
+	if !in.IsTrailer {
+		viewerKey := "session:" + sessionID
+		if in.UserID != nil && *in.UserID > 0 {
+			viewerKey = fmt.Sprintf("user:%d", *in.UserID)
+		} else if strings.TrimSpace(in.DeviceID) != "" {
+			viewerKey = "device:" + strings.TrimSpace(in.DeviceID)
+		}
+		res := s.db.WithContext(ctx).Exec(`
+			INSERT INTO content_view_events (event_id, content_id, user_id, viewer_key, session_id, event_type)
+			VALUES (?, ?, ?, ?, ?, 'start')
+			ON CONFLICT (event_id) DO NOTHING`,
+			sessionID, in.ContentID, in.UserID, viewerKey, sessionID,
+		)
+		if res.Error == nil && res.RowsAffected > 0 {
+			_ = s.db.WithContext(ctx).Exec(
+				"UPDATE contents SET view_count = COALESCE(view_count, 0) + 1, updated_at = NOW() WHERE id = ?",
+				in.ContentID,
+			).Error
+		}
+	}
+
+	showAds := !in.IsTrailer && (monetization == "AVOD" || monetization == "FREE") && !hasActiveSub
 	var vastURL *string
 	if showAds {
-		v := fmt.Sprintf("%s/api/v1/ads/vast?contentId=%d", strings.TrimRight(s.cfg.PublicBaseURL, "/"), contentID)
+		v := fmt.Sprintf("%s/api/v1/ads/vast?contentId=%d", strings.TrimRight(s.cfg.PublicBaseURL, "/"), in.ContentID)
 		vastURL = &v
 	}
 
 	return &PlaybackAuthResult{
+		Authorized:            true,
+		ContentID:             content.ID,
+		SessionID:             sessionID,
+		SessionToken:          sessionID,
 		StreamURL:             streamURL,
-		SessionToken:          sessionTok,
+		HlsURL:                streamURL,
+		MasterPlaylistURL:     streamURL,
+		BunnyVideoID:          bunnyVideoID,
 		ResumePositionSeconds: resumeSec,
 		DurationSeconds:       durSec,
+		IsTrailer:             in.IsTrailer,
+		Subtitles:             parseJSONMapSlice(content.SubtitlesJson),
+		AudioTracks:           parseJSONMapSlice(content.AudioTracksJson),
+		ContentWarnings:       parseJSONStringSlice(content.ContentWarnings),
+		SkipIntroStart:        content.SkipIntroStart,
+		SkipIntroEnd:          content.SkipIntroEnd,
+		SkipOutroStart:        content.SkipOutroStart,
 		ShowAds:               showAds,
 		VastTagURL:            vastURL,
 		IsHls:                 strings.Contains(strings.ToLower(streamURL), ".m3u8"),
 	}, nil
 }
 
-func (s *Service) SaveProgress(ctx context.Context, userID, contentID int64, episodeID *int64, posSec, durSec int32, sessionToken string) error {
+func (s *Service) ListSessions(ctx context.Context, userID int64) ([]models.PlaybackSession, error) {
+	var rows []models.PlaybackSession
+	err := s.db.WithContext(ctx).
+		Where("user_id = ? AND is_active = TRUE", userID).
+		Order("started_at DESC").
+		Limit(20).
+		Find(&rows).Error
+	return rows, err
+}
+
+func (s *Service) SaveProgress(ctx context.Context, userID, contentID int64, episodeID *int64, posSec, durSec int32, sessionToken string, explicitCompleted *bool) error {
 	now := time.Now().UTC()
 	if sessionToken != "" {
-		_ = s.db.WithContext(ctx).Model(&models.PlaybackSession{}).
-			Where("session_token = ?", sessionToken).
-			Update("last_heartbeat_at", now).Error
+		upd := map[string]any{"last_heartbeat": now, "last_heartbeat_at": now}
+		if posSec > 0 {
+			upd["current_position_seconds"] = posSec
+		}
+		if durSec > 0 {
+			upd["total_duration_seconds"] = durSec
+		}
+		var sess models.PlaybackSession
+		if s.db.WithContext(ctx).Where("session_id = ? OR session_token = ?", sessionToken, sessionToken).First(&sess).Error == nil {
+			_ = s.db.WithContext(ctx).Model(&sess).Updates(upd).Error
+			if contentID <= 0 {
+				contentID = sess.ContentId
+			}
+			if episodeID == nil {
+				episodeID = sess.EpisodeId
+			}
+		}
+	}
+	if contentID <= 0 {
+		return nil
 	}
 
-	profileID := s.defaultProfileID(ctx, userID)
+	completed := durSec > 0 && posSec >= (durSec*92/100)
+	if explicitCompleted != nil {
+		completed = *explicitCompleted
+	}
+	// Never overwrite a saved resume position with 0 on initial mount heartbeat
+	if posSec <= 0 && !completed {
+		return nil
+	}
+	finalPos := posSec
+	if completed && durSec > 0 {
+		finalPos = durSec
+	}
+
 	var pct float64
-	if durSec > 0 {
-		pct = (float64(posSec) / float64(durSec)) * 100.0
+	if completed {
+		pct = 100.0
+	} else if durSec > 0 {
+		pct = (float64(finalPos) / float64(durSec)) * 100.0
 		if pct > 100 {
 			pct = 100
 		}
 	}
-	completed := pct >= 92.0
 
+	profileID := s.defaultProfileID(ctx, userID)
 	var existing models.WatchHistory
 	err := s.db.WithContext(ctx).
 		Where("user_id = ? AND content_id = ?", userID, contentID).
 		First(&existing).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		row := models.WatchHistory{
-			UserId:                &userID,
-			ProfileId:             profileID,
-			ContentId:             contentID,
-			EpisodeId:             episodeID,
-			PositionSeconds:       &posSec,
-			DurationSeconds:       &durSec,
-			WatchedSeconds:        &posSec,
-			TotalDurationSeconds:  &durSec,
-			Percentage:            &pct,
-			Completed:             &completed,
-			IsCompleted:           &completed,
-			LastWatchedAt:         &now,
+			UserId:               &userID,
+			ProfileId:            profileID,
+			ContentId:            contentID,
+			EpisodeId:            episodeID,
+			PositionSeconds:      &finalPos,
+			DurationSeconds:      &durSec,
+			WatchedSeconds:       &finalPos,
+			TotalDurationSeconds: &durSec,
+			Percentage:           &pct,
+			Completed:            &completed,
+			IsCompleted:          &completed,
+			LastWatchedAt:        &now,
 		}
 		return s.db.WithContext(ctx).Create(&row).Error
 	} else if err != nil {
 		return err
 	}
 
-	return s.db.WithContext(ctx).Model(&models.WatchHistory{}).Where("id = ?", existing.ID).Updates(map[string]any{
-		"position_seconds":       posSec,
-		"duration_seconds":       durSec,
-		"watched_seconds":        posSec,
-		"total_duration_seconds": durSec,
-		"percentage":             pct,
-		"completed":              completed,
-		"is_completed":           completed,
-		"last_watched_at":        now,
-	}).Error
+	upd := map[string]any{
+		"position_seconds": finalPos,
+		"watched_seconds":  finalPos,
+		"percentage":       pct,
+		"completed":        completed,
+		"is_completed":     completed,
+		"last_watched_at":  now,
+	}
+	if durSec > 0 {
+		upd["duration_seconds"] = durSec
+		upd["total_duration_seconds"] = durSec
+	}
+	return s.db.WithContext(ctx).Model(&models.WatchHistory{}).Where("id = ?", existing.ID).Updates(upd).Error
 }
 
-func (s *Service) StopSession(ctx context.Context, userID, contentID int64, posSec, durSec int32, sessionToken string) error {
+func (s *Service) StopSession(ctx context.Context, userID, contentID int64, posSec, durSec int32, sessionToken string, completed *bool) error {
 	if sessionToken != "" {
-		_ = s.db.WithContext(ctx).Model(&models.PlaybackSession{}).
-			Where("session_token = ?", sessionToken).
-			Updates(map[string]any{"is_active": false, "last_heartbeat_at": time.Now().UTC()}).Error
+		upd := map[string]any{"status": "ENDED", "is_active": false, "last_heartbeat_at": time.Now().UTC()}
+		if posSec > 0 {
+			upd["current_position_seconds"] = posSec
+		}
+		if durSec > 0 {
+			upd["total_duration_seconds"] = durSec
+		}
+		var sess models.PlaybackSession
+		if s.db.WithContext(ctx).Where("session_id = ? OR session_token = ?", sessionToken, sessionToken).First(&sess).Error == nil {
+			_ = s.db.WithContext(ctx).Model(&sess).Updates(upd).Error
+			if contentID <= 0 {
+				contentID = sess.ContentId
+			}
+		}
 	}
-	if posSec > 0 && contentID > 0 {
-		return s.SaveProgress(ctx, userID, contentID, nil, posSec, durSec, "")
+	if (posSec > 0 || (completed != nil && *completed)) && contentID > 0 {
+		return s.SaveProgress(ctx, userID, contentID, nil, posSec, durSec, "", completed)
 	}
 	return nil
+}
+
+func (s *Service) RemoveWatchHistory(ctx context.Context, userID, id int64) error {
+	return s.db.WithContext(ctx).
+		Where("user_id = ? AND (id = ? OR content_id = ?)", userID, id, id).
+		Delete(&models.WatchHistory{}).Error
 }
 
 func (s *Service) GetContinueWatching(ctx context.Context, userID int64) ([]map[string]any, error) {
@@ -285,6 +448,63 @@ func (s *Service) RemoveFromWatchlist(ctx context.Context, userID, contentID int
 		Delete(&models.Watchlist{}).Error
 }
 
+func (s *Service) enforceConcurrentStreamLimit(ctx context.Context, userID int64, reqDeviceID string) error {
+	now := time.Now().UTC()
+	maxStreams := 1
+	var activeSub models.Subscription
+	if s.db.WithContext(ctx).
+		Where("user_id = ? AND status = 'ACTIVE' AND end_date > ?", userID, now).
+		Order("end_date DESC").First(&activeSub).Error == nil {
+		var p models.Plan
+		if s.db.WithContext(ctx).First(&p, activeSub.PlanId).Error == nil && p.MaxConcurrentStreams != nil && *p.MaxConcurrentStreams > 0 {
+			maxStreams = int(*p.MaxConcurrentStreams)
+		}
+	}
+
+	cutoff := now.Add(-2 * time.Minute)
+	var sessions []models.PlaybackSession
+	if err := s.db.WithContext(ctx).Where("user_id = ? AND is_active = TRUE", userID).Find(&sessions).Error; err != nil {
+		return nil
+	}
+	reqDev := strings.TrimSpace(reqDeviceID)
+	otherActive := 0
+	for _, sess := range sessions {
+		ts := sess.LastHeartbeatAt
+		if ts == nil {
+			ts = sess.LastHeartbeat
+		}
+		if ts == nil {
+			ts = sess.StartedAt
+		}
+		if ts == nil || !ts.After(cutoff) {
+			continue
+		}
+		sameDevice := reqDev != "" && sess.DeviceId != nil && *sess.DeviceId == reqDev
+		if !sameDevice {
+			otherActive++
+		}
+	}
+	if otherActive >= maxStreams {
+		return fmt.Errorf("screen limit reached: your plan allows up to %d concurrent stream(s). Stop playback on another device to continue", maxStreams)
+	}
+	return nil
+}
+
+func (s *Service) isAdminUser(ctx context.Context, userID int64) bool {
+	var names []string
+	_ = s.db.WithContext(ctx).Table("roles").
+		Select("roles.name").
+		Joins("JOIN user_roles ON user_roles.role_id = roles.id").
+		Where("user_roles.user_id = ?", userID).
+		Pluck("roles.name", &names).Error
+	for _, n := range names {
+		if strings.Contains(strings.ToUpper(n), "ADMIN") {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Service) hydrateHistory(ctx context.Context, rows []models.WatchHistory) []map[string]any {
 	if len(rows) == 0 {
 		return []map[string]any{}
@@ -360,39 +580,41 @@ func (s *Service) defaultProfileID(ctx context.Context, userID int64) int64 {
 	return 1
 }
 
-func (s *Service) resolveStreamURL(ctx context.Context, contentID int64, episodeID *int64) string {
+func (s *Service) resolveStreamURL(ctx context.Context, contentID int64, episodeID *int64) (string, string) {
 	if episodeID != nil && *episodeID > 0 {
 		var ep models.Episode
 		if s.db.WithContext(ctx).First(&ep, *episodeID).Error == nil {
+			guid := deref(ep.BunnyVideoGuid)
 			if ep.VideoUrl != nil && *ep.VideoUrl != "" {
-				return *ep.VideoUrl
+				return *ep.VideoUrl, guid
 			}
-			if ep.BunnyVideoGuid != nil && *ep.BunnyVideoGuid != "" && s.cfg.BunnyStreamCDNHostname != "" {
-				return fmt.Sprintf("https://%s/%s/playlist.m3u8", s.cfg.BunnyStreamCDNHostname, *ep.BunnyVideoGuid)
+			if guid != "" && s.cfg.BunnyStreamCDNHostname != "" {
+				return fmt.Sprintf("https://%s/%s/playlist.m3u8", s.cfg.BunnyStreamCDNHostname, guid), guid
 			}
 		}
 	}
 	var mv models.Movie
-	if s.db.WithContext(ctx).Where("content_id = ?", contentID).First(&mv).Error == nil {
+	if s.db.WithContext(ctx).Where("content_id = ? OR id = ?", contentID, contentID).Order("CASE WHEN content_id = ? THEN 0 ELSE 1 END").First(&mv).Error == nil {
+		guid := deref(mv.BunnyVideoGuid)
 		if mv.HlsUrl != nil && *mv.HlsUrl != "" {
-			return *mv.HlsUrl
+			return *mv.HlsUrl, guid
 		}
 		if mv.StreamUrl != nil && *mv.StreamUrl != "" {
-			return *mv.StreamUrl
+			return *mv.StreamUrl, guid
 		}
 		if mv.VideoUrl != nil && *mv.VideoUrl != "" {
-			return *mv.VideoUrl
+			return *mv.VideoUrl, guid
 		}
-		if mv.BunnyVideoGuid != nil && *mv.BunnyVideoGuid != "" && s.cfg.BunnyStreamCDNHostname != "" {
-			return fmt.Sprintf("https://%s/%s/playlist.m3u8", s.cfg.BunnyStreamCDNHostname, *mv.BunnyVideoGuid)
+		if guid != "" && s.cfg.BunnyStreamCDNHostname != "" {
+			return fmt.Sprintf("https://%s/%s/playlist.m3u8", s.cfg.BunnyStreamCDNHostname, guid), guid
 		}
 	}
-	return ""
+	return "", ""
 }
 
 func (s *Service) signBunnyURL(rawURL string) string {
 	key := strings.TrimSpace(s.cfg.BunnyStreamTokenAuthKey)
-	if key == "" || !strings.Contains(rawURL, s.cfg.BunnyStreamCDNHostname) {
+	if key == "" || s.cfg.BunnyStreamCDNHostname == "" || !strings.Contains(rawURL, s.cfg.BunnyStreamCDNHostname) {
 		return rawURL
 	}
 	expires := time.Now().Add(4 * time.Hour).Unix()
@@ -413,6 +635,28 @@ func (s *Service) signBunnyURL(rawURL string) string {
 		sep = "&"
 	}
 	return fmt.Sprintf("%s%stoken=%s&expires=%d", rawURL, sep, tok, expires)
+}
+
+func parseJSONMapSlice(raw *string) []map[string]any {
+	if raw == nil || strings.TrimSpace(*raw) == "" {
+		return []map[string]any{}
+	}
+	var out []map[string]any
+	if json.Unmarshal([]byte(*raw), &out) != nil || out == nil {
+		return []map[string]any{}
+	}
+	return out
+}
+
+func parseJSONStringSlice(raw *string) []string {
+	if raw == nil || strings.TrimSpace(*raw) == "" {
+		return []string{}
+	}
+	var out []string
+	if json.Unmarshal([]byte(*raw), &out) != nil || out == nil {
+		return []string{}
+	}
+	return out
 }
 
 func deref(p *string) string {

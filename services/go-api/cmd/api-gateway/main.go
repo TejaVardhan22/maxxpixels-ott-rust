@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -89,20 +90,34 @@ func main() {
 	for _, p := range []string{"/health", "/api/health", "/api/v1/health", "/actuator/health", "/api/actuator/health", "/api/v1/actuator/health"} {
 		r.Get(p, healthFn)
 	}
+	startedAt := time.Now().UTC()
+	metricsFn := func(w http.ResponseWriter, r *http.Request) {
+		var mem runtime.MemStats
+		runtime.ReadMemStats(&mem)
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		_, _ = fmt.Fprintf(w,
+			"# HELP maxx_uptime_seconds Gateway uptime in seconds\n# TYPE maxx_uptime_seconds gauge\nmaxx_uptime_seconds %.2f\n"+
+				"# HELP maxx_goroutines Current number of goroutines\n# TYPE maxx_goroutines gauge\nmaxx_goroutines %d\n"+
+				"# HELP maxx_memory_alloc_bytes Allocated heap bytes\n# TYPE maxx_memory_alloc_bytes gauge\nmaxx_memory_alloc_bytes %d\n",
+			time.Since(startedAt).Seconds(), runtime.NumGoroutine(), mem.Alloc,
+		)
+	}
+	r.Get("/metrics", metricsFn)
+	r.Get("/prometheus", metricsFn)
 
 	// Prefix-agnostic microservice dispatcher (supports /api/v1/*, /api/*, and /*)
 	r.HandleFunc("/*", func(w http.ResponseWriter, req *http.Request) {
 		norm := normalizePath(req.URL.Path)
 		switch {
-		case hasAnyPrefix(norm, "/auth", "/profiles", "/devices", "/referrals", "/admin/users"):
+		case hasAnyPrefix(norm, "/auth", "/me", "/profile", "/profiles", "/devices", "/referrals", "/admin/users"):
 			identityProxy.ServeHTTP(w, req)
-		case hasAnyPrefix(norm, "/catalog", "/content", "/contents", "/home-content", "/graphql", "/categories", "/genres", "/languages", "/types", "/banners", "/sections", "/movies", "/series", "/seasons", "/episodes", "/live"):
+		case hasAnyPrefix(norm, "/catalog", "/content", "/contents", "/home-content", "/graphql", "/categories", "/genres", "/languages", "/content-types", "/types", "/banners", "/sections", "/movies", "/series", "/seasons", "/episodes", "/live", "/live-channels", "/storage", "/uploads", "/posters", "/branding", "/intro-video", "/intro-videos", "/portal-banners", "/admin/movies", "/admin/series", "/admin/live", "/admin/live-channels", "/admin/storage", "/admin/intro-video", "/admin/intro-videos", "/admin/portal-banners"):
 			catalogProxy.ServeHTTP(w, req)
 		case hasAnyPrefix(norm, "/playback", "/video", "/watch", "/watch-history", "/watchlist"):
 			streamingProxy.ServeHTTP(w, req)
-		case hasAnyPrefix(norm, "/subscriptions", "/payments", "/coupons", "/tvod", "/plans", "/orders"):
+		case hasAnyPrefix(norm, "/subscriptions", "/subscription-plans", "/payments", "/coupons", "/tvod", "/plans", "/orders", "/admin/plans", "/admin/coupons", "/admin/payments"):
 			commerceProxy.ServeHTTP(w, req)
-		case hasAnyPrefix(norm, "/ads", "/vast", "/producers", "/producer", "/marketing"):
+		case hasAnyPrefix(norm, "/ads", "/ads.txt", "/app-ads.txt", "/vast", "/producers", "/producer", "/marketing", "/admin/ads", "/admin/advertisements", "/admin/producers", "/admin/marketing", "/admin/content/submissions"):
 			monetizationProxy.ServeHTTP(w, req)
 		default:
 			platformProxy.ServeHTTP(w, req)

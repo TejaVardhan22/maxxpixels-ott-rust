@@ -20,18 +20,24 @@ func NewHandler(svc *Service, tokens *auth.TokenManager) *Handler {
 
 func (h *Handler) RegisterRoutes(r chi.Router) {
 	mountPlayback := func(sub chi.Router) {
-		sub.Use(h.tokens.RequireAuth)
-		sub.Post("/authorize", h.authorizePost)
-		sub.Post("/sessions", h.authorizePost)
-		sub.Post("/start", h.authorizePost)
-		sub.Post("/init", h.authorizePost)
-		sub.Post("/play", h.authorizePost)
-		sub.Get("/authorize/{content_id}", h.authorizeGet)
-		sub.Get("/stream/{content_id}", h.authorizeGet)
-		sub.Post("/heartbeat", h.heartbeat)
-		sub.Post("/progress", h.heartbeat)
-		sub.Post("/sessions/{session_id}/heartbeat", h.heartbeat)
-		sub.Post("/stop", h.stop)
+		sub.Group(func(opt chi.Router) {
+			opt.Use(h.tokens.OptionalAuth)
+			opt.Post("/authorize", h.authorizePost)
+			opt.Post("/sessions", h.authorizePost)
+			opt.Post("/start", h.authorizePost)
+			opt.Post("/init", h.authorizePost)
+			opt.Post("/play", h.authorizePost)
+			opt.Get("/authorize/{content_id}", h.authorizeGet)
+			opt.Get("/stream/{content_id}", h.authorizeGet)
+		})
+		sub.Group(func(pr chi.Router) {
+			pr.Use(h.tokens.RequireAuth)
+			pr.Get("/sessions", h.listSessions)
+			pr.Post("/heartbeat", h.heartbeat)
+			pr.Post("/progress", h.heartbeat)
+			pr.Post("/sessions/{session_id}/heartbeat", h.heartbeat)
+			pr.Post("/stop", h.stop)
+		})
 	}
 
 	mountWatch := func(sub chi.Router) {
@@ -39,6 +45,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		sub.Get("/", h.watchHistory)
 		sub.Get("/history", h.watchHistory)
 		sub.Post("/history", h.heartbeat)
+		sub.Delete("/history/{id}", h.removeHistory)
 		sub.Post("/progress", h.heartbeat)
 		sub.Get("/continue-watching", h.continueWatching)
 		sub.Get("/continue", h.continueWatching)
@@ -52,6 +59,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		sub.Use(h.tokens.RequireAuth)
 		sub.Get("/", h.watchlist)
 		sub.Post("/", h.toggleWatchlist)
+		sub.Delete("/", h.removeWatchlist)
 		sub.Post("/{content_id}", h.toggleWatchlist)
 		sub.Delete("/{content_id}", h.removeWatchlist)
 	}
@@ -66,12 +74,21 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 }
 
 func (h *Handler) authorizePost(w http.ResponseWriter, r *http.Request) {
-	claims, _ := auth.FromContext(r.Context())
-	uid, _ := claims.ParsedUserID()
+	var uid *int64
+	if claims, ok := auth.FromContext(r.Context()); ok {
+		if parsed, err := claims.ParsedUserID(); err == nil && parsed > 0 {
+			uid = &parsed
+		}
+	}
 	var body struct {
-		ContentID int64  `json:"contentId"`
-		VideoID   int64  `json:"videoId"`
-		EpisodeID *int64 `json:"episodeId"`
+		ContentID  int64  `json:"contentId"`
+		VideoID    int64  `json:"videoId"`
+		EpisodeID  *int64 `json:"episodeId"`
+		ProfileID  *int64 `json:"profileId"`
+		DeviceID   string `json:"deviceId"`
+		DeviceType string `json:"deviceType"`
+		IsTrailer  bool   `json:"isTrailer"`
+		Trailer    bool   `json:"trailer"`
 	}
 	if err := httpx.DecodeJSON(r, &body); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "Invalid JSON payload")
@@ -81,7 +98,16 @@ func (h *Handler) authorizePost(w http.ResponseWriter, r *http.Request) {
 	if cid <= 0 {
 		cid = body.VideoID
 	}
-	res, err := h.svc.AuthorizePlayback(r.Context(), uid, cid, body.EpisodeID)
+	res, err := h.svc.AuthorizePlayback(r.Context(), AuthorizeInput{
+		UserID:     uid,
+		ContentID:  cid,
+		EpisodeID:  body.EpisodeID,
+		ProfileID:  body.ProfileID,
+		DeviceID:   body.DeviceID,
+		DeviceType: body.DeviceType,
+		IsTrailer:  body.IsTrailer || body.Trailer,
+		IPAddress:  r.RemoteAddr,
+	})
 	if err != nil {
 		httpx.Error(w, http.StatusForbidden, err.Error(), "PLAYBACK_FORBIDDEN")
 		return
@@ -90,8 +116,12 @@ func (h *Handler) authorizePost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) authorizeGet(w http.ResponseWriter, r *http.Request) {
-	claims, _ := auth.FromContext(r.Context())
-	uid, _ := claims.ParsedUserID()
+	var uid *int64
+	if claims, ok := auth.FromContext(r.Context()); ok {
+		if parsed, err := claims.ParsedUserID(); err == nil && parsed > 0 {
+			uid = &parsed
+		}
+	}
 	cid, err := strconv.ParseInt(chi.URLParam(r, "content_id"), 10, 64)
 	if err != nil {
 		httpx.Error(w, http.StatusBadRequest, "Invalid content_id")
@@ -103,7 +133,16 @@ func (h *Handler) authorizeGet(w http.ResponseWriter, r *http.Request) {
 			epID = &parsed
 		}
 	}
-	res, err := h.svc.AuthorizePlayback(r.Context(), uid, cid, epID)
+	isTrailer := r.URL.Query().Get("isTrailer") == "true" || r.URL.Query().Get("trailer") == "true"
+	res, err := h.svc.AuthorizePlayback(r.Context(), AuthorizeInput{
+		UserID:     uid,
+		ContentID:  cid,
+		EpisodeID:  epID,
+		DeviceID:   r.URL.Query().Get("deviceId"),
+		DeviceType: r.URL.Query().Get("deviceType"),
+		IsTrailer:  isTrailer,
+		IPAddress:  r.RemoteAddr,
+	})
 	if err != nil {
 		httpx.Error(w, http.StatusForbidden, err.Error(), "PLAYBACK_FORBIDDEN")
 		return
@@ -111,15 +150,30 @@ func (h *Handler) authorizeGet(w http.ResponseWriter, r *http.Request) {
 	httpx.OK(w, res)
 }
 
+func (h *Handler) listSessions(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.FromContext(r.Context())
+	uid, _ := claims.ParsedUserID()
+	rows, err := h.svc.ListSessions(r.Context(), uid)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	httpx.OK(w, rows)
+}
+
 func (h *Handler) heartbeat(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.FromContext(r.Context())
 	uid, _ := claims.ParsedUserID()
 	var body struct {
-		SessionToken    string `json:"sessionToken"`
-		ContentID       int64  `json:"contentId"`
-		EpisodeID       *int64 `json:"episodeId"`
-		PositionSeconds int32  `json:"positionSeconds"`
-		DurationSeconds int32  `json:"durationSeconds"`
+		SessionID              string `json:"sessionId"`
+		SessionToken           string `json:"sessionToken"`
+		ContentID              int64  `json:"contentId"`
+		EpisodeID              *int64 `json:"episodeId"`
+		PositionSeconds        int32  `json:"positionSeconds"`
+		CurrentPositionSeconds int32  `json:"currentPositionSeconds"`
+		DurationSeconds        int32  `json:"durationSeconds"`
+		TotalDurationSeconds   int32  `json:"totalDurationSeconds"`
+		Completed              *bool  `json:"completed"`
 	}
 	if err := httpx.DecodeJSON(r, &body); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "Invalid JSON payload")
@@ -127,9 +181,20 @@ func (h *Handler) heartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 	sess := body.SessionToken
 	if sess == "" {
+		sess = body.SessionID
+	}
+	if sess == "" {
 		sess = chi.URLParam(r, "session_id")
 	}
-	if err := h.svc.SaveProgress(r.Context(), uid, body.ContentID, body.EpisodeID, body.PositionSeconds, body.DurationSeconds, sess); err != nil {
+	pos := body.PositionSeconds
+	if pos <= 0 {
+		pos = body.CurrentPositionSeconds
+	}
+	dur := body.DurationSeconds
+	if dur <= 0 {
+		dur = body.TotalDurationSeconds
+	}
+	if err := h.svc.SaveProgress(r.Context(), uid, body.ContentID, body.EpisodeID, pos, dur, sess, body.Completed); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -140,14 +205,45 @@ func (h *Handler) stop(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.FromContext(r.Context())
 	uid, _ := claims.ParsedUserID()
 	var body struct {
-		SessionToken    string `json:"sessionToken"`
-		ContentID       int64  `json:"contentId"`
-		PositionSeconds int32  `json:"positionSeconds"`
-		DurationSeconds int32  `json:"durationSeconds"`
+		SessionID              string `json:"sessionId"`
+		SessionToken           string `json:"sessionToken"`
+		ContentID              int64  `json:"contentId"`
+		PositionSeconds        int32  `json:"positionSeconds"`
+		CurrentPositionSeconds int32  `json:"currentPositionSeconds"`
+		DurationSeconds        int32  `json:"durationSeconds"`
+		TotalDurationSeconds   int32  `json:"totalDurationSeconds"`
+		Completed              *bool  `json:"completed"`
 	}
 	_ = httpx.DecodeJSON(r, &body)
-	_ = h.svc.StopSession(r.Context(), uid, body.ContentID, body.PositionSeconds, body.DurationSeconds, body.SessionToken)
+	sess := body.SessionToken
+	if sess == "" {
+		sess = body.SessionID
+	}
+	pos := body.PositionSeconds
+	if pos <= 0 {
+		pos = body.CurrentPositionSeconds
+	}
+	dur := body.DurationSeconds
+	if dur <= 0 {
+		dur = body.TotalDurationSeconds
+	}
+	_ = h.svc.StopSession(r.Context(), uid, body.ContentID, pos, dur, sess, body.Completed)
 	httpx.OK(w, map[string]any{"stopped": true})
+}
+
+func (h *Handler) removeHistory(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.FromContext(r.Context())
+	uid, _ := claims.ParsedUserID()
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "Invalid history id")
+		return
+	}
+	if err := h.svc.RemoveWatchHistory(r.Context(), uid, id); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	httpx.OK(w, map[string]any{"deleted": true, "id": id}, "Removed from watch history")
 }
 
 func (h *Handler) continueWatching(w http.ResponseWriter, r *http.Request) {
@@ -209,8 +305,11 @@ func (h *Handler) toggleWatchlist(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) removeWatchlist(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.FromContext(r.Context())
 	uid, _ := claims.ParsedUserID()
-	cid, err := strconv.ParseInt(chi.URLParam(r, "content_id"), 10, 64)
-	if err != nil {
+	cid, _ := strconv.ParseInt(chi.URLParam(r, "content_id"), 10, 64)
+	if cid <= 0 {
+		cid, _ = strconv.ParseInt(r.URL.Query().Get("contentId"), 10, 64)
+	}
+	if cid <= 0 {
 		httpx.Error(w, http.StatusBadRequest, "Invalid content_id")
 		return
 	}
