@@ -69,7 +69,7 @@ func main() {
 
 	// Register all 6 microservices on the unified router
 	identity.NewHandler(identity.NewService(db, redisStore, tokens), tokens).RegisterRoutes(r)
-	catalog.NewHandler(catalog.NewService(db, redisStore, cfg.PublicBaseURL)).RegisterRoutes(r)
+	catalog.NewHandler(catalog.NewService(db, redisStore, cfg.PublicBaseURL), tokens).RegisterRoutes(r)
 	streaming.NewHandler(streaming.NewService(db, cfg), tokens).RegisterRoutes(r)
 	commerce.NewHandler(commerce.NewService(db, redisStore, cfg), tokens).RegisterRoutes(r)
 	monetization.NewHandler(monetization.NewService(db, redisStore, cfg.PublicBaseURL), tokens).RegisterRoutes(r)

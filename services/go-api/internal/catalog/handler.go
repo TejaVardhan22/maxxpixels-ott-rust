@@ -5,15 +5,17 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/maxxpixels/go-api/pkg/auth"
 	"github.com/maxxpixels/go-api/pkg/httpx"
 )
 
 type Handler struct {
-	svc *Service
+	svc    *Service
+	tokens *auth.TokenManager
 }
 
-func NewHandler(svc *Service) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc *Service, tokens *auth.TokenManager) *Handler {
+	return &Handler{svc: svc, tokens: tokens}
 }
 
 func (h *Handler) RegisterRoutes(r chi.Router) {
@@ -58,6 +60,92 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		r.Get(pref+"/portal-banners", h.portalBanners)
 		r.Get(pref+"/cms/intro-video/active", h.activeIntro)
 		r.Get(pref+"/intro-video/active", h.activeIntro)
+		r.Get(pref+"/categories/{id_or_slug}", h.browseByCategory)
+		r.Get(pref+"/categories/{id_or_slug}/content", h.browseByCategory)
+		r.Get(pref+"/categories/{id_or_slug}/movies", h.browseByCategory)
+
+		// Live TV public read
+		r.Get(pref+"/live/channels", h.listLiveChannels)
+		r.Get(pref+"/live/events", h.listLiveEvents)
+		r.Get(pref+"/live-channels", h.listLiveChannels)
+
+		// Public Media Serving Proxy (local disk -> Bunny Edge Storage)
+		r.Get(pref+"/uploads/{folder}/{file_name}", h.serveMedia(""))
+		r.Get(pref+"/uploads/{file_name}", h.serveMedia(""))
+		r.Get(pref+"/posters/{file_name}", h.serveMedia("posters"))
+		r.Get(pref+"/banners/{file_name}", h.serveMedia("banners"))
+		r.Get(pref+"/branding/{file_name}", h.serveMedia("branding"))
+
+		// Storage uploads (authenticated)
+		mountStorage := func(sub chi.Router) {
+			if h.tokens != nil {
+				sub.Use(h.tokens.RequireAuth)
+			}
+			sub.Post("/upload", h.uploadMedia)
+			sub.Get("/direct-upload-token", h.directUploadToken)
+			sub.Post("/direct-upload-token", h.directUploadToken)
+			sub.Post("/upload-video", h.uploadVideo)
+			sub.Post("/upload/video", h.uploadVideo)
+			sub.Post("/upload-async", h.uploadVideo)
+			sub.Get("/presigned-url", h.directUploadToken)
+			sub.Post("/presigned-url", h.directUploadToken)
+		}
+		r.Route(pref+"/storage", mountStorage)
+		r.Route(pref+"/admin/storage", mountStorage)
+
+		// Admin Movies, Series, Seasons, Episodes, Live, Intro Video & Portal Banners CRUD
+		r.Group(func(adm chi.Router) {
+			if h.tokens != nil {
+				adm.Use(h.tokens.RequireAuth)
+				adm.Use(auth.RequireAdmin)
+			}
+			adm.Get(pref+"/admin/movies", h.adminListMovies)
+			adm.Post(pref+"/admin/movies", h.adminCreateMovie)
+			adm.Get(pref+"/admin/movies/{id}", h.detail)
+			adm.Put(pref+"/admin/movies/{id}", h.adminUpdateMovie)
+			adm.Delete(pref+"/admin/movies/{id}", h.adminDeleteMovie)
+			adm.Patch(pref+"/admin/movies/{id}/status", h.adminUpdateMovieStatus)
+
+			adm.Get(pref+"/admin/series", h.adminListSeries)
+			adm.Post(pref+"/admin/series", h.adminCreateSeries)
+			adm.Get(pref+"/admin/series/{id}", h.detail)
+			adm.Put(pref+"/admin/series/{id}", h.adminUpdateMovie)
+			adm.Delete(pref+"/admin/series/{id}", h.adminDeleteMovie)
+			adm.Get(pref+"/admin/series/{series_id}/seasons", h.adminListSeasons)
+			adm.Post(pref+"/admin/series/{series_id}/seasons", h.adminCreateSeason)
+			adm.Delete(pref+"/admin/series/{series_id}/seasons/{season_id}", h.adminDeleteSeason)
+			adm.Get(pref+"/admin/series/seasons/{season_id}/episodes", h.seasonEpisodes)
+			adm.Post(pref+"/admin/series/seasons/{season_id}/episodes", h.adminCreateEpisode)
+			adm.Get(pref+"/admin/series/{series_id}/seasons/{season_id}/episodes", h.seasonEpisodes)
+			adm.Post(pref+"/admin/series/{series_id}/seasons/{season_id}/episodes", h.adminCreateEpisode)
+			adm.Delete(pref+"/admin/series/{series_id}/seasons/{season_id}/episodes/{episode_id}", h.adminDeleteEpisode)
+
+			adm.Get(pref+"/admin/live/channels", h.listLiveChannels)
+			adm.Post(pref+"/admin/live/channels", h.createLiveChannel)
+			adm.Delete(pref+"/admin/live/channels/{id}", h.deleteLiveChannel)
+			adm.Get(pref+"/admin/live/events", h.listLiveEvents)
+			adm.Post(pref+"/admin/live/events", h.createLiveEvent)
+			adm.Delete(pref+"/admin/live/events/{id}", h.deleteLiveEvent)
+			adm.Get(pref+"/admin/live-channels", h.listLiveChannels)
+			adm.Post(pref+"/admin/live-channels", h.createLiveChannel)
+			adm.Delete(pref+"/admin/live-channels/{id}", h.deleteLiveChannel)
+
+			for _, ivPref := range []string{"/admin/intro-video", "/admin/intro-videos"} {
+				adm.Get(pref+ivPref, h.adminListIntroVideos)
+				adm.Get(pref+ivPref+"/list", h.adminListIntroVideos)
+				adm.Post(pref+ivPref, h.adminCreateIntroVideo)
+				adm.Put(pref+ivPref+"/{id}", h.adminUpdateIntroVideo)
+				adm.Delete(pref+ivPref+"/{id}", h.adminDeleteIntroVideo)
+				adm.Post(pref+ivPref+"/{id}/activate", h.adminActivateIntroVideo)
+			}
+
+			adm.Get(pref+"/admin/portal-banners", h.adminListPortalBanners)
+			adm.Get(pref+"/admin/portal-banners/list", h.adminListPortalBanners)
+			adm.Post(pref+"/admin/portal-banners", h.adminCreatePortalBanner)
+			adm.Put(pref+"/admin/portal-banners/{id}", h.adminUpdatePortalBanner)
+			adm.Delete(pref+"/admin/portal-banners/{id}", h.adminDeletePortalBanner)
+			adm.Post(pref+"/admin/portal-banners/{id}/toggle-status", h.adminTogglePortalBanner)
+		})
 	}
 }
 

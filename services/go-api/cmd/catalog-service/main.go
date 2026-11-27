@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/maxxpixels/go-api/internal/catalog"
+	"github.com/maxxpixels/go-api/pkg/auth"
 	"github.com/maxxpixels/go-api/pkg/cache"
 	"github.com/maxxpixels/go-api/pkg/config"
 	"github.com/maxxpixels/go-api/pkg/database"
@@ -33,8 +34,9 @@ func main() {
 	}
 
 	redisStore := cache.New(cfg.RedisURL)
+	tokens := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTExpiration, cfg.JWTRefreshExpiration)
 	svc := catalog.NewService(db, redisStore, cfg.PublicBaseURL)
-	handler := catalog.NewHandler(svc)
+	handler := catalog.NewHandler(svc, tokens)
 
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
