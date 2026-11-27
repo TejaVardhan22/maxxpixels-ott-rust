@@ -19,6 +19,7 @@ import (
 	"github.com/maxxpixels/go-api/pkg/database"
 	"github.com/maxxpixels/go-api/pkg/httpx"
 	"github.com/maxxpixels/go-api/pkg/models"
+	"github.com/maxxpixels/go-api/pkg/outbox"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
@@ -356,12 +357,13 @@ func normalizePlatformRole(r string) string {
 
 func (s *Service) writePlatformAuditTx(tx *gorm.DB, actorEmail, action, entityID, details string) {
 	now := time.Now().UTC()
-	_ = tx.Table("service_logs").Create(map[string]any{
-		"service":    "platform-admin",
-		"level":      "INFO",
-		"message":    fmt.Sprintf("[%s] %s (by %s)", action, details, actorEmail),
-		"trace_id":   entityID,
-		"created_at": now,
+	reqID := entityID
+	_ = tx.Create(&outbox.ServiceLog{
+		Service:   "platform-admin",
+		Level:     "INFO",
+		RequestID: &reqID,
+		Message:   fmt.Sprintf("[%s] %s (by %s)", action, details, actorEmail),
+		CreatedAt: now,
 	}).Error
 }
 
@@ -728,14 +730,31 @@ func (h *Handler) internalIngestAdminAudit(w http.ResponseWriter, r *http.Reques
 	metaJSON := fmt.Sprintf(`{"action":%q,"module":%q,"method":%q,"path":%q,"status":%d,"latencyMs":%d,"actorEmail":%q,"actorId":%d,"ip":%q,"payload":%q}`,
 		in.Action, in.Module, in.Method, in.Path, in.Status, in.LatencyMs, in.ActorEmail, in.ActorID, in.IP, in.Payload)
 
-	_ = h.svc.db.WithContext(r.Context()).Table("service_logs").Create(map[string]any{
-		"service":    "admin-audit",
-		"level":      level,
-		"message":    fmt.Sprintf("[%s:%s] %s %s (%d, %dms) by %s", in.Action, in.Module, in.Method, in.Path, in.Status, in.LatencyMs, in.ActorEmail),
-		"trace_id":   in.Module,
-		"metadata":   metaJSON,
-		"created_at": now,
-	}).Error
+	reqID := in.Module
+	method := in.Method
+	path := in.Path
+	status := in.Status
+	dur := in.LatencyMs
+	entry := outbox.ServiceLog{
+		Service:    "admin-audit",
+		Level:      level,
+		RequestID:  &reqID,
+		Method:     &method,
+		Path:       &path,
+		Status:     &status,
+		DurationMs: &dur,
+		Message:    fmt.Sprintf("[%s:%s] %s %s (%d, %dms) by %s", in.Action, in.Module, in.Method, in.Path, in.Status, in.LatencyMs, in.ActorEmail),
+		Metadata:   &metaJSON,
+		CreatedAt:  now,
+	}
+	if in.ActorID > 0 {
+		uid := in.ActorID
+		entry.UserID = &uid
+	}
+	if err := h.svc.db.WithContext(r.Context()).Create(&entry).Error; err != nil {
+		httpx.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 
 	httpx.OK(w, map[string]any{"recorded": true})
 }
