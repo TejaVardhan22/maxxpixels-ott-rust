@@ -70,6 +70,34 @@ type NotificationTemplate struct {
 
 func (NotificationTemplate) TableName() string { return "notification_templates" }
 
+// NotificationDispatchLog tracks daily deduplicated push/SMS dispatches per user & template.
+type NotificationDispatchLog struct {
+	ID             int64     `gorm:"column:id;primaryKey" json:"id"`
+	UserID         int64     `gorm:"column:user_id" json:"userId"`
+	SubscriptionID *int64    `gorm:"column:subscription_id" json:"subscriptionId,omitempty"`
+	TemplateCode   string    `gorm:"column:template_code" json:"templateCode"`
+	Channel        string    `gorm:"column:channel" json:"channel"`
+	DispatchDate   time.Time `gorm:"column:dispatch_date;type:date" json:"dispatchDate"`
+	Status         string    `gorm:"column:status" json:"status"`
+	ErrorMessage   *string   `gorm:"column:error_message" json:"errorMessage,omitempty"`
+	CreatedAt      time.Time `gorm:"column:created_at" json:"createdAt"`
+}
+
+func (NotificationDispatchLog) TableName() string { return "notification_dispatch_logs" }
+
+// ContentViewEvent records idempotent playback view events in content_view_events.
+type ContentViewEvent struct {
+	EventID   string    `gorm:"column:event_id;primaryKey" json:"eventId"`
+	ContentID int64     `gorm:"column:content_id" json:"contentId"`
+	UserID    *int64    `gorm:"column:user_id" json:"userId,omitempty"`
+	ViewerKey string    `gorm:"column:viewer_key" json:"viewerKey"`
+	SessionID string    `gorm:"column:session_id" json:"sessionId"`
+	EventType string    `gorm:"column:event_type" json:"eventType"`
+	CreatedAt time.Time `gorm:"column:created_at" json:"createdAt"`
+}
+
+func (ContentViewEvent) TableName() string { return "content_view_events" }
+
 // Enqueue writes a transactional outbox event into outbox_events (pass tx or db).
 func Enqueue(ctx context.Context, db *gorm.DB, topic, aggregateType, aggregateID, eventType string, payload any) error {
 	if db == nil {

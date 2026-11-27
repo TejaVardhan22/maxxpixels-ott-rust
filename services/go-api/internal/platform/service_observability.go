@@ -16,6 +16,7 @@ import (
 	"github.com/maxxpixels/go-api/pkg/notify"
 	"github.com/maxxpixels/go-api/pkg/outbox"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ---------------------------------------------------------------------------
@@ -33,9 +34,9 @@ func (h *Handler) adminListServiceLogs(w http.ResponseWriter, r *http.Request) {
 	if reqID := strings.TrimSpace(r.URL.Query().Get("requestId")); reqID != "" {
 		q = q.Where("request_id = ?", reqID)
 	}
-	if search := strings.TrimSpace(r.URL.Query().Get("q")); search != "" {
+	if search := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q"))); search != "" {
 		like := "%" + search + "%"
-		q = q.Where("message ILIKE ? OR path ILIKE ?", like, like)
+		q = q.Where("LOWER(message) LIKE ? OR LOWER(path) LIKE ?", like, like)
 	}
 	limit := 100
 	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 && l <= 500 {
@@ -224,26 +225,22 @@ type expiringSubRow struct {
 // writes in-app notifications + ott.notifications outbox events, and guarantees max 1 push/user/template/day.
 func RunDailyExpiryNotifications(ctx context.Context, db *gorm.DB) (sentCount int, skippedCount int, err error) {
 	now := time.Now().UTC()
-	today := now.Format("2006-01-02")
+	todayDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	windowStart := now.Add(-24 * time.Hour)
 	windowEnd := now.Add(7*24*time.Hour + 12*time.Hour)
 
 	var subs []expiringSubRow
-	err = db.WithContext(ctx).Raw(`
-		SELECT s.id AS subscription_id,
-		       s.user_id,
-		       COALESCE(NULLIF(u.full_name, ''), NULLIF(u.email, ''), 'Subscriber') AS user_name,
-		       COALESCE(NULLIF(p.name, ''), 'Premium') AS plan_name,
-		       s.end_date
-		FROM subscriptions s
-		JOIN users u ON u.id = s.user_id
-		LEFT JOIN plans p ON p.id = s.plan_id
-		WHERE s.end_date BETWEEN ? AND ?
-		  AND UPPER(COALESCE(s.status, '')) IN ('ACTIVE', 'EXPIRED')
-		  AND UPPER(COALESCE(u.status, 'ACTIVE')) = 'ACTIVE'
-		ORDER BY s.end_date ASC
-		LIMIT 2000
-	`, windowStart, windowEnd).Scan(&subs).Error
+	err = db.WithContext(ctx).
+		Table("subscriptions AS s").
+		Select("s.id AS subscription_id, s.user_id, COALESCE(NULLIF(u.full_name, ''), NULLIF(u.email, ''), 'Subscriber') AS user_name, COALESCE(NULLIF(p.name, ''), 'Premium') AS plan_name, s.end_date").
+		Joins("JOIN users AS u ON u.id = s.user_id").
+		Joins("LEFT JOIN plans AS p ON p.id = s.plan_id").
+		Where("s.end_date BETWEEN ? AND ?", windowStart, windowEnd).
+		Where("UPPER(COALESCE(s.status, '')) IN ?", []string{"ACTIVE", "EXPIRED"}).
+		Where("UPPER(COALESCE(u.status, 'ACTIVE')) = ?", "ACTIVE").
+		Order("s.end_date ASC").
+		Limit(2000).
+		Scan(&subs).Error
 	if err != nil {
 		return 0, 0, err
 	}
@@ -252,7 +249,7 @@ func RunDailyExpiryNotifications(ctx context.Context, db *gorm.DB) (sentCount in
 	}
 
 	var tplRows []outbox.NotificationTemplate
-	_ = db.WithContext(ctx).Where("is_active = TRUE").Find(&tplRows).Error
+	_ = db.WithContext(ctx).Where("is_active = ?", true).Find(&tplRows).Error
 	tplByCode := make(map[string]outbox.NotificationTemplate, len(tplRows))
 	for _, t := range tplRows {
 		tplByCode[strings.ToUpper(t.Code)] = t
@@ -286,12 +283,23 @@ func RunDailyExpiryNotifications(ctx context.Context, db *gorm.DB) (sentCount in
 			continue
 		}
 
-		// Daily deduplication gate: at most 1 push per user per template per calendar day
-		res := db.WithContext(ctx).Exec(`
-			INSERT INTO notification_dispatch_logs (user_id, subscription_id, template_code, channel, dispatch_date, status)
-			VALUES (?, ?, ?, ?, ?::date, 'SENT')
-			ON CONFLICT (user_id, template_code, dispatch_date) DO NOTHING
-		`, sub.UserID, sub.SubscriptionID, code, tpl.Channel, today)
+		// Daily deduplication gate using pure GORM OnConflict (DB-agnostic)
+		subID := sub.SubscriptionID
+		dispatchRow := outbox.NotificationDispatchLog{
+			UserID:         sub.UserID,
+			SubscriptionID: &subID,
+			TemplateCode:   code,
+			Channel:        tpl.Channel,
+			DispatchDate:   todayDate,
+			Status:         "SENT",
+			CreatedAt:      now,
+		}
+		res := db.WithContext(ctx).
+			Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "user_id"}, {Name: "template_code"}, {Name: "dispatch_date"}},
+				DoNothing: true,
+			}).
+			Create(&dispatchRow)
 		if res.Error != nil || res.RowsAffected == 0 {
 			skippedCount++
 			continue

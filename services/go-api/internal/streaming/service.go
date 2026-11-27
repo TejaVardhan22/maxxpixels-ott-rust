@@ -15,6 +15,7 @@ import (
 	"github.com/maxxpixels/go-api/pkg/models"
 	"github.com/maxxpixels/go-api/pkg/outbox"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Service struct {
@@ -262,17 +263,23 @@ func (s *Service) AuthorizePlayback(ctx context.Context, in AuthorizeInput) (*Pl
 		} else if strings.TrimSpace(in.DeviceID) != "" {
 			viewerKey = "device:" + strings.TrimSpace(in.DeviceID)
 		}
-		res := s.db.WithContext(ctx).Exec(`
-			INSERT INTO content_view_events (event_id, content_id, user_id, viewer_key, session_id, event_type)
-			VALUES (?, ?, ?, ?, ?, 'start')
-			ON CONFLICT (event_id) DO NOTHING`,
-			sessionID, in.ContentID, in.UserID, viewerKey, sessionID,
-		)
+		viewRow := outbox.ContentViewEvent{
+			EventID:   sessionID,
+			ContentID: in.ContentID,
+			UserID:    in.UserID,
+			ViewerKey: viewerKey,
+			SessionID: sessionID,
+			EventType: "start",
+			CreatedAt: now,
+		}
+		res := s.db.WithContext(ctx).
+			Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "event_id"}}, DoNothing: true}).
+			Create(&viewRow)
 		if res.Error == nil && res.RowsAffected > 0 {
-			_ = s.db.WithContext(ctx).Exec(
-				"UPDATE contents SET view_count = COALESCE(view_count, 0) + 1, updated_at = NOW() WHERE id = ?",
-				in.ContentID,
-			).Error
+			_ = s.db.WithContext(ctx).Model(&models.Content{}).Where("id = ?", in.ContentID).Updates(map[string]any{
+				"view_count": gorm.Expr("COALESCE(view_count, 0) + 1"),
+				"updated_at": now,
+			}).Error
 		}
 		_ = outbox.Enqueue(ctx, s.db, outbox.TopicContentViews, "content", fmt.Sprintf("%d", in.ContentID), "playback.started", map[string]any{
 			"eventId":    sessionID,

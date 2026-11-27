@@ -24,6 +24,7 @@ import (
 	"github.com/maxxpixels/go-api/pkg/notify"
 	"github.com/maxxpixels/go-api/pkg/outbox"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // worker-service runs all background workers with bounded concurrency and graceful shutdown:
@@ -196,19 +197,27 @@ func handleKafkaEvent(ctx context.Context, db *gorm.DB, topic, key string, val [
 		if err := json.Unmarshal(val, &ev); err != nil || ev.ContentID <= 0 || ev.EventID == "" {
 			return nil
 		}
-		res := db.WithContext(ctx).Exec(`
-			INSERT INTO content_view_events (event_id, content_id, user_id, viewer_key, session_id, event_type)
-			VALUES (?, ?, ?, ?, ?, 'start')
-			ON CONFLICT (event_id) DO NOTHING
-		`, ev.EventID, ev.ContentID, ev.UserID, ev.ViewerKey, ev.EventID)
+		now := time.Now().UTC()
+		viewRow := outbox.ContentViewEvent{
+			EventID:   ev.EventID,
+			ContentID: ev.ContentID,
+			UserID:    ev.UserID,
+			ViewerKey: ev.ViewerKey,
+			SessionID: ev.EventID,
+			EventType: "start",
+			CreatedAt: now,
+		}
+		res := db.WithContext(ctx).
+			Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "event_id"}}, DoNothing: true}).
+			Create(&viewRow)
 		if res.Error != nil {
 			return res.Error
 		}
 		if res.RowsAffected > 0 {
-			_ = db.WithContext(ctx).Exec(
-				"UPDATE contents SET view_count = COALESCE(view_count, 0) + 1, updated_at = NOW() WHERE id = ?",
-				ev.ContentID,
-			).Error
+			_ = db.WithContext(ctx).Model(&models.Content{}).Where("id = ?", ev.ContentID).Updates(map[string]any{
+				"view_count": gorm.Expr("COALESCE(view_count, 0) + 1"),
+				"updated_at": now,
+			}).Error
 		}
 		return nil
 
@@ -263,13 +272,11 @@ func relayOutboxBatch(ctx context.Context, db *gorm.DB, pub *kafka.Publisher) {
 	}
 
 	var events []outbox.Event
-	if err := tx.Raw(`
-		SELECT * FROM outbox_events
-		WHERE status = 'PENDING' AND next_retry_at <= ?
-		ORDER BY id ASC
-		LIMIT 100
-		FOR UPDATE SKIP LOCKED
-	`, now).Scan(&events).Error; err != nil || len(events) == 0 {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+		Where("status = ? AND next_retry_at <= ?", "PENDING", now).
+		Order("id ASC").
+		Limit(100).
+		Find(&events).Error; err != nil || len(events) == 0 {
 		tx.Rollback()
 		return
 	}
