@@ -175,19 +175,18 @@ func (s *Service) AdminUpdateSettings(ctx context.Context, updates map[string]st
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for k, v := range updates {
 			val := v
-			res := tx.Model(&models.SystemSetting{}).
-				Where("setting_key = ?", k).
-				Updates(map[string]any{"setting_value": val, "updated_at": now, "updated_by": updatedBy})
+			res := tx.Exec(
+				"UPDATE system_settings SET setting_value = ?, value = ?, updated_at = ?, updated_by = ? WHERE setting_key = ? OR key = ?",
+				val, val, now, updatedBy, k, k,
+			)
 			if res.Error != nil {
 				return res.Error
 			}
 			if res.RowsAffected == 0 {
-				if err := tx.Create(&models.SystemSetting{
-					SettingKey:   k,
-					SettingValue: &val,
-					UpdatedAt:    now,
-					UpdatedBy:    &updatedBy,
-				}).Error; err != nil {
+				if err := tx.Exec(
+					"INSERT INTO system_settings (key, setting_key, value, setting_value, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)",
+					k, k, val, val, now, updatedBy,
+				).Error; err != nil {
 					return err
 				}
 			}

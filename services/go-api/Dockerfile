@@ -18,6 +18,7 @@ RUN mkdir -p /out && \
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
+RUN mkdir -p /app/backups /app/uploads && chown -R nobody:nobody /app/backups /app/uploads
 COPY --from=builder /out/ /app/
 USER nobody
 ENTRYPOINT ["/app/api-gateway"]

@@ -598,19 +598,19 @@ func (s *Service) UpsertCastMember(ctx context.Context, id int64, body map[strin
 	if id == 0 {
 		var newID int64
 		err := s.db.WithContext(ctx).Raw(
-			"INSERT INTO cast_members (name, role, bio, profile_image_url, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW()) RETURNING id",
+			"INSERT INTO cast_members (name, role, bio, image_url, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW()) RETURNING id",
 			name, role, bio, img,
 		).Scan(&newID).Error
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"id": newID, "name": name, "role": role, "bio": bio, "profileImageUrl": img}, nil
+		return map[string]any{"id": newID, "name": name, "role": role, "bio": bio, "imageUrl": img, "profileImageUrl": img}, nil
 	}
 	_ = s.db.WithContext(ctx).Exec(
-		"UPDATE cast_members SET name = COALESCE(NULLIF(?, ''), name), role = COALESCE(NULLIF(?, ''), role), bio = COALESCE(NULLIF(?, ''), bio), profile_image_url = COALESCE(NULLIF(?, ''), profile_image_url), updated_at = NOW() WHERE id = ?",
+		"UPDATE cast_members SET name = COALESCE(NULLIF(?, ''), name), role = COALESCE(NULLIF(?, ''), role), bio = COALESCE(NULLIF(?, ''), bio), image_url = COALESCE(NULLIF(?, ''), image_url), updated_at = NOW() WHERE id = ?",
 		name, role, bio, img, id,
 	).Error
-	return map[string]any{"id": id, "name": name, "role": role, "bio": bio, "profileImageUrl": img}, nil
+	return map[string]any{"id": id, "name": name, "role": role, "bio": bio, "imageUrl": img, "profileImageUrl": img}, nil
 }
 
 func (s *Service) DeleteCastMember(ctx context.Context, id int64) error {
