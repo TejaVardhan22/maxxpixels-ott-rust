@@ -1,8 +1,11 @@
 package identity
 
 import (
+	"context"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/maxxpixels/go-api/pkg/auth"
@@ -109,6 +112,58 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	}
 }
 
+func detectPlatformFromRequest(r *http.Request) (platform, deviceType, deviceName string) {
+	if p := strings.ToUpper(strings.TrimSpace(r.Header.Get("X-Platform"))); p != "" {
+		return p, p, p + " Client"
+	}
+	ua := strings.ToLower(r.Header.Get("User-Agent"))
+	switch {
+	case strings.Contains(ua, "android") && (strings.Contains(ua, "tv") || strings.Contains(ua, "aft") || strings.Contains(ua, "bravia")):
+		return "ANDROID_TV", "SMART_TV", "Android TV"
+	case strings.Contains(ua, "smart-tv") || strings.Contains(ua, "tizen") || strings.Contains(ua, "webos") || strings.Contains(ua, "roku"):
+		return "SMART_TV", "SMART_TV", "Smart TV"
+	case strings.Contains(ua, "android"):
+		return "ANDROID", "MOBILE", "Android Device"
+	case strings.Contains(ua, "iphone") || strings.Contains(ua, "ipad") || strings.Contains(ua, "ios"):
+		return "IOS", "MOBILE", "iOS Device"
+	default:
+		return "WEB", "WEB", "Web Browser"
+	}
+}
+
+func (h *Handler) recordLoginDevice(r *http.Request, res *AuthResult) {
+	if res == nil || res.User == nil {
+		return
+	}
+	var uid int64
+	switch v := res.User["id"].(type) {
+	case int64:
+		uid = v
+	case float64:
+		uid = int64(v)
+	case int:
+		uid = int64(v)
+	}
+	if uid <= 0 {
+		return
+	}
+	plat, devType, devName := detectPlatformFromRequest(r)
+	devID := strings.TrimSpace(r.Header.Get("X-Device-Id"))
+	if devID == "" {
+		devID = strings.ToLower(plat) + "-" + strconv.FormatInt(uid, 10)
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_, _ = h.svc.RegisterDevice(ctx, uid, RegisterDeviceInput{
+			DeviceID:   devID,
+			DeviceName: devName,
+			DeviceType: devType,
+			Platform:   plat,
+		})
+	}()
+}
+
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Identifier  string `json:"identifier"`
@@ -127,6 +182,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusUnauthorized, err.Error(), "UNAUTHORIZED")
 		return
 	}
+	h.recordLoginDevice(r, res)
 	httpx.OK(w, res, "Login successful")
 }
 

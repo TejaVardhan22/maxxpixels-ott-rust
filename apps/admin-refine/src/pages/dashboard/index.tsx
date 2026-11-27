@@ -47,6 +47,7 @@ import {
   Avatar,
   Typography,
   Segmented,
+  Empty,
   message,
 } from "antd";
 import { apiGet, apiPost, extractArray, USER_KEY } from "../../providers/api";
@@ -270,20 +271,12 @@ const DashboardPage: React.FC = () => {
   const conversionPct = Math.round((metrics.activeSubscribers / Math.max(metrics.totalUsers, 1)) * 100);
   const filteredChat = chatMessages.filter((m) => !m.room || m.room === chatRoom);
 
-  const deviceChartData =
-    deviceBreakdown.length > 0
-      ? deviceBreakdown.map((d: any, i: number) => ({
-          name: d.platform || d.device || `Device ${i + 1}`,
-          value: Number(d.percentage || d.activeSessions || d.count || 0),
-          count: Number(d.activeSessions || d.count || 0),
-          color: d.color || DEVICE_COLORS[i % DEVICE_COLORS.length],
-        }))
-      : [
-          { name: "Web", value: 45, count: 0, color: "#00d2ff" },
-          { name: "Android", value: 35, count: 0, color: "#1a4cd8" },
-          { name: "iOS", value: 12, count: 0, color: "#c725a3" },
-          { name: "Smart TV", value: 8, count: 0, color: "#00e676" },
-        ];
+  const deviceChartData = deviceBreakdown.map((d: any, i: number) => ({
+    name: d.platform || d.device || `Device ${i + 1}`,
+    value: Number(d.percentage || d.activeSessions || d.count || 0),
+    count: Number(d.activeSessions || d.count || 0),
+    color: d.color || DEVICE_COLORS[i % DEVICE_COLORS.length],
+  }));
 
   return (
     <div>
@@ -609,27 +602,36 @@ const DashboardPage: React.FC = () => {
             style={{ marginBottom: 16 }}
             title={<Space><LaptopOutlined style={{ color: "#00d2ff" }} /><span>Device &amp; Platform Distribution</span></Space>}
           >
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie data={deviceChartData} dataKey="value" nameKey="name" innerRadius={52} outerRadius={80} paddingAngle={3}>
-                  {deviceChartData.map((entry, idx) => (
-                    <Cell key={idx} fill={entry.color} />
+            {deviceChartData.length === 0 ? (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="No device or platform sessions recorded yet"
+              />
+            ) : (
+              <>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie data={deviceChartData} dataKey="value" nameKey="name" innerRadius={52} outerRadius={80} paddingAngle={3}>
+                      {deviceChartData.map((entry, idx) => (
+                        <Cell key={idx} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(val: any) => `${val}%`} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div>
+                  {deviceChartData.map((d, idx) => (
+                    <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0" }}>
+                      <Space size={6}>
+                        <span style={{ width: 10, height: 10, borderRadius: 2, background: d.color, display: "inline-block" }} />
+                        <span>{d.name}</span>
+                      </Space>
+                      <Text type="secondary">{d.value}% ({d.count.toLocaleString()})</Text>
+                    </div>
                   ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-            <div>
-              {deviceChartData.map((d, idx) => (
-                <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0" }}>
-                  <Space size={6}>
-                    <span style={{ width: 10, height: 10, borderRadius: 2, background: d.color, display: "inline-block" }} />
-                    <span>{d.name}</span>
-                  </Space>
-                  <Text type="secondary">{d.value}% ({d.count.toLocaleString()})</Text>
                 </div>
-              ))}
-            </div>
+              </>
+            )}
           </Card>
 
           {/* ADMIN TEAM LIVE OPERATIONS CHAT */}
