@@ -33,6 +33,7 @@ import {
   LogoutOutlined,
   FundProjectionScreenOutlined,
   SoundOutlined,
+  CrownOutlined,
 } from "@ant-design/icons";
 import { apiGet, extractArray, TOKEN_KEY, USER_KEY } from "../providers/api";
 
@@ -83,6 +84,7 @@ export const Sidebar: React.FC = () => {
   const currentKey = `${location.pathname}${location.search || ""}`;
 
   const menuItems: MenuProps["items"] = [
+    { key: "/admin/platform-admin", label: "Platform Admin", icon: <CrownOutlined /> },
     { key: "/admin/dashboard", label: "Dashboard", icon: <DashboardOutlined /> },
     { key: "/admin/analytics", label: "Analytics & BI", icon: <BarChartOutlined /> },
     {

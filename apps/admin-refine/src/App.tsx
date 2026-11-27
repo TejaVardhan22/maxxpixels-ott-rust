@@ -39,6 +39,7 @@ import SystemHealthPage from "./pages/ops/SystemHealthPage";
 import SettingsSecurityPage from "./pages/ops/SettingsSecurityPage";
 import SystemSettingsPage from "./pages/ops/SystemSettingsPage";
 import RolesSecurityPage from "./pages/ops/RolesSecurityPage";
+import PlatformAdminPage from "./pages/ops/PlatformAdminPage";
 
 const { Sider, Header, Content } = Layout;
 const { Title } = Typography;
@@ -180,6 +181,7 @@ function App() {
                   <Route path="analytics" element={<AnalyticsPage />} />
                   <Route path="admin" element={<Navigate to="/admin/dashboard" replace />} />
                   <Route path="admin/dashboard" element={<DashboardPage />} />
+                  <Route path="admin/platform-admin" element={<PlatformAdminPage />} />
                   <Route path="admin/analytics" element={<AnalyticsPage />} />
 
                   {/* Catalog & Master Data */}

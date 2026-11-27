@@ -770,14 +770,64 @@ func (s *Service) ApplyReferralCode(ctx context.Context, userID int64, rawCode s
 // --- Admin Users Full CRUD ---
 
 type AdminUserInput struct {
-	FirstName   string `json:"firstName"`
-	LastName    string `json:"lastName"`
-	FullName    string `json:"fullName"`
-	Email       string `json:"email"`
-	PhoneNumber string `json:"phoneNumber"`
-	Phone       string `json:"phone"`
-	Password    string `json:"password"`
-	Status      string `json:"status"`
+	FirstName   string   `json:"firstName"`
+	LastName    string   `json:"lastName"`
+	FullName    string   `json:"fullName"`
+	Email       string   `json:"email"`
+	PhoneNumber string   `json:"phoneNumber"`
+	Phone       string   `json:"phone"`
+	Password    string   `json:"password"`
+	Status      string   `json:"status"`
+	Role        string   `json:"role"`
+	Roles       []string `json:"roles"`
+}
+
+func normalizeAdminRoles(role string, roles []string) []string {
+	var raw []string
+	if strings.TrimSpace(role) != "" {
+		raw = append(raw, role)
+	}
+	raw = append(raw, roles...)
+	seen := make(map[string]struct{})
+	var out []string
+	for _, r := range raw {
+		clean := strings.ToUpper(strings.TrimSpace(r))
+		if clean == "" {
+			continue
+		}
+		if !strings.HasPrefix(clean, "ROLE_") {
+			clean = "ROLE_" + clean
+		}
+		if _, ok := seen[clean]; !ok {
+			seen[clean] = struct{}{}
+			out = append(out, clean)
+		}
+	}
+	return out
+}
+
+func assignRolesTx(tx *gorm.DB, userID int64, roleNames []string, replace bool) error {
+	if len(roleNames) == 0 {
+		return nil
+	}
+	if replace {
+		if err := tx.Where("user_id = ?", userID).Delete(&models.UserRole{}).Error; err != nil {
+			return err
+		}
+	}
+	for _, rName := range roleNames {
+		var roleRow models.Role
+		if err := tx.Where("name = ?", rName).FirstOrCreate(&roleRow, models.Role{Name: rName}).Error; err != nil {
+			return err
+		}
+		var existing models.UserRole
+		if tx.Where("user_id = ? AND role_id = ?", userID, roleRow.ID).First(&existing).Error != nil {
+			if err := tx.Create(&models.UserRole{UserId: userID, RoleId: roleRow.ID}).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Service) AdminCreateUser(ctx context.Context, in AdminUserInput) (map[string]any, error) {
@@ -813,8 +863,11 @@ func (s *Service) AdminCreateUser(ctx context.Context, in AdminUserInput) (map[s
 	}
 	now := time.Now().UTC()
 	authMethod := "SMS_OTP"
+	if pwHash != nil && email != "" {
+		authMethod = "EMAIL_PASSWORD"
+	}
 	phoneVer := phone != ""
-	emailVer := false
+	emailVer := email != ""
 
 	u := models.User{
 		Uuid:          uuid.NewString(),
@@ -834,13 +887,19 @@ func (s *Service) AdminCreateUser(ctx context.Context, in AdminUserInput) (map[s
 		u.PhoneNumber = &phone
 		u.Phone = &phone
 	}
-	if err := s.db.WithContext(ctx).Create(&u).Error; err != nil {
-		return nil, err
+
+	roleNames := normalizeAdminRoles(in.Role, in.Roles)
+	if len(roleNames) == 0 {
+		roleNames = []string{"ROLE_USER"}
 	}
 
-	var roleRow models.Role
-	if s.db.WithContext(ctx).Where("name = ?", "ROLE_USER").First(&roleRow).Error == nil {
-		_ = s.db.WithContext(ctx).Create(&models.UserRole{UserId: u.ID, RoleId: roleRow.ID}).Error
+	if err := database.WithTx(ctx, s.db, func(tx *gorm.DB) error {
+		if err := tx.Create(&u).Error; err != nil {
+			return err
+		}
+		return assignRolesTx(tx, u.ID, roleNames, false)
+	}); err != nil {
+		return nil, err
 	}
 	return s.buildUserPayload(ctx, &u), nil
 }
@@ -880,7 +939,16 @@ func (s *Service) AdminUpdateUser(ctx context.Context, id int64, in AdminUserInp
 	if st := strings.ToUpper(strings.TrimSpace(in.Status)); st != "" {
 		upd["status"] = st
 	}
-	if err := s.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", id).Updates(upd).Error; err != nil {
+	roleNames := normalizeAdminRoles(in.Role, in.Roles)
+	if err := database.WithTx(ctx, s.db, func(tx *gorm.DB) error {
+		if err := tx.Model(&models.User{}).Where("id = ?", id).Updates(upd).Error; err != nil {
+			return err
+		}
+		if len(roleNames) > 0 {
+			return assignRolesTx(tx, id, roleNames, true)
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	return s.AdminGetUser(ctx, id)
