@@ -18,6 +18,8 @@ services:
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:4200}
     depends_on:
       - identity-service
+      - catalog-service
+      - streaming-service
     restart: unless-stopped
 
   identity-service:
@@ -32,4 +34,35 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - JWT_SECRET=${JWT_SECRET}
+    restart: unless-stopped
+
+  catalog-service:
+    build:
+      context: .
+      args:
+        SERVICE: catalog-service
+    ports:
+      - "8082:8082"
+    environment:
+      - PORT=8082
+      - DATABASE_URL=${DATABASE_URL}
+      - DATABASE_REPLICA_URL=${DATABASE_REPLICA_URL:-}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-https://api.maxxpixels.com}
+    restart: unless-stopped
+
+  streaming-service:
+    build:
+      context: .
+      args:
+        SERVICE: streaming-service
+    ports:
+      - "8083:8083"
+    environment:
+      - PORT=8083
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-https://api.maxxpixels.com}
+      - BUNNY_STREAM_CDN_HOSTNAME=${BUNNY_STREAM_CDN_HOSTNAME:-}
+      - BUNNY_STREAM_TOKEN_AUTH_KEY=${BUNNY_STREAM_TOKEN_AUTH_KEY:-}
     restart: unless-stopped
