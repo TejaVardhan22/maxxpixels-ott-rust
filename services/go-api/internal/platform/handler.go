@@ -189,10 +189,24 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		sub.Post("/dashboard/ops-chat", h.postOpsChat)
 	}
 
+	mountBackup := func(sub chi.Router) {
+		sub.Use(h.tokens.RequireAuth)
+		sub.Use(auth.RequireAdmin)
+		sub.Get("/", h.listBackups)
+		sub.Get("/list", h.listBackups)
+		sub.Get("/migrations", h.listMigrations)
+		sub.Post("/export", h.triggerBackup)
+		sub.Post("/trigger", h.triggerBackup)
+		sub.Post("/run", h.triggerBackup)
+		sub.Get("/download/{filename}", h.downloadBackup)
+		sub.Delete("/{filename}", h.deleteBackup)
+	}
+
 	for _, pref := range []string{"/api/v1", "/api", ""} {
 		r.Route(pref+"/notifications", mountNotifs)
 		r.Route(pref+"/analytics", mountAnalytics)
 		r.Route(pref+"/admin", mountAdmin)
+		r.Route(pref+"/backup", mountBackup)
 		r.Get(pref+"/cast", h.listCastMembers)
 		r.Get(pref+"/settings", h.publicSettings)
 		r.Get(pref+"/settings/public", h.publicSettings)
