@@ -20,6 +20,8 @@ services:
       - identity-service
       - catalog-service
       - streaming-service
+      - commerce-service
+      - monetization-service
     restart: unless-stopped
 
   identity-service:
@@ -65,4 +67,36 @@ services:
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-https://api.maxxpixels.com}
       - BUNNY_STREAM_CDN_HOSTNAME=${BUNNY_STREAM_CDN_HOSTNAME:-}
       - BUNNY_STREAM_TOKEN_AUTH_KEY=${BUNNY_STREAM_TOKEN_AUTH_KEY:-}
+    restart: unless-stopped
+
+  commerce-service:
+    build:
+      context: .
+      args:
+        SERVICE: commerce-service
+    ports:
+      - "8084:8084"
+    environment:
+      - PORT=8084
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - JWT_SECRET=${JWT_SECRET}
+      - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID:-}
+      - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET:-}
+      - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET:-}
+    restart: unless-stopped
+
+  monetization-service:
+    build:
+      context: .
+      args:
+        SERVICE: monetization-service
+    ports:
+      - "8085:8085"
+    environment:
+      - PORT=8085
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - JWT_SECRET=${JWT_SECRET}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-https://api.maxxpixels.com}
     restart: unless-stopped

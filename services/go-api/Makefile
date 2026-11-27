@@ -1,4 +1,4 @@
-.PHONY: tidy build test run-gateway run-identity run-catalog run-streaming
+.PHONY: tidy build test run-gateway run-identity run-catalog run-streaming run-commerce run-monetization
 
 tidy:
 	go mod tidy
@@ -8,6 +8,8 @@ build:
 	go build -o bin/identity-service ./cmd/identity-service
 	go build -o bin/catalog-service ./cmd/catalog-service
 	go build -o bin/streaming-service ./cmd/streaming-service
+	go build -o bin/commerce-service ./cmd/commerce-service
+	go build -o bin/monetization-service ./cmd/monetization-service
 
 test:
 	go test -race ./...
@@ -23,3 +25,9 @@ run-catalog:
 
 run-streaming:
 	go run ./cmd/streaming-service
+
+run-commerce:
+	go run ./cmd/commerce-service
+
+run-monetization:
+	go run ./cmd/monetization-service
