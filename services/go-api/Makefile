@@ -1,4 +1,4 @@
-.PHONY: tidy build test run-all run-gateway run-identity run-catalog run-streaming run-commerce run-monetization run-platform run-worker run-media-streamer
+.PHONY: tidy build test run-all run-gateway run-identity run-catalog run-streaming run-commerce run-monetization run-platform run-worker run-games run-media-streamer
 
 tidy:
 	go mod tidy
@@ -12,6 +12,7 @@ build:
 	go build -o bin/monetization-service ./cmd/monetization-service
 	go build -o bin/platform-service ./cmd/platform-service
 	go build -o bin/worker-service ./cmd/worker-service
+	go build -o bin/games-service ./cmd/games-service
 	go build -o bin/media-streamer ./cmd/media-streamer
 	go build -o bin/all-in-one ./cmd/all-in-one
 
@@ -44,6 +45,9 @@ run-platform:
 
 run-worker:
 	go run ./cmd/worker-service
+
+run-games:
+	go run ./cmd/games-service
 
 run-media-streamer:
 	go run ./cmd/media-streamer

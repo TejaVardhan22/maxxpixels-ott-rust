@@ -66,6 +66,7 @@ type AppConfig struct {
 	CommerceServiceURL     string
 	MonetizationServiceURL string
 	PlatformServiceURL     string
+	GamesServiceURL        string
 }
 
 func Load(defaultPort int) (*AppConfig, error) {
@@ -153,6 +154,7 @@ func Load(defaultPort int) (*AppConfig, error) {
 		CommerceServiceURL:     getEnv("COMMERCE_SERVICE_URL", "http://localhost:8084"),
 		MonetizationServiceURL: getEnv("MONETIZATION_SERVICE_URL", "http://localhost:8085"),
 		PlatformServiceURL:     getEnv("PLATFORM_SERVICE_URL", "http://localhost:8086"),
+		GamesServiceURL:        getEnv("GAMES_SERVICE_URL", "http://localhost:8090"),
 	}, nil
 }
 

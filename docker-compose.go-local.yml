@@ -222,6 +222,7 @@ services:
       COMMERCE_SERVICE_URL: http://commerce-service:8084
       MONETIZATION_SERVICE_URL: http://monetization-service:8085
       PLATFORM_SERVICE_URL: http://platform-service:8086
+      GAMES_SERVICE_URL: http://games-service:8090
       CORS_ALLOWED_ORIGINS: http://localhost:3001,http://127.0.0.1:3001,http://localhost:4200,http://127.0.0.1:4200
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/health >/dev/null 2>&1 || exit 1"]
@@ -232,6 +233,45 @@ services:
       maxx-go-net:
         aliases:
           - api-gateway
+
+  # ============================================================================
+  # Games & Coins Microservice (Go, separate maxxpixels_games DB)
+  # ============================================================================
+  games-service:
+    image: maxxpixels-go-services:local
+    entrypoint: ["/app/games-service"]
+    container_name: maxx-go-games
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8090:8090"
+    environment:
+      GO_ENV: development
+      GAMES_SERVICE_PORT: 8090
+      GAMES_DATABASE_URL: postgres://postgres:localdevpassword@postgres:5432/maxxpixels_games?sslmode=disable
+      MAIN_API_URL: http://api:8081
+      JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-maxxpixels-2026}
+      PLAYFORFUN_TENANT_ID: ${PLAYFORFUN_TENANT_ID:-maxxpixels}
+      PLAYFORFUN_SECRET: ${PLAYFORFUN_SECRET:-local-dev-pff-secret}
+      PLAYER_TTL_SECONDS: ${PLAYER_TTL_SECONDS:-86400}
+      CORS_ALLOWED_ORIGINS: http://localhost:3001,http://127.0.0.1:3001,http://localhost:4200,http://127.0.0.1:4200
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${GAMES_RAZORPAY_WEBHOOK_SECRET:-${RAZORPAY_WEBHOOK_SECRET:-}}
+      RAZORPAY_CURRENCY: ${RAZORPAY_CURRENCY:-INR}
+      SUBSCRIPTION_GRANT_COINS: ${SUBSCRIPTION_GRANT_COINS:-1000}
+      SUBSCRIPTION_MONTHLY_COINS: ${SUBSCRIPTION_MONTHLY_COINS:-100}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8090/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      maxx-go-net:
+        aliases:
+          - games
 
   # ============================================================================
   # Google Drive -> Bunny Stream Microservice (inside services/go-api)

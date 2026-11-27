@@ -62,6 +62,7 @@ func main() {
 	commerceProxy := newProxy(cfg.CommerceServiceURL)
 	monetizationProxy := newProxy(cfg.MonetizationServiceURL)
 	platformProxy := newProxy(cfg.PlatformServiceURL)
+	gamesProxy := newProxy(cfg.GamesServiceURL)
 
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
@@ -119,6 +120,8 @@ func main() {
 			commerceProxy.ServeHTTP(w, req)
 		case hasAnyPrefix(norm, "/ads", "/ads.txt", "/app-ads.txt", "/vast", "/producers", "/producer", "/marketing", "/admin/ads", "/admin/advertisements", "/admin/producers", "/admin/marketing", "/admin/content/submissions"):
 			monetizationProxy.ServeHTTP(w, req)
+		case hasAnyPrefix(norm, "/games"):
+			gamesProxy.ServeHTTP(w, req)
 		default:
 			platformProxy.ServeHTTP(w, req)
 		}

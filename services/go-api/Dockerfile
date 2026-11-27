@@ -1,4 +1,4 @@
-# Multi-stage static Go microservices builder (builds all 8 services in one shared cache pass)
+# Multi-stage static Go microservices builder (builds all 10 services in one shared cache pass)
 FROM golang:1.24-alpine AS builder
 WORKDIR /src
 RUN apk add --no-cache git ca-certificates
@@ -14,6 +14,7 @@ RUN mkdir -p /out && \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/monetization-service ./cmd/monetization-service && \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/platform-service ./cmd/platform-service && \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/worker-service ./cmd/worker-service && \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/games-service ./cmd/games-service && \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/media-streamer ./cmd/media-streamer
 
 FROM alpine:3.21
