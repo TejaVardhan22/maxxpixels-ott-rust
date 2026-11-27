@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/maxxpixels/go-api/pkg/models"
+	"github.com/maxxpixels/go-api/pkg/notify"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
@@ -488,6 +489,43 @@ func (s *Service) AdminToggleProducer(ctx context.Context, id int64) (*models.Pr
 	_ = s.db.WithContext(ctx).Model(&p).Update("is_active", next).Error
 	p.IsActive = &next
 	return &p, nil
+}
+
+func (s *Service) AdminResetProducerPassword(ctx context.Context, producerID int64, newPassword string) (map[string]any, error) {
+	var p models.ProducerProfile
+	if err := s.db.WithContext(ctx).First(&p, producerID).Error; err != nil {
+		return nil, errors.New("producer not found")
+	}
+	pw := strings.TrimSpace(newPassword)
+	if pw == "" {
+		pw = "Maxx@" + strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", "")[:6])
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", p.UserId).
+		Updates(map[string]any{"password_hash": string(hash), "updated_at": time.Now().UTC()}).Error; err != nil {
+		return nil, err
+	}
+	email := ""
+	if p.Email != nil {
+		email = *p.Email
+	}
+	if email != "" {
+		_ = notify.NewEmailFromEnv().SendEmail(
+			ctx, email,
+			"MaxxPixels Producer Portal Credentials",
+			fmt.Sprintf("<p>Hello %s,</p><p>Your Producer Portal password has been set to: <b>%s</b></p>", p.CompanyName, pw),
+		)
+	}
+	return map[string]any{
+		"producerId":        producerID,
+		"userId":            p.UserId,
+		"email":             email,
+		"temporaryPassword": pw,
+		"updated":           true,
+	}, nil
 }
 
 func (s *Service) AdminListSubmissions(ctx context.Context) ([]models.Content, error) {

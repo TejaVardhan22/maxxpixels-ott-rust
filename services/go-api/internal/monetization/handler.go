@@ -113,6 +113,8 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		sub.Post("/{id}/kyc/review", h.adminReviewProducer)
 		sub.Post("/{id}/review", h.adminReviewProducer)
 		sub.Post("/{id}/toggle-status", h.adminToggleProducer)
+		sub.Post("/{id}/reset-password", h.adminResetProducerPassword)
+		sub.Post("/{id}/credentials", h.adminResetProducerPassword)
 		sub.Get("/{id}", h.adminGetProducer)
 		sub.Put("/{id}", h.adminUpdateProducer)
 		sub.Delete("/{id}", h.adminDeleteProducer)

@@ -324,6 +324,21 @@ func (h *Handler) adminToggleProducer(w http.ResponseWriter, r *http.Request) {
 	httpx.OK(w, row)
 }
 
+func (h *Handler) adminResetProducerPassword(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	var body struct {
+		NewPassword string `json:"newPassword"`
+		Password    string `json:"password"`
+	}
+	_ = httpx.DecodeJSON(r, &body)
+	res, err := h.svc.AdminResetProducerPassword(r.Context(), id, firstStr(body.NewPassword, body.Password))
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	httpx.OK(w, res, "Producer credentials updated")
+}
+
 func (h *Handler) adminListSubmissions(w http.ResponseWriter, r *http.Request) {
 	rows, _ := h.svc.AdminListSubmissions(r.Context())
 	httpx.OK(w, rows)

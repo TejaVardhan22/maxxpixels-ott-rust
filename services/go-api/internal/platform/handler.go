@@ -30,6 +30,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		sub.Post("/{id}/read", h.markRead)
 		sub.Post("/device-token", h.registerToken)
 		sub.Post("/fcm-token", h.registerToken)
+		sub.Post("/register-token", h.registerToken)
 	}
 
 	mountAnalytics := func(sub chi.Router) {
@@ -54,10 +55,12 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		sub.Get("/settings/group/{group}", h.settingsByGroup)
 		sub.Get("/settings/history", h.settingsHistory)
 		sub.Get("/settings/audit-logs", h.settingsHistory)
+		sub.Post("/settings/rollback/{id}", h.rollbackSetting)
 		sub.Post("/settings/test-connection", h.testConnection("core"))
 		sub.Post("/settings/test", h.testConnection("core"))
 		sub.Post("/settings/test-bunny-storage", h.testConnection("bunny-storage"))
 		sub.Post("/settings/test-bunny-stream", h.testConnection("bunny-stream"))
+		sub.Post("/settings/test-s3", h.testS3)
 		sub.Post("/settings/test-razorpay", h.testConnection("razorpay"))
 		sub.Post("/settings/test-stripe", h.testConnection("stripe"))
 
@@ -97,8 +100,30 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		sub.Post("/security/roles", h.adminUpsertRole)
 		sub.Put("/security/roles/{id}", h.adminUpsertRole)
 		sub.Delete("/security/roles/{id}", h.adminDeleteRole)
+		sub.Get("/security/settings", h.getSecuritySettings)
+		sub.Put("/security/settings", h.updateSecuritySettings)
+		sub.Get("/security/matrix", h.getPermissionMatrix)
+		sub.Put("/security/matrix", h.updatePermissionMatrix)
 		sub.Get("/security/audit-logs", h.settingsHistory)
 		sub.Get("/audit-logs", h.settingsHistory)
+
+		// DRM Rules CRUD
+		for _, drmPref := range []string{"/drm/rules", "/drm-rules"} {
+			sub.Get(drmPref, h.listDRMRules)
+			sub.Post(drmPref, h.upsertDRMRule)
+			sub.Put(drmPref+"/{id}", h.upsertDRMRule)
+			sub.Delete(drmPref+"/{id}", h.deleteDRMRule)
+		}
+
+		// Backups & Migrations
+		sub.Get("/backup", h.listBackups)
+		sub.Get("/backup/list", h.listBackups)
+		sub.Get("/backup/migrations", h.listMigrations)
+		sub.Post("/backup/export", h.triggerBackup)
+		sub.Post("/backup/trigger", h.triggerBackup)
+		sub.Post("/backup/run", h.triggerBackup)
+		sub.Get("/backup/download/{filename}", h.downloadBackup)
+		sub.Delete("/backup/{filename}", h.deleteBackup)
 
 		// Master Taxonomy & Cast CRUD
 		sub.Get("/cast", h.listCastMembers)
@@ -129,6 +154,8 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		sub.Post("/notifications/push/user/{userId}", h.adminPushUser)
 		sub.Post("/notifications/sms/send", h.adminSendSMS)
 		sub.Post("/notifications/sms/bulk", h.adminSendSMS)
+		sub.Post("/notifications/whatsapp/send", h.adminSendWhatsApp)
+		sub.Post("/notifications/whatsapp/bulk", h.adminSendWhatsApp)
 
 		// Admin Analytics & Realtime SSE
 		sub.Get("/analytics", h.dashboardOverview)
