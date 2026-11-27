@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -699,4 +700,111 @@ func (h *Handler) platformToggleMaintenance(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	httpx.OK(w, map[string]any{"maintenanceMode": body.Enabled}, "Maintenance mode updated")
+}
+
+// --- Global Admin Action Activity Log (Ingest from api-gateway + Query) ---
+
+type AdminActionLogEntry struct {
+	Action     string `json:"action"`
+	Module     string `json:"module"`
+	Method     string `json:"method"`
+	Path       string `json:"path"`
+	Status     int    `json:"status"`
+	LatencyMs  int64  `json:"latencyMs"`
+	ActorEmail string `json:"actorEmail"`
+	ActorID    int64  `json:"actorId"`
+	IP         string `json:"ip"`
+	Payload    string `json:"payload"`
+	CreatedAt  string `json:"createdAt"`
+}
+
+func (h *Handler) internalIngestAdminAudit(w http.ResponseWriter, r *http.Request) {
+	var in AdminActionLogEntry
+	if err := httpx.DecodeJSON(r, &in); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "Invalid payload")
+		return
+	}
+	now := time.Now().UTC()
+	level := "INFO"
+	if in.Status >= 500 {
+		level = "ERROR"
+	} else if in.Status >= 400 {
+		level = "WARN"
+	}
+	metaJSON := fmt.Sprintf(`{"action":%q,"module":%q,"method":%q,"path":%q,"status":%d,"latencyMs":%d,"actorEmail":%q,"actorId":%d,"ip":%q,"payload":%q}`,
+		in.Action, in.Module, in.Method, in.Path, in.Status, in.LatencyMs, in.ActorEmail, in.ActorID, in.IP, in.Payload)
+
+	_ = h.svc.db.WithContext(r.Context()).Table("service_logs").Create(map[string]any{
+		"service":    "admin-audit",
+		"level":      level,
+		"message":    fmt.Sprintf("[%s:%s] %s %s (%d, %dms) by %s", in.Action, in.Module, in.Method, in.Path, in.Status, in.LatencyMs, in.ActorEmail),
+		"trace_id":   in.Module,
+		"metadata":   metaJSON,
+		"created_at": now,
+	}).Error
+
+	httpx.OK(w, map[string]any{"recorded": true})
+}
+
+func (h *Handler) adminListActivityLogs(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	actionFilter := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("action")))
+	moduleFilter := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("module")))
+	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+
+	type logRow struct {
+		ID        int64     `gorm:"column:id"`
+		Level     string    `gorm:"column:level"`
+		Message   string    `gorm:"column:message"`
+		Metadata  string    `gorm:"column:metadata"`
+		CreatedAt time.Time `gorm:"column:created_at"`
+	}
+	var rows []logRow
+	_ = h.svc.db.WithContext(r.Context()).
+		Table("service_logs").
+		Select("id, level, message, metadata, created_at").
+		Where("service = ?", "admin-audit").
+		Order("id DESC").
+		Limit(limit).
+		Scan(&rows).Error
+
+	out := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		var meta map[string]any
+		_ = json.Unmarshal([]byte(row.Metadata), &meta)
+		action := fmt.Sprintf("%v", meta["action"])
+		module := fmt.Sprintf("%v", meta["module"])
+		actor := fmt.Sprintf("%v", meta["actorEmail"])
+		path := fmt.Sprintf("%v", meta["path"])
+
+		if actionFilter != "" && actionFilter != "ALL" && !strings.EqualFold(action, actionFilter) {
+			continue
+		}
+		if moduleFilter != "" && moduleFilter != "ALL" && !strings.EqualFold(module, moduleFilter) {
+			continue
+		}
+		if q != "" && !strings.Contains(strings.ToLower(row.Message+" "+actor+" "+path+" "+module), q) {
+			continue
+		}
+		out = append(out, map[string]any{
+			"id":         row.ID,
+			"level":      row.Level,
+			"message":    row.Message,
+			"action":     meta["action"],
+			"module":     meta["module"],
+			"method":     meta["method"],
+			"path":       meta["path"],
+			"status":     meta["status"],
+			"latencyMs":  meta["latencyMs"],
+			"actorEmail": meta["actorEmail"],
+			"actorId":    meta["actorId"],
+			"ip":         meta["ip"],
+			"payload":    meta["payload"],
+			"createdAt":  row.CreatedAt,
+		})
+	}
+	httpx.OK(w, out)
 }

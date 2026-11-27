@@ -176,6 +176,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		sub.Post("/platform/admins/{id}/status", h.platformUpdateAdminStatus)
 		sub.Post("/platform/admins/{id}/reset-password", h.platformResetAdminPassword)
 		sub.Post("/platform/maintenance", h.platformToggleMaintenance)
+		sub.Get("/activity-logs", h.adminListActivityLogs)
 		sub.Post("/notifications/sms/bulk", h.adminSendSMS)
 		sub.Post("/notifications/whatsapp/send", h.adminSendWhatsApp)
 		sub.Post("/notifications/whatsapp/bulk", h.adminSendWhatsApp)
@@ -210,6 +211,8 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		sub.Get("/download/{filename}", h.downloadBackup)
 		sub.Delete("/{filename}", h.deleteBackup)
 	}
+
+	r.Post("/internal/admin-audit", h.internalIngestAdminAudit)
 
 	for _, pref := range []string{"/api/v1", "/api", ""} {
 		r.Route(pref+"/notifications", mountNotifs)

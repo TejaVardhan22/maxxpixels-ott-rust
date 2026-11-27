@@ -40,6 +40,7 @@ import SettingsSecurityPage from "./pages/ops/SettingsSecurityPage";
 import SystemSettingsPage from "./pages/ops/SystemSettingsPage";
 import RolesSecurityPage from "./pages/ops/RolesSecurityPage";
 import PlatformAdminPage from "./pages/ops/PlatformAdminPage";
+import AdminAuditLogPage from "./pages/ops/AdminAuditLogPage";
 
 const { Sider, Header, Content } = Layout;
 const { Title } = Typography;
@@ -226,7 +227,7 @@ function App() {
                   <Route path="admin/notifications" element={<NotificationsPage />} />
                   <Route path="admin/system-health" element={<SystemHealthPage />} />
                   <Route path="admin/security" element={<RolesSecurityPage />} />
-                  <Route path="admin/audit" element={<SettingsSecurityPage defaultTab="audit" />} />
+                  <Route path="admin/audit" element={<AdminAuditLogPage />} />
                   <Route path="admin/settings" element={<SystemSettingsPage />} />
                 </Route>
                 <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />

@@ -76,6 +76,7 @@ func main() {
 		PaymentPerMinute: cfg.RateLimitPaymentPerMinute,
 	}))
 	r.Use(maintenanceMiddleware(redisStore))
+	r.Use(adminAuditMiddleware(cfg.PlatformServiceURL, cfg.JWTSecret))
 
 	// Health & Observability aliases (NestJS / Spring / Rust parity)
 	pingFn := func(w http.ResponseWriter, r *http.Request) {
