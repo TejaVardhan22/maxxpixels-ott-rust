@@ -290,7 +290,7 @@ services:
       BUNNY_STREAM_CDN_HOSTNAME: ${BUNNY_STREAM_CDN_HOSTNAME:-}
       GDRIVE_TOKEN_PATH: /app/data/token.json
       GDRIVE_CREDENTIALS_PATH: /app/credentials.json
-      GDRIVE_REDIRECT_URI: http://127.0.0.1:4200/api/gdrive/callback
+      GDRIVE_REDIRECT_URI: ${GDRIVE_REDIRECT_URI:-}
     volumes:
       - ./services/go-api/cmd/media-streamer/credentials.json:/app/credentials.json:ro
       - go_streamer_data:/app/data

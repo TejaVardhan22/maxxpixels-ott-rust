@@ -200,16 +200,31 @@ func registerGDriveOAuthRoutes(mux *http.ServeMux) {
 }
 
 func resolveGDriveRedirectURI(r *http.Request) string {
+	// 1. Optional explicit override (useful for custom reverse proxies)
 	if envURI := strings.TrimSpace(os.Getenv("GDRIVE_REDIRECT_URI")); envURI != "" {
 		return envURI
 	}
-	host := strings.TrimSpace(r.Host)
+	// 2. Dynamic resolution from incoming request (works in local :4200, :8085, and prod https://admin.maxxpixels.com)
+	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+	if host == "" {
+		host = strings.TrimSpace(r.Host)
+	}
+	if idx := strings.Index(host, ","); idx != -1 {
+		host = strings.TrimSpace(host[:idx])
+	}
 	if host == "" || host == "localhost" || host == "127.0.0.1" {
 		host = "127.0.0.1:8085"
 	}
-	scheme := "http"
-	if strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-		scheme = "https"
+	scheme := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))
+	if idx := strings.Index(scheme, ","); idx != -1 {
+		scheme = strings.TrimSpace(scheme[:idx])
+	}
+	if scheme == "" {
+		if r.TLS != nil {
+			scheme = "https"
+		} else {
+			scheme = "http"
+		}
 	}
 	return fmt.Sprintf("%s://%s/api/gdrive/callback", scheme, host)
 }
