@@ -40,7 +40,7 @@ func main() {
 		sqlDB.SetConnMaxIdleTime(5 * time.Minute)
 	}
 
-	if err := games.RunMigrations(db); err != nil {
+	if err := games.RunMigrations(context.Background(), db); err != nil {
 		slog.Error("games schema migration failed", "err", err)
 		os.Exit(1)
 	}

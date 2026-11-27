@@ -1,4 +1,4 @@
-.PHONY: tidy build test run-all run-gateway run-identity run-catalog run-streaming run-commerce run-monetization run-platform run-worker run-games run-media-streamer
+.PHONY: tidy build test migrate migrate-status run-all run-gateway run-identity run-catalog run-streaming run-commerce run-monetization run-platform run-worker run-games run-media-streamer
 
 tidy:
 	go mod tidy
@@ -14,10 +14,17 @@ build:
 	go build -o bin/worker-service ./cmd/worker-service
 	go build -o bin/games-service ./cmd/games-service
 	go build -o bin/media-streamer ./cmd/media-streamer
+	go build -o bin/migrate ./cmd/migrate
 	go build -o bin/all-in-one ./cmd/all-in-one
 
 test:
 	go test -race ./...
+
+migrate:
+	go run ./cmd/migrate -target=all
+
+migrate-status:
+	go run ./cmd/migrate -target=all -status
 
 run-all:
 	go run ./cmd/all-in-one
