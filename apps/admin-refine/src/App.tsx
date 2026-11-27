@@ -18,15 +18,21 @@ import LoginPage from "./pages/login";
 import DashboardPage from "./pages/dashboard";
 import AnalyticsPage from "./pages/analytics";
 import { MoviesPage } from "./pages/movies";
+import MovieFormPage from "./pages/movies/MovieFormPage";
 import { SeriesPage } from "./pages/series";
 import { LiveTVPage } from "./pages/live";
 import { CategoriesPage } from "./pages/catalog/CategoriesPage";
 import { BannersCmsPage } from "./pages/cms/BannersCmsPage";
+import HomeCmsPage from "./pages/cms/HomeCmsPage";
+import IntroVideoPage from "./pages/cms/IntroVideoPage";
+import LegalPagesPage from "./pages/cms/LegalPagesPage";
 import { UsersPage } from "./pages/users";
 import { PlansPage } from "./pages/commerce/PlansPage";
 import { PaymentsPage } from "./pages/commerce/PaymentsPage";
 import { CouponsPage } from "./pages/commerce/CouponsPage";
 import { AdsProducersPage } from "./pages/monetization/AdsProducersPage";
+import ProducerOnboardingPage from "./pages/monetization/ProducerOnboardingPage";
+import ProducerReviewsPage from "./pages/monetization/ProducerReviewsPage";
 import NotificationsPage from "./pages/ops/NotificationsPage";
 import SystemHealthPage from "./pages/ops/SystemHealthPage";
 import SettingsSecurityPage from "./pages/ops/SettingsSecurityPage";
@@ -65,7 +71,7 @@ const MainLayout: React.FC = () => {
   return (
     <Layout style={{ minHeight: "100vh", background: "#0a0b0e" }}>
       <Sider
-        width={240}
+        width={260}
         style={{
           background: "#0e1017",
           borderRight: "1px solid #1e2230",
@@ -85,23 +91,28 @@ const MainLayout: React.FC = () => {
               borderBottom: "1px solid #1e2230",
               cursor: "pointer",
             }}
-            onClick={() => navigate("/dashboard")}
+            onClick={() => navigate("/admin/dashboard")}
           >
             <Avatar
               shape="square"
               style={{
-                width: 32,
-                height: 32,
+                width: 34,
+                height: 34,
                 borderRadius: 8,
-                background: "linear-gradient(135deg, #1a4cd8 0%, #c725a3 100%)",
+                background: "linear-gradient(135deg, #e50914 0%, #c725a3 100%)",
                 fontWeight: 800,
               }}
             >
               M
             </Avatar>
-            <Title level={5} style={{ margin: 0, color: "#ffffff", fontWeight: 800, fontSize: 16 }}>
-              MaxxPixels Admin
-            </Title>
+            <div>
+              <Title level={5} style={{ margin: 0, color: "#ffffff", fontWeight: 800, fontSize: 15, lineHeight: 1.15 }}>
+                MaxxPixels
+              </Title>
+              <span style={{ fontSize: 10, fontWeight: 700, color: "#e50914", letterSpacing: 0.6 }}>
+                CONSOLE ADMIN
+              </span>
+            </div>
           </div>
           <div style={{ flex: 1, minHeight: 0 }}>
             <Sidebar />
@@ -123,14 +134,14 @@ const MainLayout: React.FC = () => {
           <Dropdown
             menu={{
               items: [
-                { label: "Settings", key: "settings", icon: <SettingOutlined /> },
+                { label: "System Settings", key: "settings", icon: <SettingOutlined /> },
                 { type: "divider" },
                 { label: "Sign out", key: "logout", icon: <LogoutOutlined /> },
               ],
               onClick: menuClickHandler,
             }}
           >
-            <Avatar style={{ width: 32, height: 32, backgroundColor: "#1a4cd8", cursor: "pointer" }}>
+            <Avatar style={{ width: 32, height: 32, backgroundColor: "#e50914", cursor: "pointer" }}>
               {(user?.fullName || user?.name || user?.email || "A").charAt(0).toUpperCase()}
             </Avatar>
           </Dropdown>
@@ -161,17 +172,38 @@ function App() {
               <Routes>
                 <Route path="/login" element={<LoginPage />} />
                 <Route element={<MainLayout />}>
-                  <Route index element={<Navigate to="/dashboard" replace />} />
+                  <Route index element={<Navigate to="/admin/dashboard" replace />} />
                   <Route path="dashboard" element={<DashboardPage />} />
                   <Route path="analytics" element={<AnalyticsPage />} />
+                  <Route path="admin" element={<Navigate to="/admin/dashboard" replace />} />
+                  <Route path="admin/dashboard" element={<DashboardPage />} />
                   <Route path="admin/analytics" element={<AnalyticsPage />} />
 
-                  {/* Catalog & CMS */}
+                  {/* Catalog & Master Data */}
                   <Route path="admin/movies" element={<MoviesPage />} />
+                  <Route path="admin/movies/new" element={<MovieFormPage />} />
+                  <Route path="admin/movies/:id/edit" element={<MovieFormPage />} />
+                  <Route path="admin/movies/edit/:id" element={<MovieFormPage />} />
                   <Route path="admin/series" element={<SeriesPage />} />
+                  <Route path="admin/series/new" element={<SeriesPage />} />
+                  <Route path="admin/series/:id/edit" element={<SeriesPage />} />
                   <Route path="admin/live" element={<LiveTVPage />} />
+                  <Route path="admin/basic-details" element={<CategoriesPage />} />
+                  <Route path="admin/master-data" element={<CategoriesPage />} />
                   <Route path="admin/categories" element={<CategoriesPage />} />
-                  <Route path="admin/banners" element={<BannersCmsPage />} />
+
+                  {/* Home CMS, Banners, Intro Video & Legal */}
+                  <Route path="admin/cms" element={<HomeCmsPage />} />
+                  <Route path="admin/banners" element={<BannersCmsPage defaultTab="home" />} />
+                  <Route path="admin/portal-banners" element={<BannersCmsPage defaultTab="portal" />} />
+                  <Route path="admin/intro-video" element={<IntroVideoPage />} />
+                  <Route path="admin/legal-pages" element={<LegalPagesPage />} />
+
+                  {/* Producers */}
+                  <Route path="admin/producers" element={<AdsProducersPage defaultTab="producers" />} />
+                  <Route path="admin/producers/onboard" element={<ProducerOnboardingPage />} />
+                  <Route path="admin/producers/onboarding" element={<ProducerOnboardingPage />} />
+                  <Route path="admin/producer-reviews" element={<ProducerReviewsPage />} />
 
                   {/* Users & Commerce */}
                   <Route path="admin/users" element={<UsersPage />} />
@@ -180,17 +212,19 @@ function App() {
                   <Route path="admin/subscriptions" element={<PlansPage />} />
                   <Route path="admin/payments" element={<PaymentsPage />} />
                   <Route path="admin/coupons" element={<CouponsPage />} />
-                  <Route path="admin/ads" element={<AdsProducersPage />} />
-                  <Route path="admin/producers" element={<AdsProducersPage />} />
+                  <Route path="admin/marketing-agents" element={<AdsProducersPage defaultTab="agents" />} />
+                  <Route path="admin/ads" element={<AdsProducersPage defaultTab="ads" />} />
+                  <Route path="admin/ads/ssai" element={<AdsProducersPage defaultTab="ads" />} />
 
-                  {/* Operations */}
+                  {/* Operations & Security */}
+                  <Route path="admin/drm" element={<SettingsSecurityPage defaultTab="drm" />} />
                   <Route path="admin/notifications" element={<NotificationsPage />} />
                   <Route path="admin/system-health" element={<SystemHealthPage />} />
                   <Route path="admin/security" element={<SettingsSecurityPage defaultTab="roles" />} />
                   <Route path="admin/audit" element={<SettingsSecurityPage defaultTab="audit" />} />
                   <Route path="admin/settings" element={<SettingsSecurityPage defaultTab="settings" />} />
                 </Route>
-                <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
               </Routes>
               <RefineKbar />
               <UnsavedChangesNotifier />

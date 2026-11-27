@@ -1,14 +1,22 @@
-import React from "react";
-import { Menu, Button, Typography, Avatar, Space } from "antd";
+import React, { useEffect, useState } from "react";
+import { Menu, Button, Typography, Avatar, Space, Badge } from "antd";
+import type { MenuProps } from "antd";
 import { useLocation, useNavigate } from "react-router";
 import {
   DashboardOutlined,
   BarChartOutlined,
+  PlusSquareOutlined,
   VideoCameraOutlined,
   PlaySquareOutlined,
   WifiOutlined,
   AppstoreOutlined,
+  DatabaseOutlined,
+  CustomerServiceOutlined,
+  PlayCircleOutlined,
+  AudioOutlined,
   PictureOutlined,
+  LayoutOutlined,
+  FileTextOutlined,
   TeamOutlined,
   CreditCardOutlined,
   BankOutlined,
@@ -18,9 +26,15 @@ import {
   SettingOutlined,
   HeartOutlined,
   ShopOutlined,
+  UserAddOutlined,
+  AuditOutlined,
+  LockOutlined,
+  HistoryOutlined,
   LogoutOutlined,
+  FundProjectionScreenOutlined,
+  SoundOutlined,
 } from "@ant-design/icons";
-import { TOKEN_KEY, USER_KEY } from "../providers/api";
+import { apiGet, extractArray, TOKEN_KEY, USER_KEY } from "../providers/api";
 
 const getUser = () => {
   try {
@@ -30,53 +44,35 @@ const getUser = () => {
   }
 };
 
-const menuGroups = [
-  {
-    type: "group" as const,
-    label: "Overview",
-    children: [
-      { key: "/dashboard", label: "Dashboard", icon: <DashboardOutlined /> },
-      { key: "/analytics", label: "Analytics & BI", icon: <BarChartOutlined /> },
-    ],
-  },
-  {
-    type: "group" as const,
-    label: "Catalog & CMS",
-    children: [
-      { key: "/admin/movies", label: "Movies", icon: <VideoCameraOutlined /> },
-      { key: "/admin/series", label: "Series", icon: <PlaySquareOutlined /> },
-      { key: "/admin/live", label: "Live TV", icon: <WifiOutlined /> },
-      { key: "/admin/categories", label: "Taxonomy", icon: <AppstoreOutlined /> },
-      { key: "/admin/banners", label: "Banners & CMS", icon: <PictureOutlined /> },
-    ],
-  },
-  {
-    type: "group" as const,
-    label: "Users & Commerce",
-    children: [
-      { key: "/admin/users", label: "Users & Devices", icon: <TeamOutlined /> },
-      { key: "/admin/plans", label: "Plans", icon: <CreditCardOutlined /> },
-      { key: "/admin/payments", label: "Payments & TVOD", icon: <BankOutlined /> },
-      { key: "/admin/coupons", label: "Coupons", icon: <TagOutlined /> },
-      { key: "/admin/ads", label: "Ads & Producers", icon: <ShopOutlined /> },
-    ],
-  },
-  {
-    type: "group" as const,
-    label: "Operations",
-    children: [
-      { key: "/admin/notifications", label: "Notifications", icon: <NotificationOutlined /> },
-      { key: "/admin/system-health", label: "Health, Logs & Outbox", icon: <HeartOutlined /> },
-      { key: "/admin/security", label: "Security & Audit", icon: <SafetyCertificateOutlined /> },
-      { key: "/admin/settings", label: "Settings", icon: <SettingOutlined /> },
-    ],
-  },
-];
-
 export const Sidebar: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const user = getUser();
+  const [pendingReviews, setPendingReviews] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    const loadPending = async () => {
+      try {
+        const res = await apiGet("/admin/content/submissions?status=ALL");
+        const list = extractArray(res);
+        if (!active) return;
+        const count = list.filter((item: any) => {
+          const st = String(item?.status || "").toUpperCase();
+          return st === "SUBMITTED" || st === "KYC_SUBMITTED";
+        }).length;
+        setPendingReviews(count);
+      } catch {
+        // ignore background badge error
+      }
+    };
+    loadPending();
+    const timer = setInterval(loadPending, 60000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem(TOKEN_KEY);
@@ -84,21 +80,82 @@ export const Sidebar: React.FC = () => {
     navigate("/login");
   };
 
+  const currentKey = `${location.pathname}${location.search || ""}`;
+
+  const menuItems: MenuProps["items"] = [
+    { key: "/admin/dashboard", label: "Dashboard", icon: <DashboardOutlined /> },
+    { key: "/admin/analytics", label: "Analytics & BI", icon: <BarChartOutlined /> },
+    {
+      key: "content-create",
+      label: "Content",
+      icon: <PlusSquareOutlined />,
+      children: [
+        { key: "/admin/movies/new", label: "Single (Movies, Songs...)", icon: <VideoCameraOutlined /> },
+        { key: "/admin/series/new", label: "Series & Episodes", icon: <PlaySquareOutlined /> },
+      ],
+    },
+    { key: "/admin/basic-details", label: "Basic Details", icon: <DatabaseOutlined /> },
+    { key: "/admin/movies?type=ALL", label: "All Catalog", icon: <AppstoreOutlined /> },
+    { key: "/admin/movies?type=MOVIE", label: "Movies", icon: <VideoCameraOutlined /> },
+    { key: "/admin/movies?type=ALBUM", label: "Music & Songs", icon: <CustomerServiceOutlined /> },
+    { key: "/admin/movies?type=MICRODRAMA", label: "Microdramas", icon: <FundProjectionScreenOutlined /> },
+    { key: "/admin/movies?type=SHORT_FILM", label: "Short Films", icon: <PlayCircleOutlined /> },
+    { key: "/admin/movies?type=PODCAST", label: "Podcasts", icon: <AudioOutlined /> },
+    { key: "/admin/series", label: "Series", icon: <PlaySquareOutlined /> },
+    { key: "/admin/live", label: "Live TV & Sports", icon: <WifiOutlined /> },
+    { type: "divider" },
+    { key: "/admin/producers", label: "Producers Directory", icon: <ShopOutlined /> },
+    { key: "/admin/producers/onboard", label: "Producer Onboarding", icon: <UserAddOutlined /> },
+    {
+      key: "/admin/producer-reviews",
+      label: (
+        <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>Producer Reviews</span>
+          {pendingReviews > 0 && <Badge count={pendingReviews} size="small" />}
+        </span>
+      ),
+      icon: <AuditOutlined />,
+    },
+    { type: "divider" },
+    { key: "/admin/cms", label: "Home CMS", icon: <LayoutOutlined /> },
+    { key: "/admin/banners", label: "Hero Banners", icon: <PictureOutlined /> },
+    { key: "/admin/intro-video", label: "Intro Video", icon: <PlayCircleOutlined /> },
+    { key: "/admin/portal-banners", label: "Portal Banners", icon: <PictureOutlined /> },
+    { key: "/admin/legal-pages", label: "Legal Pages", icon: <FileTextOutlined /> },
+    { type: "divider" },
+    { key: "/admin/users", label: "Users", icon: <TeamOutlined /> },
+    { key: "/admin/plans", label: "Subscription Plans", icon: <CreditCardOutlined /> },
+    { key: "/admin/payments", label: "Payment Transactions", icon: <BankOutlined /> },
+    { key: "/admin/coupons", label: "Coupons & Offers", icon: <TagOutlined /> },
+    { key: "/admin/marketing-agents", label: "Marketing Agents", icon: <SoundOutlined /> },
+    { key: "/admin/ads", label: "Ad Monetization & IMA", icon: <ShopOutlined /> },
+    { key: "/admin/ads/ssai", label: "SSAI Video Campaigns", icon: <FundProjectionScreenOutlined /> },
+    { key: "/admin/drm", label: "Multi-DRM Security", icon: <LockOutlined /> },
+    { key: "/admin/notifications", label: "Notifications", icon: <NotificationOutlined /> },
+    { type: "divider" },
+    { key: "/admin/audit", label: "Security Audit Logs", icon: <HistoryOutlined /> },
+    { key: "/admin/system-health", label: "System Health", icon: <HeartOutlined /> },
+    { key: "/admin/security", label: "Roles & Security", icon: <SafetyCertificateOutlined /> },
+    { key: "/admin/settings", label: "System Settings", icon: <SettingOutlined /> },
+  ];
+
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#0e1017", borderRight: "1px solid #1e2230" }}>
-      <div style={{ flex: 1, overflowY: "auto", paddingTop: 8 }}>
+      <div style={{ flex: 1, overflowY: "auto", paddingTop: 6 }}>
         <Menu
           mode="inline"
           theme="dark"
-          selectedKeys={[location.pathname]}
-          onClick={({ key }) => navigate(key)}
-          items={menuGroups}
+          selectedKeys={[currentKey, location.pathname]}
+          onClick={({ key }) => {
+            if (key.startsWith("/")) navigate(key);
+          }}
+          items={menuItems}
           style={{ background: "transparent", borderInlineEnd: 0 }}
         />
       </div>
-      <div style={{ padding: 16, borderTop: "1px solid #1e2230" }}>
-        <Space align="center" style={{ width: "100%", marginBottom: 10 }}>
-          <Avatar size="small" style={{ backgroundColor: "#1a4cd8" }}>
+      <div style={{ padding: 14, borderTop: "1px solid #1e2230" }}>
+        <Space align="center" style={{ width: "100%", marginBottom: 8 }}>
+          <Avatar size="small" style={{ backgroundColor: "#e50914" }}>
             {(user?.fullName || user?.name || user?.email || "A").charAt(0).toUpperCase()}
           </Avatar>
           <div style={{ overflow: "hidden" }}>

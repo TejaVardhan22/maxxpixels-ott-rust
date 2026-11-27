@@ -3,7 +3,7 @@ import { Card, Tabs, Table, Button, Space, Tag, message, Typography } from "antd
 import { ReloadOutlined, CheckOutlined, CloseOutlined } from "@ant-design/icons";
 import { apiGet, apiPost, extractArray } from "../../providers/api";
 
-export const AdsProducersPage: React.FC = () => {
+export const AdsProducersPage: React.FC<{ defaultTab?: "ads" | "producers" | "agents" }> = ({ defaultTab = "ads" }) => {
   const [ads, setAds] = useState<any[]>([]);
   const [producers, setProducers] = useState<any[]>([]);
   const [agents, setAgents] = useState<any[]>([]);
@@ -33,6 +33,8 @@ export const AdsProducersPage: React.FC = () => {
       extra={<Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>}
     >
       <Tabs
+        defaultActiveKey={defaultTab}
+        key={defaultTab}
         items={[
           {
             key: "ads",

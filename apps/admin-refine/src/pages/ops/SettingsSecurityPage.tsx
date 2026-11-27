@@ -157,6 +157,7 @@ export const SettingsSecurityPage: React.FC<{ defaultTab?: string }> = ({ defaul
       </div>
 
       <Tabs
+        key={defaultTab}
         defaultActiveKey={defaultTab}
         items={[
           {

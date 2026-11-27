@@ -86,13 +86,14 @@ const TaxonomyTab: React.FC<{ endpoint: string; label: string; idField?: string 
 };
 
 export const CategoriesPage: React.FC = () => (
-  <Card title={<Typography.Title level={4} style={{ margin: 0 }}>Master Taxonomy</Typography.Title>}>
+  <Card title={<Typography.Title level={4} style={{ margin: 0 }}>Basic Details &amp; Master Taxonomy</Typography.Title>}>
     <Tabs
       items={[
         { key: "categories", label: "Categories", children: <TaxonomyTab endpoint="categories" label="Category" /> },
         { key: "genres", label: "Genres", children: <TaxonomyTab endpoint="genres" label="Genre" /> },
         { key: "languages", label: "Languages", children: <TaxonomyTab endpoint="languages" label="Language" idField="code" /> },
         { key: "content-types", label: "Content Types", children: <TaxonomyTab endpoint="content-types" label="Content Type" /> },
+        { key: "cast", label: "Cast & Crew", children: <TaxonomyTab endpoint="cast" label="Cast Member" /> },
       ]}
     />
   </Card>

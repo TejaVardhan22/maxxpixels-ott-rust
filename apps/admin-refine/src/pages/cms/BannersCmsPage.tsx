@@ -4,7 +4,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import { apiGet, apiPost, apiPut, apiDelete, extractArray } from "../../providers/api";
 import { MediaUpload } from "../../components/MediaUpload";
 
-export const BannersCmsPage: React.FC = () => {
+export const BannersCmsPage: React.FC<{ defaultTab?: "home" | "portal" }> = ({ defaultTab = "home" }) => {
   const [banners, setBanners] = useState<any[]>([]);
   const [portalBanners, setPortalBanners] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -81,6 +81,8 @@ export const BannersCmsPage: React.FC = () => {
   return (
     <Card title={<Typography.Title level={4} style={{ margin: 0 }}>Banners & CMS</Typography.Title>}>
       <Tabs
+        defaultActiveKey={defaultTab}
+        key={defaultTab}
         items={[
           { key: "home", label: "Home Banners", children: renderTable(banners, "banners") },
           { key: "portal", label: "Portal Banners", children: renderTable(portalBanners, "portal-banners") },
