@@ -341,10 +341,30 @@ func (h *Handler) maintenanceStatus(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.FromContext(r.Context())
-	var updates map[string]string
-	if err := httpx.DecodeJSON(r, &updates); err != nil {
+	var raw map[string]any
+	if err := httpx.DecodeJSON(r, &raw); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "Expected JSON map of key/value settings")
 		return
+	}
+	if nested, ok := raw["settings"].(map[string]any); ok && len(raw) == 1 {
+		raw = nested
+	}
+	updates := make(map[string]string, len(raw))
+	for k, v := range raw {
+		if v == nil {
+			updates[k] = ""
+			continue
+		}
+		switch val := v.(type) {
+		case string:
+			updates[k] = val
+		case bool:
+			updates[k] = strconv.FormatBool(val)
+		case float64:
+			updates[k] = strconv.FormatFloat(val, 'f', -1, 64)
+		default:
+			updates[k] = ""
+		}
 	}
 	if err := h.svc.AdminUpdateSettings(r.Context(), updates, claims.Email); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, err.Error())

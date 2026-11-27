@@ -100,12 +100,17 @@ export const SystemSettingsPage: React.FC = () => {
     setLoading(true);
     try {
       const res = await apiGet<Record<string, any>>("/admin/settings");
-      const data = res && typeof res === "object" && !Array.isArray(res) ? res : {};
+      const raw =
+        res && typeof res === "object" && !Array.isArray(res)
+          ? res.settings && typeof res.settings === "object" && !Array.isArray(res.settings)
+            ? res.settings
+            : res
+          : {};
       form.setFieldsValue({
         admobEnabled: "false",
         admobTestMode: "false",
         maintenanceMode: false,
-        ...coerceSettings(data),
+        ...coerceSettings(raw),
       });
       setDirty(false);
     } catch (e: any) {
@@ -151,7 +156,12 @@ export const SystemSettingsPage: React.FC = () => {
     try {
       const values = await form.validateFields();
       setSaving(true);
-      const res = await apiPut<any>("/admin/settings", values);
+      const payload: Record<string, string> = {};
+      for (const [k, v] of Object.entries(values || {})) {
+        if (v === undefined) continue;
+        payload[k] = v === null ? "" : String(v);
+      }
+      const res = await apiPut<any>("/admin/settings", payload);
       const count = res?.updated;
       message.success(
         typeof count === "number" && count === 0
