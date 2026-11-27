@@ -314,9 +314,15 @@ func (s *Service) VerifyPayment(ctx context.Context, userID int64, orderID, paym
 
 	now := time.Now().UTC()
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&models.PaymentOrder{}).Where("id = ?", order.ID).
-			Updates(map[string]any{"status": "PAID", "updated_at": now}).Error; err != nil {
-			return err
+		// Atomic compare-and-swap guard: only the first concurrent verify/webhook wins settlement
+		res := tx.Model(&models.PaymentOrder{}).
+			Where("id = ? AND UPPER(COALESCE(status, '')) <> ?", order.ID, "PAID").
+			Updates(map[string]any{"status": "PAID", "updated_at": now})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return nil
 		}
 		amt := 0.0
 		if order.FinalAmount != nil {

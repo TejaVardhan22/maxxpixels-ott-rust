@@ -67,7 +67,7 @@ func (s *Service) HandleRazorpayWebhook(ctx context.Context, rawBody []byte, sig
 	case "payment.failed":
 		if orderID != "" {
 			_ = s.db.WithContext(ctx).Model(&models.PaymentOrder{}).
-				Where("provider_order_id = ? OR order_id = ?", orderID, orderID).
+				Where("(provider_order_id = ? OR order_id = ?) AND UPPER(COALESCE(status, '')) <> ?", orderID, orderID, "PAID").
 				Update("status", "FAILED").Error
 		}
 	case "refund.processed", "refund.created":
@@ -103,9 +103,9 @@ func (s *Service) AdminListTransactions(ctx context.Context, page, size int, sta
 	if st := strings.TrimSpace(status); st != "" && !strings.EqualFold(st, "ALL") {
 		q = q.Where("UPPER(status) = ?", strings.ToUpper(st))
 	}
-	if sr := strings.TrimSpace(search); sr != "" {
+	if sr := strings.ToLower(strings.TrimSpace(search)); sr != "" {
 		like := "%" + sr + "%"
-		q = q.Where("transaction_id ILIKE ? OR provider_payment_id ILIKE ? OR provider_order_id ILIKE ?", like, like, like)
+		q = q.Where("LOWER(transaction_id) LIKE ? OR LOWER(provider_payment_id) LIKE ? OR LOWER(provider_order_id) LIKE ?", like, like, like)
 	}
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
