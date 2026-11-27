@@ -28,11 +28,14 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 			pr.Get("/my", h.mySubscription)
 			pr.Get("/active", h.mySubscription)
 		})
+		sub.Get("/{id}", h.getPlan)
 	}
 
 	mountPayments := func(sub chi.Router) {
 		sub.Post("/webhook/razorpay", h.razorpayWebhook)
 		sub.Post("/webhooks/razorpay", h.razorpayWebhook)
+		sub.Post("/webhook/stripe", h.stripeWebhook)
+		sub.Post("/webhooks/stripe", h.stripeWebhook)
 		sub.Group(func(pr chi.Router) {
 			pr.Use(h.tokens.RequireAuth)
 			pr.Post("/create-order", h.createOrder)
@@ -46,6 +49,43 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 			pr.Get("/my-subscription", h.mySubscription)
 			pr.Get("/subscription", h.mySubscription)
 		})
+	}
+
+	mountAdminPayments := func(sub chi.Router) {
+		sub.Use(h.tokens.RequireAuth)
+		sub.Use(auth.RequireAdmin)
+		sub.Get("/", h.adminListPayments)
+		sub.Get("/analytics", h.adminPaymentAnalytics)
+		sub.Get("/summary", h.adminPaymentAnalytics)
+		sub.Get("/stats", h.adminPaymentAnalytics)
+		sub.Get("/tvod", h.adminListTvod)
+		sub.Post("/{id}/refund", h.adminRefundPayment)
+	}
+
+	mountAdminPlans := func(sub chi.Router) {
+		sub.Use(h.tokens.RequireAuth)
+		sub.Use(auth.RequireAdmin)
+		sub.Get("/", h.adminListPlans)
+		sub.Post("/", h.adminCreatePlan)
+		sub.Get("/coupons", h.adminListCoupons)
+		sub.Post("/coupons", h.adminCreateCoupon)
+		sub.Put("/coupons/{id}", h.adminUpdateCoupon)
+		sub.Delete("/coupons/{id}", h.adminDeleteCoupon)
+		sub.Get("/{id}", h.getPlan)
+		sub.Put("/{id}", h.adminUpdatePlan)
+		sub.Delete("/{id}", h.adminDeletePlan)
+		sub.Patch("/{id}/toggle-status", h.adminTogglePlan)
+	}
+
+	mountAdminCoupons := func(sub chi.Router) {
+		sub.Use(h.tokens.RequireAuth)
+		sub.Use(auth.RequireAdmin)
+		sub.Get("/", h.adminListCoupons)
+		sub.Post("/", h.adminCreateCoupon)
+		sub.Get("/{id}", h.adminGetCoupon)
+		sub.Put("/{id}", h.adminUpdateCoupon)
+		sub.Delete("/{id}", h.adminDeleteCoupon)
+		sub.Patch("/{id}/toggle-status", h.adminToggleCoupon)
 	}
 
 	mountTvod := func(sub chi.Router) {
@@ -65,6 +105,9 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		r.Post(pref+"/coupons/validate", h.validateCoupon)
 		r.Route(pref+"/payments", mountPayments)
 		r.Route(pref+"/tvod", mountTvod)
+		r.Route(pref+"/admin/payments", mountAdminPayments)
+		r.Route(pref+"/admin/plans", mountAdminPlans)
+		r.Route(pref+"/admin/coupons", mountAdminCoupons)
 	}
 }
 
@@ -173,10 +216,6 @@ func (h *Handler) verifyPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.OK(w, res, "Payment verified")
-}
-
-func (h *Handler) razorpayWebhook(w http.ResponseWriter, r *http.Request) {
-	httpx.OK(w, map[string]any{"received": true})
 }
 
 func (h *Handler) myTransactions(w http.ResponseWriter, r *http.Request) {
