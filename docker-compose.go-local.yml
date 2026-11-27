@@ -234,12 +234,11 @@ services:
           - api-gateway
 
   # ============================================================================
-  # Google Drive -> Bunny Stream Pipeline (Go zero-disk streamer + Google OAuth)
+  # Google Drive -> Bunny Stream Microservice (inside services/go-api)
   # ============================================================================
   media-streamer:
-    build:
-      context: ./services/media-streamer
-      dockerfile: Dockerfile
+    image: maxxpixels-go-services:local
+    entrypoint: ["/app/media-streamer"]
     container_name: maxx-go-media-streamer
     restart: unless-stopped
     ports:
@@ -250,8 +249,9 @@ services:
       BUNNY_STREAM_API_KEY: ${BUNNY_STREAM_API_KEY:-}
       BUNNY_STREAM_CDN_HOSTNAME: ${BUNNY_STREAM_CDN_HOSTNAME:-}
       GDRIVE_TOKEN_PATH: /app/data/token.json
+      GDRIVE_CREDENTIALS_PATH: /app/credentials.json
     volumes:
-      - ./services/media-streamer/credentials.json:/app/credentials.json:ro
+      - ./services/go-api/cmd/media-streamer/credentials.json:/app/credentials.json:ro
       - go_streamer_data:/app/data
     networks:
       - maxx-go-net

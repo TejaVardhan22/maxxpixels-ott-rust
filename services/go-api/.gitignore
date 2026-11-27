@@ -3,3 +3,6 @@ bin/
 *.exe
 *.test
 *.out
+
+**/credentials.json
+**/token.json
