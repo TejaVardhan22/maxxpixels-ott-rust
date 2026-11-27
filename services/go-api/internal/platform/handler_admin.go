@@ -225,6 +225,12 @@ func (h *Handler) adminDeleteRole(w http.ResponseWriter, r *http.Request) {
 	httpx.OK(w, map[string]any{"deleted": true, "id": id})
 }
 
+func (h *Handler) adminListContentTypes(w http.ResponseWriter, r *http.Request) {
+	var rows []models.ContentType
+	_ = h.svc.db.WithContext(r.Context()).Order("id ASC").Find(&rows).Error
+	httpx.OK(w, rows)
+}
+
 func (h *Handler) adminUpsertContentType(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	var body map[string]any
@@ -241,6 +247,12 @@ func (h *Handler) adminDeleteContentType(w http.ResponseWriter, r *http.Request)
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	_ = h.svc.db.WithContext(r.Context()).Model(&models.ContentType{}).Where("id = ?", id).Update("is_active", false).Error
 	httpx.OK(w, map[string]any{"deleted": true, "id": id})
+}
+
+func (h *Handler) adminListCategories(w http.ResponseWriter, r *http.Request) {
+	var rows []models.Category
+	_ = h.svc.db.WithContext(r.Context()).Order("display_order ASC, id ASC").Find(&rows).Error
+	httpx.OK(w, rows)
 }
 
 func (h *Handler) adminUpsertCategory(w http.ResponseWriter, r *http.Request) {
@@ -261,6 +273,12 @@ func (h *Handler) adminDeleteCategory(w http.ResponseWriter, r *http.Request) {
 	httpx.OK(w, map[string]any{"deleted": true, "id": id})
 }
 
+func (h *Handler) adminListGenres(w http.ResponseWriter, r *http.Request) {
+	var rows []models.Genre
+	_ = h.svc.db.WithContext(r.Context()).Order("name ASC, id ASC").Find(&rows).Error
+	httpx.OK(w, rows)
+}
+
 func (h *Handler) adminUpsertGenre(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	var body map[string]any
@@ -277,6 +295,12 @@ func (h *Handler) adminDeleteGenre(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	_ = h.svc.db.WithContext(r.Context()).Delete(&models.Genre{}, id).Error
 	httpx.OK(w, map[string]any{"deleted": true, "id": id})
+}
+
+func (h *Handler) adminListLanguages(w http.ResponseWriter, r *http.Request) {
+	var rows []models.Language
+	_ = h.svc.db.WithContext(r.Context()).Order("name ASC").Find(&rows).Error
+	httpx.OK(w, rows)
 }
 
 func (h *Handler) adminUpsertLanguage(w http.ResponseWriter, r *http.Request) {
