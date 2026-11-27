@@ -70,5 +70,9 @@ export function extractArray<T = any>(data: any): T[] {
   if (Array.isArray(data?.content)) return data.content;
   if (Array.isArray(data?.items)) return data.items;
   if (Array.isArray(data?.rows)) return data.rows;
+  if (Array.isArray(data?.logs)) return data.logs;
+  if (Array.isArray(data?.events)) return data.events;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.result)) return data.result;
   return [];
 }

@@ -74,6 +74,8 @@ export const PlatformAdminPage: React.FC = () => {
 
   // Filters & action spinners
   const [logLevel, setLogLevel] = useState("");
+  const [logService, setLogService] = useState("");
+  const [logSearch, setLogSearch] = useState("");
   const [outboxStatus, setOutboxStatus] = useState("");
   const [retryingOutbox, setRetryingOutbox] = useState(false);
   const [exportingBackup, setExportingBackup] = useState(false);
@@ -92,7 +94,11 @@ export const PlatformAdminPage: React.FC = () => {
   const loadAll = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const logQs = logLevel ? `?level=${logLevel}&limit=100` : "?limit=100";
+      const logParams = new URLSearchParams({ limit: "150" });
+      if (logLevel) logParams.set("level", logLevel);
+      if (logService) logParams.set("service", logService);
+      if (logSearch.trim()) logParams.set("q", logSearch.trim());
+      const logQs = `?${logParams.toString()}`;
       const outboxQs = outboxStatus ? `?status=${outboxStatus}&limit=100` : "?limit=100";
       const [ovRes, admRes, lRes, oRes, liveRes, devRes, aRes] = await Promise.all([
         apiGet("/admin/platform/overview").catch(() => ({})),
@@ -120,13 +126,13 @@ export const PlatformAdminPage: React.FC = () => {
 
   useEffect(() => {
     loadAll();
-  }, [logLevel, outboxStatus]);
+  }, [logLevel, logService, outboxStatus]);
 
   useEffect(() => {
     if (!autoRefresh) return;
     const timer = setInterval(() => loadAll(true), 10000);
     return () => clearInterval(timer);
-  }, [autoRefresh, logLevel, outboxStatus]);
+  }, [autoRefresh, logLevel, logService, logSearch, outboxStatus]);
 
   const summary = overview?.summary || {};
   const services: any[] = Array.isArray(overview?.services) ? overview.services : [];
@@ -505,41 +511,97 @@ export const PlatformAdminPage: React.FC = () => {
           },
           {
             key: "logs",
-            label: `Live Service Logs (${summary.errorsLast1h ?? 0} errors/1h)`,
+            label: `Live Service Logs (${logs.length} • ${summary.errorsLast1h ?? 0} err/1h)`,
             children: (
               <Card
                 extra={
-                  <Select
-                    style={{ width: 150 }}
-                    value={logLevel}
-                    onChange={setLogLevel}
-                    options={[
-                      { value: "", label: "All Levels" },
-                      { value: "ERROR", label: "ERROR Only" },
-                      { value: "WARN", label: "WARN" },
-                      { value: "INFO", label: "INFO" },
-                    ]}
-                  />
+                  <Space wrap>
+                    <Input.Search
+                      allowClear
+                      placeholder="Search path or message..."
+                      style={{ width: 220 }}
+                      value={logSearch}
+                      onChange={(e) => setLogSearch(e.target.value)}
+                      onSearch={() => loadAll()}
+                    />
+                    <Select
+                      style={{ width: 170 }}
+                      value={logService}
+                      onChange={setLogService}
+                      options={[
+                        { value: "", label: "All Services" },
+                        { value: "identity-service", label: "identity-service" },
+                        { value: "catalog-service", label: "catalog-service" },
+                        { value: "streaming-service", label: "streaming-service" },
+                        { value: "commerce-service", label: "commerce-service" },
+                        { value: "monetization-service", label: "monetization-service" },
+                        { value: "platform-service", label: "platform-service" },
+                        { value: "admin-audit", label: "admin-audit" },
+                        { value: "platform-admin", label: "platform-admin" },
+                        { value: "worker-service", label: "worker-service" },
+                      ]}
+                    />
+                    <Select
+                      style={{ width: 135 }}
+                      value={logLevel}
+                      onChange={setLogLevel}
+                      options={[
+                        { value: "", label: "All Levels" },
+                        { value: "ERROR", label: "ERROR Only" },
+                        { value: "WARN", label: "WARN" },
+                        { value: "INFO", label: "INFO" },
+                      ]}
+                    />
+                  </Space>
                 }
               >
                 <Table
                   rowKey={(r, i) => String(r.id || i)}
                   dataSource={logs}
                   size="small"
+                  pagination={{ pageSize: 25, showSizeChanger: true }}
                   columns={[
-                    { title: "Service", dataIndex: "service", width: 150, render: (v) => <Tag color="geekblue">{v}</Tag> },
+                    { title: "Service", dataIndex: "service", width: 155, render: (v) => <Tag color="geekblue">{v}</Tag> },
                     {
                       title: "Level",
                       dataIndex: "level",
-                      width: 85,
+                      width: 80,
                       render: (v) => {
                         const lv = String(v || "INFO").toUpperCase();
                         return <Tag color={lv === "ERROR" ? "red" : lv === "WARN" ? "orange" : "blue"}>{lv}</Tag>;
                       },
                     },
+                    {
+                      title: "HTTP Request",
+                      width: 280,
+                      render: (_: any, r: any) =>
+                        r.path ? (
+                          <Space size={4} wrap>
+                            {r.method && <Tag>{r.method}</Tag>}
+                            {r.status ? (
+                              <Tag color={r.status >= 500 ? "red" : r.status >= 400 ? "orange" : "green"}>{r.status}</Tag>
+                            ) : null}
+                            <Text code style={{ fontSize: 12 }}>{r.path}</Text>
+                            {r.durationMs !== undefined && r.durationMs !== null && (
+                              <Text type="secondary" style={{ fontSize: 11 }}>{r.durationMs}ms</Text>
+                            )}
+                          </Space>
+                        ) : (
+                          <Text type="secondary">-</Text>
+                        ),
+                    },
                     { title: "Message", dataIndex: "message", ellipsis: true },
-                    { title: "Trace", dataIndex: "traceId", width: 140, ellipsis: true },
-                    { title: "Time", dataIndex: "createdAt", width: 170, render: (v) => (v ? new Date(v).toLocaleString() : "-") },
+                    {
+                      title: "Request ID",
+                      width: 130,
+                      ellipsis: true,
+                      render: (_: any, r: any) => (
+                        <Text type="secondary" style={{ fontSize: 11 }}>
+                          {r.requestId || r.traceId || "-"}
+                        </Text>
+                      ),
+                    },
+                    { title: "Time", dataIndex: "createdAt", width: 165, render: (v) => (v ? new Date(v).toLocaleString() : "-") },
                   ]}
                 />
               </Card>
