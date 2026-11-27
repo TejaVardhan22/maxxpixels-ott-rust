@@ -36,6 +36,7 @@ import ProducerReviewsPage from "./pages/monetization/ProducerReviewsPage";
 import NotificationsPage from "./pages/ops/NotificationsPage";
 import SystemHealthPage from "./pages/ops/SystemHealthPage";
 import SettingsSecurityPage from "./pages/ops/SettingsSecurityPage";
+import SystemSettingsPage from "./pages/ops/SystemSettingsPage";
 
 const { Sider, Header, Content } = Layout;
 const { Title } = Typography;
@@ -222,7 +223,7 @@ function App() {
                   <Route path="admin/system-health" element={<SystemHealthPage />} />
                   <Route path="admin/security" element={<SettingsSecurityPage defaultTab="roles" />} />
                   <Route path="admin/audit" element={<SettingsSecurityPage defaultTab="audit" />} />
-                  <Route path="admin/settings" element={<SettingsSecurityPage defaultTab="settings" />} />
+                  <Route path="admin/settings" element={<SystemSettingsPage />} />
                 </Route>
                 <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
               </Routes>
