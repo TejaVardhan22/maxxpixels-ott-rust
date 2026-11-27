@@ -309,7 +309,7 @@ func (s *Service) ListPlatformAdmins(ctx context.Context) ([]map[string]any, err
 	out := make([]map[string]any, 0, len(users))
 	for _, u := range users {
 		var devCount int64
-		_ = s.db.WithContext(ctx).Table("user_devices").
+		_ = s.db.WithContext(ctx).Table("devices").
 			Where("user_id = ? AND is_active = ?", u.ID, true).
 			Count(&devCount).Error
 
@@ -356,17 +356,11 @@ func normalizePlatformRole(r string) string {
 
 func (s *Service) writePlatformAuditTx(tx *gorm.DB, actorEmail, action, entityID, details string) {
 	now := time.Now().UTC()
-	_ = tx.Table("system_setting_history").Create(map[string]any{
-		"setting_key": action,
-		"old_value":   entityID,
-		"new_value":   details,
-		"changed_by":  actorEmail,
-		"created_at":  now,
-	}).Error
 	_ = tx.Table("service_logs").Create(map[string]any{
 		"service":    "platform-admin",
 		"level":      "INFO",
 		"message":    fmt.Sprintf("[%s] %s (by %s)", action, details, actorEmail),
+		"trace_id":   entityID,
 		"created_at": now,
 	}).Error
 }
@@ -488,7 +482,7 @@ func (s *Service) UpdatePlatformAdminStatus(ctx context.Context, actorID int64, 
 			return errors.New("admin user not found")
 		}
 		if clean != "ACTIVE" {
-			_ = tx.Table("user_devices").Where("user_id = ?", targetID).Update("is_active", false).Error
+			_ = tx.Table("devices").Where("user_id = ?", targetID).Update("is_active", false).Error
 		}
 		s.writePlatformAuditTx(tx, actorEmail, "ADMIN_STATUS_CHANGED", strconv.FormatInt(targetID, 10),
 			fmt.Sprintf("Changed admin #%d status to %s", targetID, clean))
@@ -517,7 +511,7 @@ func (s *Service) ResetPlatformAdminPassword(ctx context.Context, actorEmail str
 		if res.RowsAffected == 0 {
 			return errors.New("admin user not found")
 		}
-		_ = tx.Table("user_devices").Where("user_id = ?", targetID).Update("is_active", false).Error
+		_ = tx.Table("devices").Where("user_id = ?", targetID).Update("is_active", false).Error
 		s.writePlatformAuditTx(tx, actorEmail, "ADMIN_PASSWORD_RESET", strconv.FormatInt(targetID, 10),
 			fmt.Sprintf("Reset password and revoked sessions for admin #%d", targetID))
 		return nil
