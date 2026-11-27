@@ -22,6 +22,7 @@ services:
       - streaming-service
       - commerce-service
       - monetization-service
+      - platform-service
     restart: unless-stopped
 
   identity-service:
@@ -99,4 +100,31 @@ services:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - JWT_SECRET=${JWT_SECRET}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-https://api.maxxpixels.com}
+    restart: unless-stopped
+
+  platform-service:
+    build:
+      context: .
+      args:
+        SERVICE: platform-service
+    ports:
+      - "8086:8086"
+    environment:
+      - PORT=8086
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - JWT_SECRET=${JWT_SECRET}
+    restart: unless-stopped
+
+  worker-service:
+    build:
+      context: .
+      args:
+        SERVICE: worker-service
+    ports:
+      - "8087:8087"
+    environment:
+      - PORT=8087
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
     restart: unless-stopped
