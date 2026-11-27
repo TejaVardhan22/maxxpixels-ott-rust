@@ -486,14 +486,39 @@ import { formatLanguage, formatMaturityRating, generatePosterPlaceholder } from 
                     <mat-progress-bar mode="determinate" [value]="gdriveProgress" class="bar"></mat-progress-bar>
                   </div>
 
-                  <!-- 1c. Google Drive OAuth Login (for private files shared to your Gmail ID) -->
+                  <!-- 1c. Google Drive OAuth Login & Shared/My Drive Video Picker -->
                   <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:6px; margin-bottom:10px;">
                     <button type="button" mat-stroked-button color="accent" (click)="connectGoogleDrive()">
                       <mat-icon>vpn_key</mat-icon>
                       {{ gdriveConnected ? 'Reconnect Google Drive (Connected)' : 'Login Google Drive (Private Files)' }}
                     </button>
-                    <span style="font-size:12px; opacity:0.75;" *ngIf="gdriveConnected">Private files shared with your Gmail ID can be streamed directly.</span>
-                    <span style="font-size:12px; opacity:0.75;" *ngIf="!gdriveConnected">Required only if the Drive file is shared privately to your Gmail ID.</span>
+                    <button type="button" mat-stroked-button color="primary" (click)="toggleGDriveVideoBrowser('shared')" [disabled]="gdriveStreaming">
+                      <mat-icon>folder_shared</mat-icon>
+                      Browse Shared with Me
+                    </button>
+                    <button type="button" mat-stroked-button (click)="toggleGDriveVideoBrowser('my')" [disabled]="gdriveStreaming">
+                      <mat-icon>add_to_drive</mat-icon>
+                      Browse My Drive
+                    </button>
+                  </div>
+
+                  <div *ngIf="showGdriveVideoBrowser" style="margin-bottom:12px; padding:10px; border-radius:8px; background:#141422; border:1px solid #2a2a42;">
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                      <strong style="font-size:12px; color:#00d2ff;">Google Drive Videos ({{ gdriveBrowseScope === 'shared' ? 'Shared with me' : 'My Drive' }})</strong>
+                      <input type="text" #gdriveSearchInput [value]="gdriveBrowseSearch" (input)="gdriveBrowseSearch = gdriveSearchInput.value" (keyup.enter)="loadGDriveVideos(gdriveBrowseScope)" placeholder="Filter by filename..." style="flex:1; height:30px; background:#10101a; border:1px solid #2a2a42; border-radius:6px; color:#fff; padding:0 8px; font-size:12px;">
+                      <button type="button" mat-icon-button (click)="loadGDriveVideos(gdriveBrowseScope)"><mat-icon>refresh</mat-icon></button>
+                      <button type="button" mat-icon-button (click)="showGdriveVideoBrowser = false"><mat-icon>close</mat-icon></button>
+                    </div>
+                    <div *ngIf="gdriveBrowseLoading" style="font-size:12px; opacity:0.75; padding:8px;">Loading videos from Google Drive...</div>
+                    <div *ngIf="!gdriveBrowseLoading && gdriveVideoFiles.length === 0" style="font-size:12px; opacity:0.75; padding:8px;">No video files found. Make sure you clicked "Login Google Drive" first.</div>
+                    <div *ngIf="!gdriveBrowseLoading && gdriveVideoFiles.length > 0" style="max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;">
+                      <div *ngFor="let vf of gdriveVideoFiles" style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:6px 10px; background:#1a1a2b; border-radius:6px; border:1px solid #2a2a42;">
+                        <span style="font-size:12px; color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ vf.name }}</span>
+                        <button type="button" mat-flat-button color="primary" style="height:28px; font-size:11px; flex-shrink:0;" (click)="selectGDriveVideo(vf, gdriveLinkInput)">
+                          <mat-icon style="font-size:15px; width:15px; height:15px;">cloud_sync</mat-icon> Stream
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   <div class="bunny-link-input-group full-width" *ngIf="showGdriveCodeBox" style="margin-bottom:12px;">
@@ -3340,6 +3365,45 @@ export class MovieFormPage implements OnInit {
         this.notificationService.error(err?.error?.message || 'Video upload failed.');
       }
     });
+  }
+
+  showGdriveVideoBrowser = false;
+  gdriveBrowseScope: 'shared' | 'my' = 'shared';
+  gdriveBrowseSearch = '';
+  gdriveBrowseLoading = false;
+  gdriveVideoFiles: any[] = [];
+
+  toggleGDriveVideoBrowser(scope: 'shared' | 'my'): void {
+    this.showGdriveVideoBrowser = true;
+    this.loadGDriveVideos(scope);
+  }
+
+  loadGDriveVideos(scope: 'shared' | 'my'): void {
+    this.gdriveBrowseScope = scope;
+    this.gdriveBrowseLoading = true;
+    const q = encodeURIComponent((this.gdriveBrowseSearch || '').trim());
+    this.http.get<any>(`/api/gdrive/files?scope=${scope}&type=video&q=${q}`).subscribe({
+      next: (res) => {
+        this.gdriveBrowseLoading = false;
+        this.gdriveVideoFiles = res?.files || [];
+      },
+      error: (err) => {
+        this.gdriveBrowseLoading = false;
+        this.gdriveVideoFiles = [];
+        if (err?.status === 401) {
+          this.notificationService.warning('Please click "Login Google Drive" first to browse private/shared files.');
+        } else {
+          this.notificationService.error(err?.error?.error || 'Failed to browse Google Drive.');
+        }
+      }
+    });
+  }
+
+  selectGDriveVideo(vf: any, inputEl: HTMLInputElement): void {
+    const link = `https://drive.google.com/file/d/${vf.id}/view`;
+    if (inputEl) inputEl.value = link;
+    this.showGdriveVideoBrowser = false;
+    this.streamFromGoogleDrive(link);
   }
 
   connectGoogleDrive(): void {

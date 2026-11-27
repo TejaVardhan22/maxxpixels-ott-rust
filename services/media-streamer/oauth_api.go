@@ -218,4 +218,6 @@ func registerGDriveOAuthRoutes(mux *http.ServeMux) {
 			"message":   "Google Drive connected! Private files shared with your Gmail can now be streamed.",
 		})
 	})
+
+	registerGDriveBrowseRoutes(mux)
 }

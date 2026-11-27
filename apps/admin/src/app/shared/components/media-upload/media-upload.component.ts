@@ -24,8 +24,44 @@ import { resolveAdminImageUrl } from '../../../core/services/movie-api.service';
           <button type="button" mat-raised-button color="primary" class="upload-btn" (click)="fileInput.click()">
             <mat-icon>cloud_upload</mat-icon> Upload File
           </button>
+          <button type="button" mat-stroked-button class="gdrive-btn" (click)="openGDrivePicker()" matTooltip="Pick from Google Drive (Shared with me / My Drive)">
+            <mat-icon>add_to_drive</mat-icon> Google Drive
+          </button>
           <button type="button" mat-stroked-button color="accent" class="paste-btn" (click)="showManualInput = true">
             <mat-icon>link</mat-icon> Paste URL
+          </button>
+        </div>
+      </div>
+
+      <!-- 1b. GOOGLE DRIVE PICKER (SHARED WITH ME / MY DRIVE) -->
+      <div class="gdrive-picker" *ngIf="showGDrivePicker && !uploading">
+        <div class="gdrive-header">
+          <div class="gdrive-tabs">
+            <button type="button" class="gd-tab" [class.active]="gdriveScope === 'shared'" (click)="loadGDriveFiles('shared')">Shared with me</button>
+            <button type="button" class="gd-tab" [class.active]="gdriveScope === 'my'" (click)="loadGDriveFiles('my')">My Drive</button>
+          </div>
+          <input type="text" class="gd-search" [(ngModel)]="gdriveSearch" (keyup.enter)="loadGDriveFiles(gdriveScope)" placeholder="Search Drive images...">
+          <button type="button" mat-icon-button (click)="loadGDriveFiles(gdriveScope)" matTooltip="Refresh"><mat-icon>refresh</mat-icon></button>
+          <button type="button" mat-icon-button (click)="showGDrivePicker = false" matTooltip="Close"><mat-icon>close</mat-icon></button>
+        </div>
+
+        <div *ngIf="gdriveNeedsAuth" class="gd-auth-box">
+          <span>Connect Google Drive to browse Shared with me &amp; My Drive files:</span>
+          <button type="button" mat-stroked-button color="accent" (click)="connectGDrive()">Login Google Drive</button>
+          <div class="manual-input-row" *ngIf="showGDriveCodeBox" style="margin-top:8px; width:100%;">
+            <input type="text" class="manual-input" [(ngModel)]="gdriveAuthCode" placeholder="Paste redirected http://localhost/?code=... URL">
+            <button type="button" mat-flat-button color="primary" (click)="exchangeGDriveCode()">Save</button>
+          </div>
+        </div>
+
+        <div *ngIf="gdriveLoading" class="gd-empty">Loading Google Drive files...</div>
+        <div *ngIf="!gdriveLoading && !gdriveNeedsAuth && gdriveFiles.length === 0" class="gd-empty">No matching images found in {{ gdriveScope === 'shared' ? 'Shared with me' : 'My Drive' }}.</div>
+
+        <div class="gd-grid" *ngIf="!gdriveLoading && gdriveFiles.length > 0">
+          <button type="button" class="gd-item" *ngFor="let f of gdriveFiles" (click)="importFromGDrive(f)">
+            <img *ngIf="f.thumbnailLink" [src]="f.thumbnailLink" alt="" class="gd-thumb">
+            <mat-icon *ngIf="!f.thumbnailLink" class="gd-icon">image</mat-icon>
+            <span class="gd-name" [title]="f.name">{{ f.name }}</span>
           </button>
         </div>
       </div>
@@ -108,7 +144,50 @@ import { resolveAdminImageUrl } from '../../../core/services/movie-api.service';
           color: #00d2ff;
           mat-icon { font-size: 16px; width: 16px; height: 16px; margin-right: 4px; }
         }
+
+        .gdrive-btn {
+          height: 38px;
+          font-size: 12px;
+          font-weight: 700;
+          white-space: nowrap;
+          border-color: #34a853;
+          color: #69f0ae;
+          mat-icon { font-size: 16px; width: 16px; height: 16px; margin-right: 4px; }
+        }
       }
+    }
+
+    .gdrive-picker {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 8px;
+      background: #141422;
+      border: 1px solid #2a2a42;
+      .gdrive-header { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+      .gdrive-tabs { display: flex; gap: 4px; }
+      .gd-tab {
+        border: 1px solid #2a2a42; background: #10101a; color: #b0b3c6; border-radius: 6px;
+        padding: 4px 10px; font-size: 11px; font-weight: 700; cursor: pointer;
+        &.active { background: #1a4cd8; color: #fff; border-color: #1a4cd8; }
+      }
+      .gd-search {
+        flex: 1; min-width: 120px; height: 30px; background: #10101a; border: 1px solid #2a2a42;
+        border-radius: 6px; color: #fff; padding: 0 8px; font-size: 12px;
+      }
+      .gd-auth-box { font-size: 12px; color: #ffd54f; display: flex; flex-direction: column; gap: 6px; padding: 6px 0; }
+      .gd-empty { font-size: 12px; color: #8c90a8; padding: 10px 4px; text-align: center; }
+      .gd-grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+        gap: 8px; max-height: 220px; overflow-y: auto;
+      }
+      .gd-item {
+        display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px;
+        background: #1a1a2b; border: 1px solid #2a2a42; border-radius: 6px; cursor: pointer; color: #fff;
+        &:hover { border-color: #00d2ff; }
+      }
+      .gd-thumb { width: 100%; height: 64px; object-fit: cover; border-radius: 4px; }
+      .gd-icon { font-size: 28px; width: 28px; height: 28px; color: #00d2ff; margin: 18px 0; }
+      .gd-name { font-size: 10px; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
     }
 
     .manual-url-box {
@@ -227,6 +306,105 @@ export class MediaUploadComponent {
   localPreviewUrl = '';
   showManualInput = false;
   manualUrlText = '';
+
+  // Google Drive picker state
+  showGDrivePicker = false;
+  gdriveScope: 'shared' | 'my' = 'shared';
+  gdriveSearch = '';
+  gdriveLoading = false;
+  gdriveNeedsAuth = false;
+  showGDriveCodeBox = false;
+  gdriveAuthCode = '';
+  gdriveFiles: any[] = [];
+
+  openGDrivePicker(): void {
+    this.showGDrivePicker = !this.showGDrivePicker;
+    if (this.showGDrivePicker) {
+      this.loadGDriveFiles(this.gdriveScope);
+    }
+  }
+
+  loadGDriveFiles(scope: 'shared' | 'my'): void {
+    this.gdriveScope = scope;
+    this.gdriveLoading = true;
+    this.gdriveNeedsAuth = false;
+    const mediaType = this.accept.includes('image') && !this.accept.includes('video') ? 'image' : 'image';
+    const q = encodeURIComponent((this.gdriveSearch || '').trim());
+    this.http.get<any>(`/api/gdrive/files?scope=${scope}&type=${mediaType}&q=${q}`).subscribe({
+      next: (res) => {
+        this.gdriveLoading = false;
+        this.gdriveFiles = res?.files || [];
+      },
+      error: (err) => {
+        this.gdriveLoading = false;
+        if (err?.status === 401) {
+          this.gdriveNeedsAuth = true;
+        } else {
+          this.notificationService.error(err?.error?.error || 'Failed to load Google Drive files.');
+        }
+      }
+    });
+  }
+
+  connectGDrive(): void {
+    this.http.get<any>('/api/gdrive/auth-url').subscribe({
+      next: (res) => {
+        if (res?.authUrl) {
+          this.showGDriveCodeBox = true;
+          window.open(res.authUrl, '_blank', 'noopener,noreferrer');
+          this.notificationService.info('Sign in with Google, then paste the redirected http://localhost/?code=... URL.');
+        }
+      },
+      error: () => this.notificationService.error('Google Drive OAuth not configured.')
+    });
+  }
+
+  exchangeGDriveCode(): void {
+    const code = (this.gdriveAuthCode || '').trim();
+    if (!code) return;
+    this.http.post<any>('/api/gdrive/exchange', { code }).subscribe({
+      next: () => {
+        this.gdriveNeedsAuth = false;
+        this.showGDriveCodeBox = false;
+        this.gdriveAuthCode = '';
+        this.notificationService.success('Google Drive connected!');
+        this.loadGDriveFiles(this.gdriveScope);
+      },
+      error: (err) => this.notificationService.error(err?.error?.error || 'Google Drive login failed.')
+    });
+  }
+
+  importFromGDrive(file: any): void {
+    this.showGDrivePicker = false;
+    this.uploading = true;
+    this.progress = 35;
+    this.http.post<any>('/api/gdrive/import-image', {
+      fileId: file.id,
+      fileName: file.name,
+      mimeType: file.mimeType || 'image/jpeg',
+      folder: this.folder
+    }).subscribe({
+      next: (res) => {
+        this.uploading = false;
+        this.progress = 100;
+        const url = res?.data?.url || res?.result?.url || res?.url;
+        if (url) {
+          this.uploadedUrl = url;
+          this.localPreviewUrl = url;
+          this.notificationService.success(`${this.label} imported from Google Drive!`);
+          this.uploadComplete.emit(url);
+          this.previewChange.emit(url);
+        } else {
+          this.notificationService.error('Google Drive import succeeded but returned no URL.');
+        }
+      },
+      error: (err) => {
+        this.uploading = false;
+        this.progress = 0;
+        this.notificationService.error(err?.error?.error || err?.error?.message || 'Failed to import image from Google Drive.');
+      }
+    });
+  }
 
   get isImage(): boolean {
     return this.accept.includes('image') ||
