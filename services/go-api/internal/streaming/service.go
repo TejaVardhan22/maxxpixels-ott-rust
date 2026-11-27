@@ -57,6 +57,93 @@ type PlaybackAuthResult struct {
 	ShowAds               bool             `json:"showAds"`
 	VastTagURL            *string          `json:"vastTagUrl,omitempty"`
 	IsHls                 bool             `json:"isHls"`
+	MaxVideoQuality       string           `json:"maxVideoQuality"`
+	MaxResolution         string           `json:"maxResolution"`
+	MaxConcurrentStreams  int              `json:"maxConcurrentStreams"`
+	AllowDownloads        bool             `json:"allowDownloads"`
+	PlanCode              string           `json:"planCode"`
+	PlanName              string           `json:"planName"`
+}
+
+// PlanEntitlements holds the resolved runtime playback limits for a user's active subscription plan.
+type PlanEntitlements struct {
+	HasActivePlan        bool
+	PlanCode             string
+	PlanName             string
+	MaxConcurrentStreams int
+	MaxDevices           int
+	MaxProfiles          int
+	MaxVideoQuality      string
+	AdsEnabled           bool
+	AllowDownloads       bool
+}
+
+func resolveEntitlementsFromPlan(p *models.Plan) PlanEntitlements {
+	if p == nil {
+		return PlanEntitlements{
+			HasActivePlan:        false,
+			PlanCode:             "FREE",
+			PlanName:             "Free",
+			MaxConcurrentStreams: 1,
+			MaxDevices:           2,
+			MaxProfiles:          1,
+			MaxVideoQuality:      "480p",
+			AdsEnabled:           true,
+			AllowDownloads:       false,
+		}
+	}
+	ent := PlanEntitlements{
+		HasActivePlan:        true,
+		PlanCode:             p.Code,
+		PlanName:             p.Name,
+		MaxConcurrentStreams: 1,
+		MaxDevices:           2,
+		MaxProfiles:          1,
+		MaxVideoQuality:      "1080p",
+		AdsEnabled:           false,
+		AllowDownloads:       false,
+	}
+	if p.MaxConcurrentStreams != nil && *p.MaxConcurrentStreams > 0 {
+		ent.MaxConcurrentStreams = int(*p.MaxConcurrentStreams)
+	}
+	if p.MaxDevices != nil && *p.MaxDevices > 0 {
+		ent.MaxDevices = int(*p.MaxDevices)
+	} else if p.MaxRegisteredDevices != nil && *p.MaxRegisteredDevices > 0 {
+		ent.MaxDevices = int(*p.MaxRegisteredDevices)
+	}
+	if p.MaxProfiles != nil && *p.MaxProfiles > 0 {
+		ent.MaxProfiles = int(*p.MaxProfiles)
+	}
+	if p.MaxVideoQuality != nil && strings.TrimSpace(*p.MaxVideoQuality) != "" {
+		ent.MaxVideoQuality = strings.TrimSpace(*p.MaxVideoQuality)
+	} else if p.MaxResolution != nil && strings.TrimSpace(*p.MaxResolution) != "" {
+		ent.MaxVideoQuality = strings.TrimSpace(*p.MaxResolution)
+	}
+	if (p.AdsEnabled != nil && *p.AdsEnabled) || (p.HasAds != nil && *p.HasAds) {
+		ent.AdsEnabled = true
+	}
+	if (p.AllowDownloads != nil && *p.AllowDownloads) || (p.DownloadsEnabled != nil && *p.DownloadsEnabled) || (p.DownloadAllowed != nil && *p.DownloadAllowed) {
+		ent.AllowDownloads = true
+	}
+	return ent
+}
+
+func (s *Service) resolveUserEntitlements(ctx context.Context, userID int64) PlanEntitlements {
+	var activeSub models.Subscription
+	if s.db.WithContext(ctx).
+		Where("user_id = ? AND status = 'ACTIVE' AND end_date > ?", userID, time.Now().UTC()).
+		Order("end_date DESC").First(&activeSub).Error == nil {
+		var p models.Plan
+		if s.db.WithContext(ctx).First(&p, activeSub.PlanId).Error == nil {
+			return resolveEntitlementsFromPlan(&p)
+		}
+		// Active subscription exists even if plan row lookup fails
+		ent := resolveEntitlementsFromPlan(nil)
+		ent.HasActivePlan = true
+		ent.AdsEnabled = false
+		return ent
+	}
+	return resolveEntitlementsFromPlan(nil)
 }
 
 func (s *Service) AuthorizePlayback(ctx context.Context, in AuthorizeInput) (*PlaybackAuthResult, error) {
@@ -70,15 +157,17 @@ func (s *Service) AuthorizePlayback(ctx context.Context, in AuthorizeInput) (*Pl
 		monetization = strings.ToUpper(deref(content.AccessType))
 	}
 
-	var hasActiveSub bool
+	ent := resolveEntitlementsFromPlan(nil)
+	var isAdmin bool
+	var hasTvod bool
 	if !in.IsTrailer {
 		if in.UserID == nil || *in.UserID <= 0 {
 			return nil, errors.New("authentication required to watch content")
 		}
 		uid := *in.UserID
-		isAdmin := s.isAdminUser(ctx, uid)
-		hasActiveSub = s.hasActiveSubscription(ctx, uid)
-		hasTvod := s.hasActiveTvod(ctx, uid, in.ContentID)
+		isAdmin = s.isAdminUser(ctx, uid)
+		ent = s.resolveUserEntitlements(ctx, uid)
+		hasTvod = s.hasActiveTvod(ctx, uid, in.ContentID)
 
 		if !isAdmin {
 			isTVOD := monetization == "TVOD" || monetization == "RENT"
@@ -87,12 +176,12 @@ func (s *Service) AuthorizePlayback(ctx context.Context, in AuthorizeInput) (*Pl
 			if isTVOD && !hasTvod {
 				return nil, errors.New("rental required: please rent this title to watch")
 			}
-			if isSVOD && !hasActiveSub && !hasTvod {
+			if isSVOD && !ent.HasActivePlan && !hasTvod {
 				return nil, errors.New("active subscription required to watch this premium title")
 			}
 
 			// Enforce plan max_concurrent_streams (2-minute heartbeat window on other devices)
-			if err := s.enforceConcurrentStreamLimit(ctx, uid, in.DeviceID); err != nil {
+			if err := s.enforceConcurrentStreamLimit(ctx, uid, in.DeviceID, ent.MaxConcurrentStreams); err != nil {
 				return nil, err
 			}
 		}
@@ -186,7 +275,8 @@ func (s *Service) AuthorizePlayback(ctx context.Context, in AuthorizeInput) (*Pl
 		}
 	}
 
-	showAds := !in.IsTrailer && (monetization == "AVOD" || monetization == "FREE") && !hasActiveSub
+	// Show ads based on plan (ads_enabled/has_ads), or on AVOD/FREE content for non-subscribers (never on trailers, admins, or paid TVOD rentals)
+	showAds := !in.IsTrailer && !isAdmin && !hasTvod && (ent.AdsEnabled || ((monetization == "AVOD" || monetization == "FREE") && !ent.HasActivePlan))
 	var vastURL *string
 	if showAds {
 		v := fmt.Sprintf("%s/api/v1/ads/vast?contentId=%d", strings.TrimRight(s.cfg.PublicBaseURL, "/"), in.ContentID)
@@ -214,6 +304,12 @@ func (s *Service) AuthorizePlayback(ctx context.Context, in AuthorizeInput) (*Pl
 		ShowAds:               showAds,
 		VastTagURL:            vastURL,
 		IsHls:                 strings.Contains(strings.ToLower(streamURL), ".m3u8"),
+		MaxVideoQuality:       ent.MaxVideoQuality,
+		MaxResolution:         ent.MaxVideoQuality,
+		MaxConcurrentStreams:  ent.MaxConcurrentStreams,
+		AllowDownloads:        ent.AllowDownloads,
+		PlanCode:              ent.PlanCode,
+		PlanName:              ent.PlanName,
 	}, nil
 }
 
@@ -448,17 +544,10 @@ func (s *Service) RemoveFromWatchlist(ctx context.Context, userID, contentID int
 		Delete(&models.Watchlist{}).Error
 }
 
-func (s *Service) enforceConcurrentStreamLimit(ctx context.Context, userID int64, reqDeviceID string) error {
+func (s *Service) enforceConcurrentStreamLimit(ctx context.Context, userID int64, reqDeviceID string, maxStreams int) error {
 	now := time.Now().UTC()
-	maxStreams := 1
-	var activeSub models.Subscription
-	if s.db.WithContext(ctx).
-		Where("user_id = ? AND status = 'ACTIVE' AND end_date > ?", userID, now).
-		Order("end_date DESC").First(&activeSub).Error == nil {
-		var p models.Plan
-		if s.db.WithContext(ctx).First(&p, activeSub.PlanId).Error == nil && p.MaxConcurrentStreams != nil && *p.MaxConcurrentStreams > 0 {
-			maxStreams = int(*p.MaxConcurrentStreams)
-		}
+	if maxStreams <= 0 {
+		maxStreams = 1
 	}
 
 	cutoff := now.Add(-2 * time.Minute)

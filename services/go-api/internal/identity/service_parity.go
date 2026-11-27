@@ -469,8 +469,12 @@ func (s *Service) RegisterDevice(ctx context.Context, userID int64, in RegisterD
 		Where("user_id = ? AND status = 'ACTIVE' AND end_date > ?", userID, now).
 		Order("end_date DESC").First(&activeSub).Error == nil {
 		var p models.Plan
-		if s.db.WithContext(ctx).First(&p, activeSub.PlanId).Error == nil && p.MaxDevices != nil && *p.MaxDevices > 0 {
-			maxDevices = int(*p.MaxDevices)
+		if s.db.WithContext(ctx).First(&p, activeSub.PlanId).Error == nil {
+			if p.MaxDevices != nil && *p.MaxDevices > 0 {
+				maxDevices = int(*p.MaxDevices)
+			} else if p.MaxRegisteredDevices != nil && *p.MaxRegisteredDevices > 0 {
+				maxDevices = int(*p.MaxRegisteredDevices)
+			}
 		}
 	}
 	var activeDevs []models.Device
