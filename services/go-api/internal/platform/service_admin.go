@@ -528,19 +528,72 @@ func (s *Service) AdminNotificationConfig() map[string]any {
 }
 
 func (s *Service) GetRealtimeAnalytics(ctx context.Context) map[string]any {
-	cutoff := time.Now().UTC().Add(-2 * time.Minute)
-	var liveSessions int64
-	_ = s.db.WithContext(ctx).Model(&models.PlaybackSession{}).
-		Where("is_active = TRUE AND COALESCE(last_heartbeat_at, started_at) > ?", cutoff).
-		Count(&liveSessions).Error
-	var recentEvents int64
+	now := time.Now().UTC()
+	cutoff := now.Add(-2 * time.Minute)
+	day1 := now.Add(-24 * time.Hour)
+
+	type liveRow struct {
+		SessionID              string     `gorm:"column:session_id"`
+		ContentID              int64      `gorm:"column:content_id"`
+		Title                  string     `gorm:"column:title"`
+		UserID                 *int64     `gorm:"column:user_id"`
+		UserEmail              string     `gorm:"column:user_email"`
+		DeviceType             string     `gorm:"column:device_type"`
+		CurrentPositionSeconds *int32     `gorm:"column:current_position_seconds"`
+		TotalDurationSeconds   *int32     `gorm:"column:total_duration_seconds"`
+		LastHeartbeatAt        *time.Time `gorm:"column:last_heartbeat_at"`
+	}
+	var rows []liveRow
+	_ = s.db.WithContext(ctx).Table("playback_sessions ps").
+		Select("ps.session_id, ps.content_id, COALESCE(c.title, '') AS title, ps.user_id, COALESCE(u.email, '') AS user_email, COALESCE(ps.device_type, 'WEB') AS device_type, ps.current_position_seconds, ps.total_duration_seconds, COALESCE(ps.last_heartbeat_at, ps.last_heartbeat, ps.started_at) AS last_heartbeat_at").
+		Joins("LEFT JOIN contents c ON c.id = ps.content_id").
+		Joins("LEFT JOIN users u ON u.id = ps.user_id").
+		Where("ps.is_active = TRUE AND COALESCE(ps.last_heartbeat_at, ps.last_heartbeat, ps.started_at) > ?", cutoff).
+		Order("COALESCE(ps.last_heartbeat_at, ps.last_heartbeat, ps.started_at) DESC").
+		Limit(50).
+		Scan(&rows).Error
+
+	streams := make([]map[string]any, 0, len(rows))
+	for _, r := range rows {
+		streams = append(streams, map[string]any{
+			"sessionId":              r.SessionID,
+			"contentId":              r.ContentID,
+			"title":                  r.Title,
+			"userId":                 r.UserID,
+			"userEmail":              r.UserEmail,
+			"deviceName":             r.DeviceType,
+			"platform":               r.DeviceType,
+			"quality":                "AUTO",
+			"currentPositionSeconds": r.CurrentPositionSeconds,
+			"totalDurationSeconds":   r.TotalDurationSeconds,
+			"lastHeartbeatAt":        r.LastHeartbeatAt,
+		})
+	}
+
+	var recentEvents, totalViews, uniq24, watch24 int64
 	_ = s.db.WithContext(ctx).Model(&models.UserInteraction{}).
-		Where("created_at > ?", time.Now().UTC().Add(-1*time.Hour)).
+		Where("created_at > ?", now.Add(-1*time.Hour)).
 		Count(&recentEvents).Error
+	_ = s.db.WithContext(ctx).Model(&models.UserInteraction{}).
+		Where("created_at > ?", day1).
+		Count(&watch24).Error
+	_ = s.db.WithContext(ctx).Model(&models.Content{}).
+		Select("COALESCE(SUM(COALESCE(view_count, 0)), 0)").
+		Scan(&totalViews).Error
+	_ = s.db.WithContext(ctx).Model(&models.WatchHistory{}).
+		Where("last_watched_at >= ?", day1).
+		Distinct("COALESCE(user_id, profile_id)").
+		Count(&uniq24).Error
+
 	return map[string]any{
-		"liveConcurrentStreams": liveSessions,
+		"concurrentStreams":     len(streams),
+		"liveConcurrentStreams": len(streams),
+		"activeStreams":         streams,
 		"eventsLastHour":        recentEvents,
-		"timestamp":             time.Now().UTC().Format(time.RFC3339),
+		"totalViews":            totalViews,
+		"uniqueViews24h":        uniq24,
+		"watchEvents24h":        watch24,
+		"timestamp":             now.Format(time.RFC3339),
 	}
 }
 

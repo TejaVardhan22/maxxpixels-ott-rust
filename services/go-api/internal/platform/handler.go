@@ -363,7 +363,11 @@ func (h *Handler) legalPages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) dashboardOverview(w http.ResponseWriter, r *http.Request) {
-	data, err := h.svc.GetDashboardOverview(r.Context())
+	tf := r.URL.Query().Get("timeframe")
+	if tf == "" {
+		tf = "30d"
+	}
+	data, err := h.svc.GetDetailedAnalytics(r.Context(), tf)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, err.Error())
 		return
