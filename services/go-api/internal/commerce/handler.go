@@ -133,28 +133,47 @@ func (h *Handler) mySubscription(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) validateCoupon(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
+	if code == "" {
+		code = r.URL.Query().Get("coupon_code")
+	}
 	amount, _ := strconv.ParseFloat(r.URL.Query().Get("amount"), 64)
 	var planID *int64
-	if raw := r.URL.Query().Get("planId"); raw != "" {
-		if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
+	rawPlan := r.URL.Query().Get("planId")
+	if rawPlan == "" {
+		rawPlan = r.URL.Query().Get("plan_id")
+	}
+	if rawPlan == "" {
+		rawPlan = r.URL.Query().Get("package_id")
+	}
+	if rawPlan != "" {
+		if id, err := strconv.ParseInt(rawPlan, 10, 64); err == nil {
 			planID = &id
 		}
 	}
 	if r.Method == http.MethodPost {
 		var body struct {
-			Code   string  `json:"code"`
-			Amount float64 `json:"amount"`
-			PlanID *int64  `json:"planId"`
+			Code        string  `json:"code"`
+			CouponCode  string  `json:"coupon_code"`
+			Amount      float64 `json:"amount"`
+			PlanID      *int64  `json:"planId"`
+			PlanIDSnake *int64  `json:"plan_id"`
+			PackageID   *int64  `json:"package_id"`
 		}
 		if err := httpx.DecodeJSON(r, &body); err == nil {
 			if body.Code != "" {
 				code = body.Code
+			} else if body.CouponCode != "" {
+				code = body.CouponCode
 			}
 			if body.Amount > 0 {
 				amount = body.Amount
 			}
 			if body.PlanID != nil {
 				planID = body.PlanID
+			} else if body.PlanIDSnake != nil {
+				planID = body.PlanIDSnake
+			} else if body.PackageID != nil {
+				planID = body.PackageID
 			}
 		}
 	}
@@ -186,13 +205,16 @@ func (h *Handler) verifyPayment(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.FromContext(r.Context())
 	uid, _ := claims.ParsedUserID()
 	var body struct {
-		OrderID          string `json:"orderId"`
-		RazorpayOrderID  string `json:"razorpay_order_id"`
-		PaymentID        string `json:"paymentId"`
-		RazorpayPayID    string `json:"razorpay_payment_id"`
-		Signature        string `json:"signature"`
-		RazorpaySig      string `json:"razorpay_signature"`
-		PurchaseType     string `json:"purchaseType"`
+		OrderID           string `json:"orderId"`
+		OrderIDSnake      string `json:"order_id"`
+		RazorpayOrderID   string `json:"razorpay_order_id"`
+		PaymentID         string `json:"paymentId"`
+		PaymentIDSnake    string `json:"payment_id"`
+		RazorpayPayID     string `json:"razorpay_payment_id"`
+		Signature         string `json:"signature"`
+		RazorpaySig       string `json:"razorpay_signature"`
+		PurchaseType      string `json:"purchaseType"`
+		PurchaseTypeSnake string `json:"purchase_type"`
 	}
 	if err := httpx.DecodeJSON(r, &body); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "Invalid JSON payload")
@@ -200,9 +222,15 @@ func (h *Handler) verifyPayment(w http.ResponseWriter, r *http.Request) {
 	}
 	oid := body.OrderID
 	if oid == "" {
+		oid = body.OrderIDSnake
+	}
+	if oid == "" {
 		oid = body.RazorpayOrderID
 	}
 	pid := body.PaymentID
+	if pid == "" {
+		pid = body.PaymentIDSnake
+	}
 	if pid == "" {
 		pid = body.RazorpayPayID
 	}
@@ -210,7 +238,11 @@ func (h *Handler) verifyPayment(w http.ResponseWriter, r *http.Request) {
 	if sig == "" {
 		sig = body.RazorpaySig
 	}
-	res, err := h.svc.VerifyPayment(r.Context(), uid, oid, pid, sig, body.PurchaseType)
+	pType := body.PurchaseType
+	if pType == "" {
+		pType = body.PurchaseTypeSnake
+	}
+	res, err := h.svc.VerifyPayment(r.Context(), uid, oid, pid, sig, pType)
 	if err != nil {
 		httpx.Error(w, http.StatusBadRequest, err.Error(), "VERIFY_FAILED")
 		return

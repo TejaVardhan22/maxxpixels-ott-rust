@@ -121,27 +121,73 @@ func (s *Service) ValidateCoupon(ctx context.Context, code string, amount float6
 }
 
 type CreateOrderReq struct {
-	PlanID       *int64  `json:"planId"`
-	ContentID    *int64  `json:"contentId"`
-	OrderType    string  `json:"orderType"`    // SUBSCRIPTION | TVOD
-	PurchaseType string  `json:"purchaseType"` // RENT | PURCHASE
-	Amount       float64 `json:"amount"`
-	CouponCode   string  `json:"couponCode"`
+	PlanID            *int64  `json:"planId"`
+	PlanIDSnake       *int64  `json:"plan_id"`
+	PackageID         *int64  `json:"package_id"`
+	ContentID         *int64  `json:"contentId"`
+	ContentIDSnake    *int64  `json:"content_id"`
+	OrderType         string  `json:"orderType"`        // SUBSCRIPTION | TVOD
+	OrderTypeSnake    string  `json:"order_type"`       // snake_case alias
+	TransactionType   string  `json:"transaction_type"` // subscription | rent | tvod
+	PurchaseType      string  `json:"purchaseType"`     // RENT | PURCHASE
+	PurchaseTypeSnake string  `json:"purchase_type"`    // snake_case alias
+	Amount            float64 `json:"amount"`
+	CouponCode        string  `json:"couponCode"`
+	CouponCodeSnake   string  `json:"coupon_code"`
 }
 
 type CreatedOrderResp struct {
-	OrderID        string `json:"orderId"`
-	GatewayOrderID string `json:"gatewayOrderId,omitempty"`
-	KeyID          string `json:"keyId"`
-	AmountPaise    int64  `json:"amountPaise"`
-	Currency       string `json:"currency"`
-	IsFree         bool   `json:"isFree"`
-	Status         string `json:"status"`
+	OrderID        string  `json:"orderId"`
+	GatewayOrderID string  `json:"gatewayOrderId,omitempty"`
+	KeyID          string  `json:"keyId"`
+	Amount         float64 `json:"amount"`
+	AmountPaise    int64   `json:"amountPaise"`
+	Currency       string  `json:"currency"`
+	IsFree         bool    `json:"isFree"`
+	Status         string  `json:"status"`
 }
 
 func (s *Service) CreateOrder(ctx context.Context, userID int64, req CreateOrderReq) (*CreatedOrderResp, error) {
-	orderType := strings.ToUpper(strings.TrimSpace(req.OrderType))
-	if orderType == "" {
+	// Normalize snake_case aliases sent by web / mobile clients
+	if req.PlanID == nil {
+		if req.PlanIDSnake != nil {
+			req.PlanID = req.PlanIDSnake
+		} else if req.PackageID != nil {
+			req.PlanID = req.PackageID
+		}
+	}
+	if req.ContentID == nil && req.ContentIDSnake != nil {
+		req.ContentID = req.ContentIDSnake
+	}
+	if strings.TrimSpace(req.CouponCode) == "" && strings.TrimSpace(req.CouponCodeSnake) != "" {
+		req.CouponCode = req.CouponCodeSnake
+	}
+	if strings.TrimSpace(req.PurchaseType) == "" && strings.TrimSpace(req.PurchaseTypeSnake) != "" {
+		req.PurchaseType = req.PurchaseTypeSnake
+	}
+
+	rawType := strings.TrimSpace(req.OrderType)
+	if rawType == "" {
+		rawType = strings.TrimSpace(req.OrderTypeSnake)
+	}
+	if rawType == "" {
+		rawType = strings.TrimSpace(req.TransactionType)
+	}
+	orderType := strings.ToUpper(rawType)
+	switch orderType {
+	case "RENT", "TVOD", "VIDEO":
+		orderType = "TVOD"
+		if strings.TrimSpace(req.PurchaseType) == "" {
+			req.PurchaseType = "RENT"
+		}
+	case "BUY", "PURCHASE":
+		orderType = "TVOD"
+		if strings.TrimSpace(req.PurchaseType) == "" {
+			req.PurchaseType = "PURCHASE"
+		}
+	case "SUBSCRIPTION", "PLAN", "PACKAGE":
+		orderType = "SUBSCRIPTION"
+	case "":
 		if req.ContentID != nil && *req.ContentID > 0 {
 			orderType = "TVOD"
 		} else {
@@ -230,12 +276,17 @@ func (s *Service) CreateOrder(ctx context.Context, userID int64, req CreateOrder
 			if err := tx.Create(&order).Error; err != nil {
 				return err
 			}
+			if order.CouponCode != nil && *order.CouponCode != "" {
+				_ = tx.Model(&models.Coupon{}).Where("UPPER(code) = UPPER(?)", *order.CouponCode).
+					Update("used_count", gorm.Expr("COALESCE(used_count, 0) + 1")).Error
+			}
 			return s.fulfillOrderTx(tx, &order, "FREE_"+localOrderID, req.PurchaseType)
 		}); err != nil {
 			return nil, err
 		}
 		return &CreatedOrderResp{
 			OrderID:     localOrderID,
+			Amount:      0,
 			AmountPaise: 0,
 			Currency:    currency,
 			IsFree:      true,
@@ -283,6 +334,7 @@ func (s *Service) CreateOrder(ctx context.Context, userID int64, req CreateOrder
 		OrderID:        localOrderID,
 		GatewayOrderID: gatewayOrderID,
 		KeyID:          s.cfg.RazorpayKeyID,
+		Amount:         finalAmount,
 		AmountPaise:    paise,
 		Currency:       currency,
 		IsFree:         false,
