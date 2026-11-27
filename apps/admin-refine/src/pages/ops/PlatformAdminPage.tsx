@@ -34,6 +34,7 @@ import {
   CopyOutlined,
   KeyOutlined,
   EditOutlined,
+  CloudServerOutlined,
 } from "@ant-design/icons";
 import { apiGet, apiPost, apiPut, extractArray } from "../../providers/api";
 
@@ -47,8 +48,6 @@ const ADMIN_ROLE_OPTIONS = [
   { value: "ROLE_ANALYST", label: "BI & Analytics Viewer" },
   { value: "ROLE_MODERATOR", label: "Content Moderator" },
 ];
-
-const ADMIN_ROLE_SET = new Set(ADMIN_ROLE_OPTIONS.map((r) => r.value));
 
 function generateStrongPassword(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
@@ -64,18 +63,16 @@ export const PlatformAdminPage: React.FC = () => {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<string>("");
 
-  // Platform state
-  const [allUsers, setAllUsers] = useState<any[]>([]);
+  // Dedicated /admin/platform/overview & /admin/platform/admins state
+  const [overview, setOverview] = useState<any>({});
+  const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
   const [outbox, setOutbox] = useState<any[]>([]);
   const [liveStreams, setLiveStreams] = useState<any[]>([]);
   const [devices, setDevices] = useState<any[]>([]);
-  const [backups, setBackups] = useState<any[]>([]);
-  const [migrations, setMigrations] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
-  const [maintenanceMode, setMaintenanceMode] = useState(false);
 
-  // Filters
+  // Filters & action spinners
   const [logLevel, setLogLevel] = useState("");
   const [outboxStatus, setOutboxStatus] = useState("");
   const [retryingOutbox, setRetryingOutbox] = useState(false);
@@ -97,27 +94,22 @@ export const PlatformAdminPage: React.FC = () => {
     try {
       const logQs = logLevel ? `?level=${logLevel}&limit=100` : "?limit=100";
       const outboxQs = outboxStatus ? `?status=${outboxStatus}&limit=100` : "?limit=100";
-      const [uRes, lRes, oRes, liveRes, devRes, bRes, mRes, aRes, sRes] = await Promise.all([
-        apiGet("/admin/users?size=200").catch(() => []),
+      const [ovRes, admRes, lRes, oRes, liveRes, devRes, aRes] = await Promise.all([
+        apiGet("/admin/platform/overview").catch(() => ({})),
+        apiGet("/admin/platform/admins").catch(() => []),
         apiGet(`/admin/logs${logQs}`).catch(() => []),
         apiGet(`/admin/outbox${outboxQs}`).catch(() => []),
         apiGet("/admin/analytics/live").catch(() => ({})),
         apiGet("/admin/devices").catch(() => []),
-        apiGet("/admin/backup/list").catch(() => []),
-        apiGet("/admin/backup/migrations").catch(() => []),
         apiGet("/admin/security/audit-logs").catch(() => []),
-        apiGet("/admin/settings").catch(() => ({})),
       ]);
-      setAllUsers(extractArray(uRes));
+      setOverview(ovRes || {});
+      setAdminUsers(extractArray(admRes));
       setLogs(extractArray(lRes));
       setOutbox(extractArray(oRes));
       setLiveStreams(Array.isArray(liveRes?.activeStreams) ? liveRes.activeStreams : []);
       setDevices(extractArray(devRes));
-      setBackups(extractArray(bRes));
-      setMigrations(extractArray(mRes));
       setAuditLogs(extractArray(aRes));
-      const mm = sRes?.maintenanceMode ?? sRes?.MAINTENANCE_MODE_ENABLED;
-      setMaintenanceMode(mm === true || String(mm).toLowerCase() === "true");
       setLastUpdated(new Date().toLocaleTimeString());
     } catch (e: any) {
       if (!silent) message.error(e.message || "Failed to load platform monitor");
@@ -136,14 +128,12 @@ export const PlatformAdminPage: React.FC = () => {
     return () => clearInterval(timer);
   }, [autoRefresh, logLevel, outboxStatus]);
 
-  const adminUsers = allUsers.filter((u) => {
-    const roles: string[] = Array.isArray(u.roles)
-      ? u.roles.map((r: any) => String(typeof r === "string" ? r : r?.name || "").toUpperCase())
-      : u.role
-      ? [String(u.role).toUpperCase()]
-      : [];
-    return roles.some((r) => ADMIN_ROLE_SET.has(r) || r.includes("ADMIN") || r.includes("FINANCE") || r.includes("ANALYST") || r.includes("MANAGER") || r.includes("MODERATOR"));
-  });
+  const summary = overview?.summary || {};
+  const services: any[] = Array.isArray(overview?.services) ? overview.services : [];
+  const dbStats = overview?.database || {};
+  const redisStats = overview?.redis || {};
+  const rtStats = overview?.runtime || {};
+  const maintenanceMode = Boolean(summary.maintenanceMode);
 
   const openAddAdmin = () => {
     setEditingAdmin(null);
@@ -158,13 +148,12 @@ export const PlatformAdminPage: React.FC = () => {
 
   const openEditAdmin = (rec: any) => {
     setEditingAdmin(rec);
-    const currentRole =
-      (Array.isArray(rec.roles) && rec.roles[0]) || rec.role || "ROLE_ADMIN";
+    const currentRole = (Array.isArray(rec.roles) && rec.roles[0]) || "ROLE_ADMIN";
     adminForm.setFieldsValue({
-      fullName: rec.fullName || rec.name || "",
+      fullName: rec.fullName || "",
       email: rec.email || "",
-      phoneNumber: rec.phoneNumber || rec.phone || "",
-      role: typeof currentRole === "string" ? currentRole : currentRole?.name || "ROLE_ADMIN",
+      phoneNumber: rec.phoneNumber || "",
+      role: currentRole,
       status: rec.status || "ACTIVE",
     });
     setAdminModal(true);
@@ -173,21 +162,19 @@ export const PlatformAdminPage: React.FC = () => {
   const saveAdmin = async (values: any) => {
     setSavingAdmin(true);
     try {
-      const payload = {
-        fullName: values.fullName,
-        email: values.email,
-        phoneNumber: values.phoneNumber,
-        password: values.password,
-        role: values.role,
-        roles: [values.role],
-        status: values.status || "ACTIVE",
-      };
       if (editingAdmin?.id) {
-        await apiPut(`/admin/users/${editingAdmin.id}`, payload);
-        message.success(`Updated admin "${values.fullName}"`);
+        await apiPut(`/admin/platform/admins/${editingAdmin.id}/role`, { role: values.role });
+        message.success(`Updated role for "${editingAdmin.fullName || editingAdmin.email}" to ${values.role}`);
       } else {
-        await apiPost("/admin/users", payload);
-        message.success(`Created new admin "${values.fullName}" (${values.role})`);
+        await apiPost("/admin/platform/admins", {
+          fullName: values.fullName,
+          email: values.email,
+          phoneNumber: values.phoneNumber,
+          password: values.password,
+          role: values.role,
+          status: values.status || "ACTIVE",
+        });
+        message.success(`Created new platform admin "${values.fullName}" (${values.role})`);
       }
       setAdminModal(false);
       loadAll();
@@ -198,14 +185,14 @@ export const PlatformAdminPage: React.FC = () => {
     }
   };
 
-  const toggleBlock = async (u: any) => {
-    const isBlocked = String(u.status || "").toUpperCase() !== "ACTIVE";
+  const toggleStatus = async (u: any) => {
+    const nextStatus = String(u.status || "").toUpperCase() === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
     try {
-      await apiPost(`/admin/users/${u.id}/${isBlocked ? "unblock" : "block"}`, {});
-      message.success(`Admin ${isBlocked ? "activated" : "suspended"}`);
+      await apiPost(`/admin/platform/admins/${u.id}/status`, { status: nextStatus });
+      message.success(`Admin ${nextStatus === "ACTIVE" ? "activated" : "suspended"}`);
       loadAll();
     } catch (e: any) {
-      message.error(e.message || "Action failed");
+      message.error(e.message || "Status update failed");
     }
   };
 
@@ -213,6 +200,7 @@ export const PlatformAdminPage: React.FC = () => {
     try {
       await apiPost(`/admin/users/${u.id}/revoke-devices`, {});
       message.success(`Forced logout on all devices for ${u.email || u.fullName}`);
+      loadAll();
     } catch (e: any) {
       message.error(e.message || "Failed to revoke sessions");
     }
@@ -221,10 +209,13 @@ export const PlatformAdminPage: React.FC = () => {
   const resetAdminPassword = async () => {
     if (!pwModal.user?.id || !newPassword.trim()) return;
     try {
-      await apiPost(`/admin/users/${pwModal.user.id}/reset-password`, { password: newPassword.trim(), newPassword: newPassword.trim() });
-      message.success("Admin password updated");
+      await apiPost(`/admin/platform/admins/${pwModal.user.id}/reset-password`, {
+        newPassword: newPassword.trim(),
+      });
+      message.success("Admin password reset & active sessions revoked");
       setPwModal({ open: false });
       setNewPassword("");
+      loadAll();
     } catch (e: any) {
       message.error(e.message || "Failed to reset password");
     }
@@ -232,9 +223,13 @@ export const PlatformAdminPage: React.FC = () => {
 
   const toggleMaintenance = async (next: boolean) => {
     try {
-      await apiPut("/admin/settings/key/maintenanceMode", { value: String(next) });
-      setMaintenanceMode(next);
-      message.success(next ? "Maintenance Mode ENABLED (non-admin traffic returns 503)" : "Maintenance Mode DISABLED — Platform is LIVE");
+      await apiPost("/admin/platform/maintenance", { enabled: next });
+      message.success(
+        next
+          ? "Maintenance Mode ENABLED (non-admin traffic returns 503)"
+          : "Maintenance Mode DISABLED — Platform is LIVE"
+      );
+      loadAll();
     } catch (e: any) {
       message.error(e.message || "Failed to toggle maintenance mode");
     }
@@ -278,19 +273,15 @@ export const PlatformAdminPage: React.FC = () => {
     }
   };
 
-  const errorCount = logs.filter((l) => String(l.level || "").toUpperCase() === "ERROR").length;
-  const failedOutbox = outbox.filter((o) => o.status === "FAILED").length;
-  const pendingOutbox = outbox.filter((o) => o.status === "PENDING").length;
-
   return (
     <div>
       {/* HEADER */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
         <div>
-          <Tag color="red" style={{ marginBottom: 4 }}><CrownOutlined /> SUPER ADMIN COMMAND CENTER</Tag>
+          <Tag color="red" style={{ marginBottom: 4 }}><CrownOutlined /> PLATFORM ADMIN COMMAND CENTER</Tag>
           <Title level={3} style={{ margin: "0 0 2px" }}>Platform Admin &amp; Close Monitoring</Title>
           <Text type="secondary">
-            Manage platform administrators, watch live errors &amp; outbox health, control maintenance mode, and inspect active sessions.
+            End-to-end live microservice probes, PostgreSQL/Redis telemetry, atomic admin provisioning, outbox &amp; audit trail.
             {lastUpdated ? ` • Updated ${lastUpdated}` : ""}
           </Text>
         </div>
@@ -327,31 +318,43 @@ export const PlatformAdminPage: React.FC = () => {
         </Col>
         <Col xs={12} md={4}>
           <Card size="small">
-            <Statistic title="Admin & Staff" value={adminUsers.length} prefix={<SafetyCertificateOutlined style={{ color: "#1677ff" }} />} />
+            <Statistic
+              title="Services Healthy"
+              value={`${summary.servicesUp ?? 0} / ${summary.servicesTotal ?? services.length}`}
+              prefix={<CloudServerOutlined style={{ color: "#52c41a" }} />}
+            />
           </Card>
         </Col>
         <Col xs={12} md={4}>
           <Card size="small">
-            <Statistic title="Live Streams" value={liveStreams.length} valueStyle={{ color: "#52c41a" }} />
+            <Statistic
+              title="Admin & Staff"
+              value={summary.adminStaffCount ?? adminUsers.length}
+              prefix={<SafetyCertificateOutlined style={{ color: "#1677ff" }} />}
+            />
           </Card>
         </Col>
         <Col xs={12} md={4}>
           <Card size="small">
-            <Statistic title="Error Logs" value={errorCount} valueStyle={{ color: errorCount > 0 ? "#ff4d4f" : "#52c41a" }} />
+            <Statistic
+              title="Errors (1h / 24h)"
+              value={`${summary.errorsLast1h ?? 0} / ${summary.errorsLast24h ?? 0}`}
+              valueStyle={{ color: (summary.errorsLast1h ?? 0) > 0 ? "#ff4d4f" : "#52c41a" }}
+            />
           </Card>
         </Col>
         <Col xs={12} md={4}>
           <Card size="small">
             <Statistic
               title="Outbox Failed / Pending"
-              value={`${failedOutbox} / ${pendingOutbox}`}
-              valueStyle={{ color: failedOutbox > 0 ? "#ff4d4f" : "#52c41a" }}
+              value={`${summary.outboxFailed ?? 0} / ${summary.outboxPending ?? 0}`}
+              valueStyle={{ color: (summary.outboxFailed ?? 0) > 0 ? "#ff4d4f" : "#52c41a" }}
             />
           </Card>
         </Col>
         <Col xs={12} md={4}>
           <Card size="small">
-            <Statistic title="Backups / Migrations" value={`${backups.length} / ${migrations.length}`} />
+            <Statistic title="Backups / Migrations" value={`${summary.backupsCount ?? 0} / ${summary.migrationsCount ?? 0}`} />
           </Card>
         </Col>
       </Row>
@@ -359,6 +362,61 @@ export const PlatformAdminPage: React.FC = () => {
       {/* MAIN TABS */}
       <Tabs
         items={[
+          {
+            key: "monitor",
+            label: `Live Microservices & Infra (${summary.servicesUp ?? 0}/${summary.servicesTotal ?? services.length} UP)`,
+            children: (
+              <Row gutter={[16, 16]}>
+                <Col xs={24} lg={15}>
+                  <Card title="Microservices Real-Time Health Probes" size="small">
+                    <Table
+                      rowKey="name"
+                      dataSource={services}
+                      pagination={false}
+                      size="small"
+                      columns={[
+                        { title: "Service", dataIndex: "name", render: (v) => <strong>{v}</strong> },
+                        {
+                          title: "Status",
+                          dataIndex: "status",
+                          width: 110,
+                          render: (v) => <Tag color={v === "UP" ? "green" : v === "DEGRADED" ? "orange" : "red"}>{v}</Tag>,
+                        },
+                        {
+                          title: "Latency",
+                          dataIndex: "latencyMs",
+                          width: 100,
+                          render: (v) => `${v ?? 0} ms`,
+                        },
+                        { title: "Detail", dataIndex: "detail", ellipsis: true },
+                      ]}
+                    />
+                  </Card>
+                </Col>
+                <Col xs={24} lg={9}>
+                  <Space direction="vertical" style={{ width: "100%" }} size="middle">
+                    <Card title="PostgreSQL Connection Pool" size="small" extra={<Tag color={dbStats.status === "UP" ? "green" : "red"}>{dbStats.status || "UNKNOWN"}</Tag>}>
+                      <Row gutter={8}>
+                        <Col span={8}><Statistic title="Open" value={dbStats.openConnections ?? 0} /></Col>
+                        <Col span={8}><Statistic title="In Use" value={dbStats.inUse ?? 0} /></Col>
+                        <Col span={8}><Statistic title="Ping" value={`${dbStats.latencyMs ?? 0}ms`} /></Col>
+                      </Row>
+                    </Card>
+                    <Card title="Redis Cache & Rate Limiter" size="small" extra={<Tag color={redisStats.status === "UP" ? "green" : "orange"}>{redisStats.status || "UNKNOWN"}</Tag>}>
+                      <Statistic title="Ping Latency" value={`${redisStats.latencyMs ?? 0} ms`} />
+                    </Card>
+                    <Card title="Go Platform Runtime" size="small">
+                      <Row gutter={8}>
+                        <Col span={8}><Statistic title="Goroutines" value={rtStats.goroutines ?? 0} /></Col>
+                        <Col span={8}><Statistic title="Alloc MB" value={Number(rtStats.allocMB || 0).toFixed(1)} /></Col>
+                        <Col span={8}><Statistic title="Uptime" value={`${Math.floor((rtStats.uptimeSeconds || 0) / 60)}m`} /></Col>
+                      </Row>
+                    </Card>
+                  </Space>
+                </Col>
+              </Row>
+            ),
+          },
           {
             key: "admins",
             label: `Platform Admins & Staff (${adminUsers.length})`,
@@ -379,28 +437,28 @@ export const PlatformAdminPage: React.FC = () => {
                       title: "Administrator",
                       render: (_: any, u: any) => (
                         <div>
-                          <strong>{u.fullName || u.name || "Admin"}</strong>
+                          <strong>{u.fullName || "Admin"}</strong>
                           <div style={{ fontSize: 12, opacity: 0.7 }}>{u.email} {u.phoneNumber ? `• ${u.phoneNumber}` : ""}</div>
                         </div>
                       ),
                     },
                     {
                       title: "Roles",
-                      render: (_: any, u: any) => {
-                        const rList = Array.isArray(u.roles) ? u.roles : u.role ? [u.role] : [];
-                        return (
-                          <Space wrap size={4}>
-                            {rList.map((r: any) => {
-                              const code = typeof r === "string" ? r : r?.name;
-                              return (
-                                <Tag key={code} color={code === "ROLE_SUPER_ADMIN" ? "red" : "blue"}>
-                                  {code}
-                                </Tag>
-                              );
-                            })}
-                          </Space>
-                        );
-                      },
+                      render: (_: any, u: any) => (
+                        <Space wrap size={4}>
+                          {(Array.isArray(u.roles) ? u.roles : []).map((code: string) => (
+                            <Tag key={code} color={code === "ROLE_SUPER_ADMIN" ? "red" : "blue"}>
+                              {code}
+                            </Tag>
+                          ))}
+                        </Space>
+                      ),
+                    },
+                    {
+                      title: "Devices",
+                      dataIndex: "activeDevicesCount",
+                      width: 90,
+                      render: (v) => <Tag>{v ?? 0} active</Tag>,
                     },
                     {
                       title: "Status",
@@ -429,7 +487,7 @@ export const PlatformAdminPage: React.FC = () => {
                           </Popconfirm>
                           <Popconfirm
                             title={String(u.status || "").toUpperCase() === "ACTIVE" ? "Suspend this admin?" : "Activate this admin?"}
-                            onConfirm={() => toggleBlock(u)}
+                            onConfirm={() => toggleStatus(u)}
                           >
                             <Button
                               size="small"
@@ -447,7 +505,7 @@ export const PlatformAdminPage: React.FC = () => {
           },
           {
             key: "logs",
-            label: `Live Service Logs (${errorCount} errors)`,
+            label: `Live Service Logs (${summary.errorsLast1h ?? 0} errors/1h)`,
             children: (
               <Card
                 extra={
@@ -489,7 +547,7 @@ export const PlatformAdminPage: React.FC = () => {
           },
           {
             key: "outbox",
-            label: `Outbox & Kafka (${failedOutbox} failed)`,
+            label: `Outbox & Kafka (${summary.outboxFailed ?? 0} failed)`,
             children: (
               <Card
                 extra={
@@ -611,60 +669,64 @@ export const PlatformAdminPage: React.FC = () => {
 
       {/* ADD / EDIT ADMIN MODAL */}
       <Modal
-        title={editingAdmin ? `Edit Admin Role: ${editingAdmin.fullName || editingAdmin.email}` : "Add New Platform Admin"}
+        title={editingAdmin ? `Change Role: ${editingAdmin.fullName || editingAdmin.email}` : "Add New Platform Admin"}
         open={adminModal}
         onCancel={() => setAdminModal(false)}
         onOk={() => adminForm.submit()}
-        okText={editingAdmin ? "Save Changes" : "Create Admin Account"}
+        okText={editingAdmin ? "Update Role" : "Create Admin Account"}
         confirmLoading={savingAdmin}
         width={540}
       >
         <Form form={adminForm} layout="vertical" onFinish={saveAdmin}>
-          <Form.Item name="fullName" label="Full Name" rules={[{ required: true }]}>
-            <Input placeholder="e.g. Ops Administrator" />
-          </Form.Item>
-          <Row gutter={12}>
-            <Col xs={24} md={12}>
-              <Form.Item name="email" label="Admin Email" rules={[{ required: true, type: "email" }]}>
-                <Input placeholder="ops@maxxpixels.com" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item name="phoneNumber" label="Mobile Number (Optional)">
-                <Input placeholder="+919876543210" />
-              </Form.Item>
-            </Col>
-          </Row>
           {!editingAdmin && (
-            <Form.Item
-              name="password"
-              label="Initial Password"
-              rules={[{ required: true, min: 6, message: "Password must be at least 6 characters" }]}
-            >
-              <Input
-                prefix={<LockOutlined />}
-                addonAfter={
-                  <Space size={6}>
-                    <a onClick={() => adminForm.setFieldValue("password", generateStrongPassword())}>Generate</a>
-                    <a
-                      onClick={() => {
-                        navigator.clipboard?.writeText(adminForm.getFieldValue("password") || "");
-                        message.success("Password copied");
-                      }}
-                    >
-                      <CopyOutlined />
-                    </a>
-                  </Space>
-                }
-              />
-            </Form.Item>
+            <>
+              <Form.Item name="fullName" label="Full Name" rules={[{ required: true }]}>
+                <Input placeholder="e.g. Ops Administrator" />
+              </Form.Item>
+              <Row gutter={12}>
+                <Col xs={24} md={12}>
+                  <Form.Item name="email" label="Admin Email" rules={[{ required: true, type: "email" }]}>
+                    <Input placeholder="ops@maxxpixels.com" />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item name="phoneNumber" label="Mobile Number (Optional)">
+                    <Input placeholder="+919876543210" />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Form.Item
+                name="password"
+                label="Initial Password"
+                rules={[{ required: true, min: 6, message: "Password must be at least 6 characters" }]}
+              >
+                <Input
+                  prefix={<LockOutlined />}
+                  addonAfter={
+                    <Space size={6}>
+                      <a onClick={() => adminForm.setFieldValue("password", generateStrongPassword())}>Generate</a>
+                      <a
+                        onClick={() => {
+                          navigator.clipboard?.writeText(adminForm.getFieldValue("password") || "");
+                          message.success("Password copied");
+                        }}
+                      >
+                        <CopyOutlined />
+                      </a>
+                    </Space>
+                  }
+                />
+              </Form.Item>
+            </>
           )}
           <Form.Item name="role" label="Assign Admin Role" rules={[{ required: true }]}>
             <Select options={ADMIN_ROLE_OPTIONS} />
           </Form.Item>
-          <Form.Item name="status" label="Account Status">
-            <Select options={[{ value: "ACTIVE", label: "ACTIVE" }, { value: "SUSPENDED", label: "SUSPENDED" }]} />
-          </Form.Item>
+          {!editingAdmin && (
+            <Form.Item name="status" label="Account Status">
+              <Select options={[{ value: "ACTIVE", label: "ACTIVE" }, { value: "SUSPENDED", label: "SUSPENDED" }]} />
+            </Form.Item>
+          )}
         </Form>
       </Modal>
 
