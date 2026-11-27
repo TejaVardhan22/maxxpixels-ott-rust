@@ -2,135 +2,94 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"embed"
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"sort"
-	"strings"
 	"time"
 
+	"github.com/pressly/goose/v3"
+	"github.com/pressly/goose/v3/lock"
 	"gorm.io/gorm"
 )
 
 //go:embed migrations/*.sql
 var migrationFS embed.FS
 
-const (
-	OTTMigrationAdvisoryLockKey   int64 = 7742026
-	GamesMigrationAdvisoryLockKey int64 = 7742027
-)
-
-// AppliedMigration represents a recorded migration row in a schema_migrations table.
+// AppliedMigration represents a recorded migration status row.
 type AppliedMigration struct {
-	Version     string    `json:"version"`
-	Name        string    `json:"name"`
-	AppliedAt   time.Time `json:"appliedAt"`
-	ExecutionMs int64     `json:"executionMs"`
+	Version   int64     `json:"version"`
+	Name      string    `json:"name"`
+	State     string    `json:"state"`
+	AppliedAt time.Time `json:"appliedAt"`
 }
 
-// RunMigrations applies additive OTT SQL migrations (0001-0013+) under a PostgreSQL advisory lock,
-// sharing the rust_schema_migrations tracking table so existing production databases stay 100% compatible.
-func RunMigrations(ctx context.Context, db *gorm.DB) error {
-	return RunEmbeddedMigrations(ctx, db, migrationFS, "migrations", "rust_schema_migrations", OTTMigrationAdvisoryLockKey)
+// NewGooseProvider builds a concurrency-safe pressly/goose/v3 Provider backed by
+// an embedded SQL directory and a PostgreSQL session advisory lock.
+func NewGooseProvider(sqlDB *sql.DB, fsys fs.FS, dir string) (*goose.Provider, error) {
+	subFS, err := fs.Sub(fsys, dir)
+	if err != nil {
+		return nil, fmt.Errorf("sub fs %s: %w", dir, err)
+	}
+	locker, err := lock.NewPostgresSessionLocker(
+		lock.WithLockTimeout(5, 60),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create postgres advisory locker: %w", err)
+	}
+	provider, err := goose.NewProvider(
+		goose.DialectPostgres,
+		sqlDB,
+		subFS,
+		goose.WithSessionLocker(locker),
+		goose.WithAllowOutofOrder(true),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create goose provider: %w", err)
+	}
+	return provider, nil
 }
 
-// RunEmbeddedMigrations applies sorted *.sql files from an embedded filesystem under a PostgreSQL
-// advisory lock, recording each applied version in tableName.
-func RunEmbeddedMigrations(ctx context.Context, db *gorm.DB, fsys fs.ReadFileFS, dir, tableName string, lockKey int64) error {
+// NewOTTGooseProvider returns the goose Provider for the main OTT database (0001-0013+).
+func NewOTTGooseProvider(db *gorm.DB) (*goose.Provider, error) {
 	sqlDB, err := db.DB()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	conn, err := sqlDB.Conn(ctx)
+	return NewGooseProvider(sqlDB, migrationFS, "migrations")
+}
+
+// RunMigrations applies all pending OTT SQL migrations using pressly/goose/v3.
+func RunMigrations(ctx context.Context, db *gorm.DB) error {
+	provider, err := NewOTTGooseProvider(db)
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
-
-	_, _ = conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", lockKey)
-	defer func() {
-		_, _ = conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", lockKey)
-	}()
-
-	createTableSQL := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %s (
-			version VARCHAR(32) PRIMARY KEY,
-			name VARCHAR(255) NOT NULL,
-			applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			execution_ms BIGINT NOT NULL DEFAULT 0
-		)`, tableName)
-	if _, err := conn.ExecContext(ctx, createTableSQL); err != nil {
-		return fmt.Errorf("create %s: %w", tableName, err)
-	}
-
-	applied := map[string]bool{}
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf("SELECT version FROM %s", tableName))
-	if err == nil {
-		for rows.Next() {
-			var v string
-			if rows.Scan(&v) == nil {
-				applied[v] = true
-			}
-		}
-		rows.Close()
-	}
-
-	entries, err := fs.ReadDir(fsys, dir)
+	results, err := provider.Up(ctx)
 	if err != nil {
-		return fmt.Errorf("read embedded migrations dir %s: %w", dir, err)
+		return fmt.Errorf("goose up (ott): %w", err)
 	}
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") {
-			names = append(names, e.Name())
-		}
-	}
-	sort.Strings(names)
-
-	insertSQL := fmt.Sprintf(
-		"INSERT INTO %s (version, name, execution_ms) VALUES ($1, $2, $3) ON CONFLICT (version) DO NOTHING",
-		tableName,
-	)
-
-	for _, fname := range names {
-		parts := strings.SplitN(strings.TrimSuffix(fname, ".sql"), "_", 2)
-		version := parts[0]
-		mname := version
-		if len(parts) > 1 {
-			mname = parts[1]
-		}
-		if applied[version] {
-			continue
-		}
-
-		raw, err := fsys.ReadFile(dir + "/" + fname)
-		if err != nil {
-			return fmt.Errorf("read migration %s: %w", fname, err)
-		}
-		started := time.Now()
-		if _, err := conn.ExecContext(ctx, string(raw)); err != nil {
-			slog.Warn("migration batch error; retrying statement-by-statement", "table", tableName, "version", version, "err", err)
-			for _, stmt := range strings.Split(string(raw), ";") {
-				s := strings.TrimSpace(stmt)
-				if s == "" || strings.HasPrefix(s, "--") {
-					continue
-				}
-				if _, se := conn.ExecContext(ctx, s); se != nil {
-					slog.Warn("migration statement skipped", "table", tableName, "version", version, "err", se)
-				}
-			}
-		}
-		elapsed := time.Since(started).Milliseconds()
-		_, _ = conn.ExecContext(ctx, insertSQL, version, mname, elapsed)
-		slog.Info("applied migration", "table", tableName, "version", version, "name", mname, "ms", elapsed)
+	for _, r := range results {
+		slog.Info("goose applied migration", "db", "ott", "version", r.Source.Version, "path", r.Source.Path, "ms", r.Duration.Milliseconds())
 	}
 	return nil
 }
 
-// ListAppliedMigrations returns all recorded migrations from tableName ordered by version.
-func ListAppliedMigrations(ctx context.Context, db *gorm.DB, tableName string) ([]AppliedMigration, error) {
-	var out []AppliedMigration
-	err := db.WithContext(ctx).Table(tableName).Order("version ASC").Find(&out).Error
-	return out, err
+// StatusFromProvider converts goose.Provider.Status into structured rows.
+func StatusFromProvider(ctx context.Context, provider *goose.Provider) ([]AppliedMigration, error) {
+	statuses, err := provider.Status(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AppliedMigration, 0, len(statuses))
+	for _, st := range statuses {
+		out = append(out, AppliedMigration{
+			Version:   st.Source.Version,
+			Name:      st.Source.Path,
+			State:     string(st.State),
+			AppliedAt: st.AppliedAt,
+		})
+	}
+	return out, nil
 }

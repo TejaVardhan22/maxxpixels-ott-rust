@@ -1,3 +1,4 @@
+-- +goose Up
 -- Intro video and portal banner management for web/mobile landing experiences.
 -- Additive only: safe on top of existing NestJS/Rust OTT databases.
 
@@ -35,3 +36,7 @@ CREATE TABLE IF NOT EXISTS portal_banners (
 CREATE INDEX IF NOT EXISTS idx_portal_banners_active_order ON portal_banners (is_active, display_order, id);
 CREATE INDEX IF NOT EXISTS idx_portal_banners_portal_key ON portal_banners (portal_key, is_active, display_order);
 CREATE INDEX IF NOT EXISTS idx_portal_banners_created_at ON portal_banners (created_at);
+
+-- +goose Down
+-- Additive migration; down is intentionally a no-op to protect production data.
+SELECT 1;

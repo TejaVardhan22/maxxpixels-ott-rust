@@ -1,8 +1,10 @@
+-- +goose Up
 -- 0011_sync_sequences_and_settings_seed.sql
 -- Fixes out-of-sync PostgreSQL primary-key sequences (e.g. system_settings_id_seq
 -- after DB restore/import, which causes `duplicate key value violates unique constraint "system_settings_pkey"`),
 -- then idempotently ensures branding/social keys exist in system_settings.
 
+-- +goose StatementBegin
 DO $$
 DECLARE
     rec RECORD;
@@ -28,6 +30,7 @@ BEGIN
         END IF;
     END LOOP;
 END $$;
+-- +goose StatementEnd
 
 INSERT INTO system_settings (setting_key, setting_value, category, setting_group, description, is_secret, is_public, updated_at)
 SELECT v.setting_key, v.setting_value, v.category, v.setting_group, v.description, v.is_secret, v.is_public, NOW()
@@ -50,3 +53,7 @@ WHERE NOT EXISTS (
     WHERE LOWER(COALESCE(s.setting_key, '')) = LOWER(v.setting_key)
 )
 ON CONFLICT DO NOTHING;
+
+-- +goose Down
+-- Additive migration; down is intentionally a no-op to protect production data.
+SELECT 1;

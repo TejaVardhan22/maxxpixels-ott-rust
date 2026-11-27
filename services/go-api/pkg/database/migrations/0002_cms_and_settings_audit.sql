@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration 0002: CMS Section Slugs & Immutable Settings/Security Audit Logs
 -- 100% additive & idempotent — safe to apply on live NestJS production databases.
 
@@ -20,3 +21,7 @@ CREATE TABLE IF NOT EXISTS setting_audit_logs (
 
 CREATE INDEX IF NOT EXISTS idx_setting_audit_logs_created_at
     ON setting_audit_logs (created_at DESC);
+
+-- +goose Down
+-- Additive migration; down is intentionally a no-op to protect production data.
+SELECT 1;

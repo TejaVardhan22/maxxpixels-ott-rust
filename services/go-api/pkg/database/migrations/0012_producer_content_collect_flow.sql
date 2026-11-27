@@ -1,3 +1,4 @@
+-- +goose Up
 -- 0012_producer_content_collect_flow.sql
 -- Additive & idempotent migration for the public producer content collection,
 -- phone OTP verification, Agreement + KYC collection, and direct Google Drive -> Bunny draft onboarding flow.
@@ -27,3 +28,7 @@ ALTER TABLE producer_submissions
 CREATE UNIQUE INDEX IF NOT EXISTS idx_producer_submissions_kyc_token
     ON producer_submissions (kyc_token)
     WHERE kyc_token IS NOT NULL;
+
+-- +goose Down
+-- Additive migration; down is intentionally a no-op to protect production data.
+SELECT 1;

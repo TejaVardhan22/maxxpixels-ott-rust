@@ -1,3 +1,4 @@
+-- +goose Up
 -- 0009_payments_nullable_legacy_columns.sql
 -- Additive & idempotent production migration:
 -- Ensures legacy NOT NULL constraints on payments.payment_id / payments.order_id
@@ -22,3 +23,7 @@ ALTER TABLE payments
 
 ALTER TABLE payments ALTER COLUMN payment_id DROP NOT NULL;
 ALTER TABLE payments ALTER COLUMN order_id DROP NOT NULL;
+
+-- +goose Down
+-- Additive migration; down is intentionally a no-op to protect production data.
+SELECT 1;

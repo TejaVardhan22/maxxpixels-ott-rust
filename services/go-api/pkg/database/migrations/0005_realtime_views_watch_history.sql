@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration 0005: accurate, realtime views and watch history
 -- Additive and idempotent. Safe to apply on an existing live database.
 
@@ -38,3 +39,7 @@ WHERE id IN (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_watch_history_profile_content
     ON watch_history (profile_id, content_id);
+
+-- +goose Down
+-- Additive migration; down is intentionally a no-op to protect production data.
+SELECT 1;

@@ -1,3 +1,4 @@
+-- +goose Up
 -- ============================================================
 -- 002 — Razorpay coin recharge orders (games DB only)
 -- ============================================================
@@ -22,3 +23,7 @@ CREATE TABLE IF NOT EXISTS coin_orders (
 
 CREATE INDEX IF NOT EXISTS idx_coin_orders_player  ON coin_orders (player_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_coin_orders_status  ON coin_orders (status);
+
+-- +goose Down
+-- Additive migration; down is intentionally a no-op to protect production data.
+SELECT 1;

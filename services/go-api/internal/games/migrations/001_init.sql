@@ -1,3 +1,4 @@
+-- +goose Up
 -- ============================================================
 -- Games service database (SEPARATE from the main OTT platform DB)
 -- Owns ONLY games data: gamer profiles mirrored from main auth/me,
@@ -147,3 +148,7 @@ CREATE TABLE IF NOT EXISTS match_results (
 
 CREATE INDEX IF NOT EXISTS idx_match_results_winner ON match_results (winner_user_id);
 CREATE INDEX IF NOT EXISTS idx_match_results_game   ON match_results (game);
+
+-- +goose Down
+-- Additive migration; down is intentionally a no-op to protect production data.
+SELECT 1;

@@ -1,3 +1,4 @@
+-- +goose Up
 -- Marketing agent onboarding + member attribution.
 -- Additive only: safe on top of existing NestJS/OTT databases.
 
@@ -32,3 +33,7 @@ CREATE TABLE IF NOT EXISTS marketing_agent_members (
 -- identified by their registered phone number via users.id.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_marketing_agent_members_user ON marketing_agent_members (user_id);
 CREATE INDEX IF NOT EXISTS idx_marketing_agent_members_agent ON marketing_agent_members (agent_id, created_at);
+
+-- +goose Down
+-- Additive migration; down is intentionally a no-op to protect production data.
+SELECT 1;

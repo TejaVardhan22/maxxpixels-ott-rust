@@ -1,3 +1,4 @@
+-- +goose Up
 -- 0010_system_settings_branding_and_social_fields.sql
 -- Additive & idempotent production migration:
 -- Ensures system_settings has all metadata columns and seeds the newly added
@@ -15,17 +16,26 @@ ALTER TABLE system_settings
 ALTER TABLE system_settings ALTER COLUMN setting_value TYPE TEXT;
 ALTER TABLE system_settings ALTER COLUMN category DROP NOT NULL;
 
+-- +goose StatementBegin
 DO $$
 BEGIN
     IF EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_name = 'system_settings' AND column_name = 'key'
     ) THEN
+        EXECUTE 'ALTER TABLE system_settings ALTER COLUMN key DROP NOT NULL';
         UPDATE system_settings
         SET setting_key = key
         WHERE (setting_key IS NULL OR setting_key = '') AND key IS NOT NULL AND key <> '';
     END IF;
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'system_settings' AND column_name = 'value'
+    ) THEN
+        EXECUTE 'ALTER TABLE system_settings ALTER COLUMN value DROP NOT NULL';
+    END IF;
 END $$;
+-- +goose StatementEnd
 
 INSERT INTO system_settings (setting_key, setting_value, category, setting_group, description, is_secret, is_public, updated_at)
 SELECT v.setting_key, v.setting_value, v.category, v.setting_group, v.description, v.is_secret, v.is_public, NOW()
@@ -48,3 +58,7 @@ WHERE NOT EXISTS (
     WHERE LOWER(COALESCE(s.setting_key, '')) = LOWER(v.setting_key)
 )
 ON CONFLICT DO NOTHING;
+
+-- +goose Down
+-- Additive migration; down is intentionally a no-op to protect production data.
+SELECT 1;

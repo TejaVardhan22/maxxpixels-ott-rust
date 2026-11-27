@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration 0004: Producer public content submission & agreement flow
 -- 100% additive & idempotent — safe to apply on live NestJS production databases.
 
@@ -51,3 +52,7 @@ CREATE INDEX IF NOT EXISTS idx_producer_submissions_status
 CREATE INDEX IF NOT EXISTS idx_producer_submissions_expires
     ON producer_submissions (expires_at)
     WHERE status IN ('SUBMITTED','AGREEMENT_SHARED','AWAITING_AGREEMENT');
+
+-- +goose Down
+-- Additive migration; down is intentionally a no-op to protect production data.
+SELECT 1;

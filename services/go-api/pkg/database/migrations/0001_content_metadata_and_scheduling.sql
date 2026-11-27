@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration 0001: Additive Content Metadata, Scheduling, TVOD Pricing & Cast Members
 -- 100% additive & idempotent — safe to apply on live NestJS production databases.
 
@@ -32,3 +33,7 @@ CREATE TABLE IF NOT EXISTS cast_members (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- +goose Down
+-- Additive migration; down is intentionally a no-op to protect production data.
+SELECT 1;

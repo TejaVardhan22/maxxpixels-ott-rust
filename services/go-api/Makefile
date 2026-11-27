@@ -1,4 +1,4 @@
-.PHONY: tidy build test migrate migrate-status run-all run-gateway run-identity run-catalog run-streaming run-commerce run-monetization run-platform run-worker run-games run-media-streamer
+.PHONY: tidy build test migrate migrate-status migrate-down migrate-create run-all run-gateway run-identity run-catalog run-streaming run-commerce run-monetization run-platform run-worker run-games run-media-streamer
 
 tidy:
 	go mod tidy
@@ -21,10 +21,16 @@ test:
 	go test -race ./...
 
 migrate:
-	go run ./cmd/migrate -target=all
+	go run ./cmd/migrate -target=all up
 
 migrate-status:
-	go run ./cmd/migrate -target=all -status
+	go run ./cmd/migrate -target=all status
+
+migrate-down:
+	go run ./cmd/migrate -target=$(or $(TARGET),ott) down
+
+migrate-create:
+	go run ./cmd/migrate -target=$(or $(TARGET),ott) create $(NAME)
 
 run-all:
 	go run ./cmd/all-in-one

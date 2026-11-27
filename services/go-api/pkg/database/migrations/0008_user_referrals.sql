@@ -1,3 +1,4 @@
+-- +goose Up
 -- 0008_user_referrals.sql
 -- Additive-only migration for Consumer Refer & Earn (user-to-user referral codes & rewards).
 
@@ -28,3 +29,7 @@ CREATE INDEX IF NOT EXISTS idx_user_referrals_referrer
 
 CREATE INDEX IF NOT EXISTS idx_user_referrals_status
     ON user_referrals (status);
+
+-- +goose Down
+-- Additive migration; down is intentionally a no-op to protect production data.
+SELECT 1;

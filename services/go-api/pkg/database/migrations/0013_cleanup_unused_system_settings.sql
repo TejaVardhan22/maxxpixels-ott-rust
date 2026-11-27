@@ -1,3 +1,4 @@
+-- +goose Up
 -- 0013_cleanup_unused_system_settings.sql
 -- Removes env-managed credentials (Bunny, Razorpay, Stripe, S3, MSG91, SMTP, FCM)
 -- and unwired/removed Admin Settings keys (Currency, Feature Flags, Player, Device Limits, Games/APK)
@@ -92,3 +93,7 @@ WHERE LOWER(REPLACE(COALESCE(setting_key, ''), '_', '')) IN (
     'defaultregion',
     'iosappurl'
 );
+
+-- +goose Down
+-- Additive migration; down is intentionally a no-op to protect production data.
+SELECT 1;

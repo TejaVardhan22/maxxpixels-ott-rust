@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration 0003: Notifications Scheduling, TVOD Purchase Status, Coupons & High-Throughput Indexes
 -- 100% additive & idempotent — safe to apply on live NestJS production databases.
 
@@ -24,3 +25,7 @@ CREATE INDEX IF NOT EXISTS idx_content_purchases_user_content
 
 CREATE INDEX IF NOT EXISTS idx_subscriptions_user_status
     ON subscriptions (user_id, status);
+
+-- +goose Down
+-- Additive migration; down is intentionally a no-op to protect production data.
+SELECT 1;
