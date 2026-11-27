@@ -95,7 +95,15 @@ func registerGDriveOAuthRoutes(mux *http.ServeMux) {
 		}
 		redirectURI := strings.TrimSpace(r.URL.Query().Get("redirectUri"))
 		if redirectURI == "" {
-			redirectURI = "http://localhost"
+			host := strings.TrimSpace(r.Host)
+			if host == "" {
+				host = "localhost:8085"
+			}
+			scheme := "http"
+			if strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+				scheme = "https"
+			}
+			redirectURI = fmt.Sprintf("%s://%s/api/gdrive/callback", scheme, host)
 		}
 		params := url.Values{
 			"client_id":     {cfg.ClientID},
@@ -110,6 +118,43 @@ func registerGDriveOAuthRoutes(mux *http.ServeMux) {
 			"authUrl":     authURL,
 			"redirectUri": redirectURI,
 		})
+	})
+
+	// 2b. Direct OAuth callback handler — exchanges code automatically and closes popup
+	mux.HandleFunc("/api/gdrive/callback", func(w http.ResponseWriter, r *http.Request) {
+		if oauthErr := strings.TrimSpace(r.URL.Query().Get("error")); oauthErr != "" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "<h3>Google Drive sign-in cancelled: %s</h3><p>You can close this tab.</p>", oauthErr)
+			return
+		}
+		code := strings.TrimSpace(r.URL.Query().Get("code"))
+		if code == "" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, "<h3>Missing OAuth authorization code.</h3>")
+			return
+		}
+		cfg, err := loadOAuthClientConfig()
+		if err != nil {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "<h3>Configuration error: %s</h3>", err.Error())
+			return
+		}
+		scheme := "http"
+		if strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+			scheme = "https"
+		}
+		redirectURI := fmt.Sprintf("%s://%s/api/gdrive/callback", scheme, r.Host)
+		if err := exchangeAndSaveGDriveCode(cfg, code, redirectURI); err != nil {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "<h3>Failed connecting Google Drive</h3><pre>%s</pre>", err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, `<!doctype html><html><body style="font-family:system-ui;background:#0f172a;color:#f8fafc;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;padding:32px;border-radius:16px;background:#1e293b;border:1px solid #334155"><h2 style="color:#4ade80;margin-top:0">Google Drive Connected!</h2><p style="color:#cbd5e1">You can now browse Shared with me &amp; My Drive in MaxxPixels Admin.</p><p style="font-size:13px;color:#94a3b8">This window will close automatically...</p></div><script>try{if(window.opener){window.opener.postMessage({type:'GDRIVE_CONNECTED',connected:true},'*');}}catch(e){}setTimeout(function(){window.close();},1200);</script></body></html>`)
 	})
 
 	// 3. Exchange authorization code (or pasted redirect URL) for refresh_token & save token.json
@@ -136,7 +181,6 @@ func registerGDriveOAuthRoutes(mux *http.ServeMux) {
 			return
 		}
 		code := strings.TrimSpace(body.Code)
-		// Allow pasting the full redirected URL (e.g. http://localhost/?code=4/0A...&scope=...)
 		if strings.Contains(code, "code=") {
 			if parsed, perr := url.Parse(code); perr == nil {
 				if qCode := parsed.Query().Get("code"); qCode != "" {
@@ -153,66 +197,11 @@ func registerGDriveOAuthRoutes(mux *http.ServeMux) {
 		if redirectURI == "" {
 			redirectURI = "http://localhost"
 		}
-
-		resp, err := http.PostForm("https://oauth2.googleapis.com/token", url.Values{
-			"client_id":     {cfg.ClientID},
-			"client_secret": {cfg.ClientSecret},
-			"code":          {code},
-			"redirect_uri":  {redirectURI},
-			"grant_type":    {"authorization_code"},
-		})
-		if err != nil {
-			w.WriteHeader(http.StatusBadGateway)
-			json.NewEncoder(w).Encode(map[string]any{"error": fmt.Sprintf("Google token request failed: %v", err)})
-			return
-		}
-		defer resp.Body.Close()
-		respBytes, _ := io.ReadAll(resp.Body)
-		if resp.StatusCode != http.StatusOK {
+		if err := exchangeAndSaveGDriveCode(cfg, code, redirectURI); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]any{"error": fmt.Sprintf("Google rejected code (HTTP %d): %s", resp.StatusCode, string(respBytes))})
+			json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
 			return
 		}
-
-		var tok struct {
-			AccessToken  string `json:"access_token"`
-			RefreshToken string `json:"refresh_token"`
-			ExpiresIn    int    `json:"expires_in"`
-		}
-		if err := json.Unmarshal(respBytes, &tok); err != nil || tok.AccessToken == "" {
-			w.WriteHeader(http.StatusBadGateway)
-			json.NewEncoder(w).Encode(map[string]any{"error": "Failed to parse Google token response"})
-			return
-		}
-
-		saved := cachedOAuthToken{
-			AccessToken:  tok.AccessToken,
-			RefreshToken: tok.RefreshToken,
-			Expiry:       time.Now().Add(time.Duration(tok.ExpiresIn) * time.Second),
-		}
-		// Keep existing refresh_token if Google omitted it on re-auth
-		if saved.RefreshToken == "" {
-			if oldBytes, err := os.ReadFile(tokenFilePath()); err == nil {
-				var old cachedOAuthToken
-				if json.Unmarshal(oldBytes, &old) == nil && old.RefreshToken != "" {
-					saved.RefreshToken = old.RefreshToken
-				}
-			}
-		}
-
-		tPath := tokenFilePath()
-		_ = os.MkdirAll(filepath.Dir(tPath), 0755)
-		outBytes, _ := json.MarshalIndent(saved, "", "  ")
-		if err := os.WriteFile(tPath, outBytes, 0600); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]any{"error": fmt.Sprintf("Failed to persist token: %v", err)})
-			return
-		}
-		// Also copy to local token.json if different
-		if tPath != "token.json" {
-			_ = os.WriteFile("token.json", outBytes, 0600)
-		}
-
 		json.NewEncoder(w).Encode(map[string]any{
 			"connected": true,
 			"message":   "Google Drive connected! Private files shared with your Gmail can now be streamed.",
@@ -220,4 +209,56 @@ func registerGDriveOAuthRoutes(mux *http.ServeMux) {
 	})
 
 	registerGDriveBrowseRoutes(mux)
+}
+
+func exchangeAndSaveGDriveCode(cfg oauthDesktopClient, code, redirectURI string) error {
+	resp, err := http.PostForm("https://oauth2.googleapis.com/token", url.Values{
+		"client_id":     {cfg.ClientID},
+		"client_secret": {cfg.ClientSecret},
+		"code":          {code},
+		"redirect_uri":  {redirectURI},
+		"grant_type":    {"authorization_code"},
+	})
+	if err != nil {
+		return fmt.Errorf("Google token request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	respBytes, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Google rejected code (HTTP %d): %s", resp.StatusCode, string(respBytes))
+	}
+
+	var tok struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int    `json:"expires_in"`
+	}
+	if err := json.Unmarshal(respBytes, &tok); err != nil || tok.AccessToken == "" {
+		return fmt.Errorf("Failed to parse Google token response")
+	}
+
+	saved := cachedOAuthToken{
+		AccessToken:  tok.AccessToken,
+		RefreshToken: tok.RefreshToken,
+		Expiry:       time.Now().Add(time.Duration(tok.ExpiresIn) * time.Second),
+	}
+	if saved.RefreshToken == "" {
+		if oldBytes, err := os.ReadFile(tokenFilePath()); err == nil {
+			var old cachedOAuthToken
+			if json.Unmarshal(oldBytes, &old) == nil && old.RefreshToken != "" {
+				saved.RefreshToken = old.RefreshToken
+			}
+		}
+	}
+
+	tPath := tokenFilePath()
+	_ = os.MkdirAll(filepath.Dir(tPath), 0755)
+	outBytes, _ := json.MarshalIndent(saved, "", "  ")
+	if err := os.WriteFile(tPath, outBytes, 0600); err != nil {
+		return fmt.Errorf("Failed to persist token: %v", err)
+	}
+	if tPath != "token.json" {
+		_ = os.WriteFile("token.json", outBytes, 0600)
+	}
+	return nil
 }
