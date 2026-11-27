@@ -123,6 +123,12 @@ func extractBearer(r *http.Request) string {
 	if len(authz) > 7 && strings.EqualFold(authz[:7], "Bearer ") {
 		return strings.TrimSpace(authz[7:])
 	}
+	if q := strings.TrimSpace(r.URL.Query().Get("token")); q != "" {
+		return q
+	}
+	if q := strings.TrimSpace(r.URL.Query().Get("access_token")); q != "" {
+		return q
+	}
 	return ""
 }
 

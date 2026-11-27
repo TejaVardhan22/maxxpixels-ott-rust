@@ -100,7 +100,11 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		sub.Get("/security/audit-logs", h.settingsHistory)
 		sub.Get("/audit-logs", h.settingsHistory)
 
-		// Master Taxonomy CRUD
+		// Master Taxonomy & Cast CRUD
+		sub.Get("/cast", h.listCastMembers)
+		sub.Post("/cast", h.upsertCastMember)
+		sub.Put("/cast/{id}", h.upsertCastMember)
+		sub.Delete("/cast/{id}", h.deleteCastMember)
 		sub.Post("/content-types", h.adminUpsertContentType)
 		sub.Put("/content-types/{id}", h.adminUpsertContentType)
 		sub.Delete("/content-types/{id}", h.adminDeleteContentType)
@@ -130,13 +134,18 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		sub.Get("/analytics/live", h.realtimeAnalytics)
 		sub.Get("/analytics/stream", h.analyticsSSE)
 		sub.Get("/analytics/sse", h.analyticsSSE)
+		sub.Get("/analytics/ops-chat", h.listOpsChat)
+		sub.Post("/analytics/ops-chat", h.postOpsChat)
 		sub.Get("/dashboard", h.dashboardOverview)
+		sub.Get("/dashboard/ops-chat", h.listOpsChat)
+		sub.Post("/dashboard/ops-chat", h.postOpsChat)
 	}
 
 	for _, pref := range []string{"/api/v1", "/api", ""} {
 		r.Route(pref+"/notifications", mountNotifs)
 		r.Route(pref+"/analytics", mountAnalytics)
 		r.Route(pref+"/admin", mountAdmin)
+		r.Get(pref+"/cast", h.listCastMembers)
 		r.Get(pref+"/settings", h.publicSettings)
 		r.Get(pref+"/settings/public", h.publicSettings)
 		r.Get(pref+"/general_setting", h.publicSettings)

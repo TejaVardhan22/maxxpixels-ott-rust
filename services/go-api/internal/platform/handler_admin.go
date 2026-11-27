@@ -330,3 +330,48 @@ func (h *Handler) realtimeAnalytics(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) analyticsSSE(w http.ResponseWriter, r *http.Request) {
 	h.svc.StreamAnalyticsSSE(w, r)
 }
+
+func (h *Handler) listCastMembers(w http.ResponseWriter, r *http.Request) {
+	rows, _ := h.svc.ListCastMembers(r.Context())
+	httpx.OK(w, rows)
+}
+
+func (h *Handler) upsertCastMember(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	var body map[string]any
+	_ = httpx.DecodeJSON(r, &body)
+	row, err := h.svc.UpsertCastMember(r.Context(), id, body)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	httpx.OK(w, row)
+}
+
+func (h *Handler) deleteCastMember(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	_ = h.svc.DeleteCastMember(r.Context(), id)
+	httpx.OK(w, map[string]any{"deleted": true, "id": id})
+}
+
+func (h *Handler) listOpsChat(w http.ResponseWriter, r *http.Request) {
+	httpx.OK(w, h.svc.ListOpsChat(r.Context()))
+}
+
+func (h *Handler) postOpsChat(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.FromContext(r.Context())
+	var body struct {
+		Message string `json:"message"`
+		Text    string `json:"text"`
+	}
+	_ = httpx.DecodeJSON(r, &body)
+	msg := body.Message
+	if msg == "" {
+		msg = body.Text
+	}
+	sender := claims.Email
+	if sender == "" {
+		sender = "Admin"
+	}
+	httpx.Created(w, h.svc.PostOpsChat(r.Context(), sender, msg))
+}

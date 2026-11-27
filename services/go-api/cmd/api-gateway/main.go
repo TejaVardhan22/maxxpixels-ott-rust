@@ -111,7 +111,7 @@ func main() {
 		switch {
 		case hasAnyPrefix(norm, "/auth", "/me", "/profile", "/profiles", "/devices", "/referrals", "/admin/users"):
 			identityProxy.ServeHTTP(w, req)
-		case hasAnyPrefix(norm, "/catalog", "/content", "/contents", "/home-content", "/graphql", "/categories", "/genres", "/languages", "/content-types", "/types", "/banners", "/sections", "/movies", "/series", "/seasons", "/episodes", "/live", "/live-channels", "/storage", "/uploads", "/posters", "/branding", "/intro-video", "/intro-videos", "/portal-banners", "/admin/movies", "/admin/series", "/admin/live", "/admin/live-channels", "/admin/storage", "/admin/intro-video", "/admin/intro-videos", "/admin/portal-banners"):
+		case hasAnyPrefix(norm, "/catalog", "/content", "/contents", "/search", "/cms/banners", "/cms/sections", "/cms/portal-banners", "/cms/intro-video", "/home-content", "/graphql", "/categories", "/genres", "/languages", "/content-types", "/types", "/banners", "/sections", "/movies", "/series", "/seasons", "/episodes", "/live", "/live-channels", "/storage", "/uploads", "/posters", "/branding", "/intro-video", "/intro-videos", "/portal-banners", "/admin/movies", "/admin/series", "/admin/live", "/admin/live-channels", "/admin/storage", "/admin/intro-video", "/admin/intro-videos", "/admin/portal-banners"):
 			catalogProxy.ServeHTTP(w, req)
 		case hasAnyPrefix(norm, "/playback", "/video", "/watch", "/watch-history", "/watchlist"):
 			streamingProxy.ServeHTTP(w, req)

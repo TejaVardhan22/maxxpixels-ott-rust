@@ -496,6 +496,82 @@ func (s *Service) StreamAnalyticsSSE(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// --- Cast Members CRUD ---
+
+func (s *Service) ListCastMembers(ctx context.Context) ([]map[string]any, error) {
+	var rows []map[string]any
+	_ = s.db.WithContext(ctx).Table("cast_members").Order("id DESC").Limit(500).Find(&rows).Error
+	if rows == nil {
+		rows = []map[string]any{}
+	}
+	return rows, nil
+}
+
+func (s *Service) UpsertCastMember(ctx context.Context, id int64, body map[string]any) (map[string]any, error) {
+	name := psVal(body, "name", "fullName")
+	if id == 0 && name == "" {
+		return nil, errors.New("name is required")
+	}
+	role := psVal(body, "role", "roleType")
+	if role == "" {
+		role = "ACTOR"
+	}
+	bio := psVal(body, "bio", "biography")
+	img := psVal(body, "profileImageUrl", "profile_image_url", "imageUrl", "avatarUrl")
+	if id == 0 {
+		var newID int64
+		err := s.db.WithContext(ctx).Raw(
+			"INSERT INTO cast_members (name, role, bio, profile_image_url, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW()) RETURNING id",
+			name, role, bio, img,
+		).Scan(&newID).Error
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"id": newID, "name": name, "role": role, "bio": bio, "profileImageUrl": img}, nil
+	}
+	_ = s.db.WithContext(ctx).Exec(
+		"UPDATE cast_members SET name = COALESCE(NULLIF(?, ''), name), role = COALESCE(NULLIF(?, ''), role), bio = COALESCE(NULLIF(?, ''), bio), profile_image_url = COALESCE(NULLIF(?, ''), profile_image_url), updated_at = NOW() WHERE id = ?",
+		name, role, bio, img, id,
+	).Error
+	return map[string]any{"id": id, "name": name, "role": role, "bio": bio, "profileImageUrl": img}, nil
+}
+
+func (s *Service) DeleteCastMember(ctx context.Context, id int64) error {
+	return s.db.WithContext(ctx).Exec("DELETE FROM cast_members WHERE id = ?", id).Error
+}
+
+// --- Ops Chat (Redis-backed lightweight team feed) ---
+
+func (s *Service) ListOpsChat(ctx context.Context) []map[string]any {
+	raw, ok := s.cache.Get(ctx, "maxx:ops_chat")
+	if !ok || raw == "" {
+		return []map[string]any{}
+	}
+	var out []map[string]any
+	if json.Unmarshal([]byte(raw), &out) != nil || out == nil {
+		return []map[string]any{}
+	}
+	return out
+}
+
+func (s *Service) PostOpsChat(ctx context.Context, sender, message string) map[string]any {
+	list := s.ListOpsChat(ctx)
+	entry := map[string]any{
+		"id":        time.Now().UnixMilli(),
+		"sender":    sender,
+		"message":   strings.TrimSpace(message),
+		"createdAt": time.Now().UTC().Format(time.RFC3339),
+	}
+	list = append(list, entry)
+	if len(list) > 100 {
+		list = list[len(list)-100:]
+	}
+	if b, err := json.Marshal(list); err == nil {
+		_ = s.cache.Set(ctx, "maxx:ops_chat", string(b), 7*24*time.Hour)
+	}
+	return entry
+}
+
 func psVal(m map[string]any, keys ...string) string {
 	for _, k := range keys {
 		if v, ok := m[k]; ok && v != nil {
