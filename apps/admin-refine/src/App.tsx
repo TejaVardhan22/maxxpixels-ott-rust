@@ -31,6 +31,7 @@ import { PlansPage } from "./pages/commerce/PlansPage";
 import { PaymentsPage } from "./pages/commerce/PaymentsPage";
 import { CouponsPage } from "./pages/commerce/CouponsPage";
 import { AdsProducersPage } from "./pages/monetization/AdsProducersPage";
+import MarketingAgentsPage from "./pages/monetization/MarketingAgentsPage";
 import ProducerOnboardingPage from "./pages/monetization/ProducerOnboardingPage";
 import ProducerReviewsPage from "./pages/monetization/ProducerReviewsPage";
 import NotificationsPage from "./pages/ops/NotificationsPage";
@@ -213,7 +214,7 @@ function App() {
                   <Route path="admin/subscriptions" element={<PlansPage />} />
                   <Route path="admin/payments" element={<PaymentsPage />} />
                   <Route path="admin/coupons" element={<CouponsPage />} />
-                  <Route path="admin/marketing-agents" element={<AdsProducersPage defaultTab="agents" />} />
+                  <Route path="admin/marketing-agents" element={<MarketingAgentsPage />} />
                   <Route path="admin/ads" element={<AdsProducersPage defaultTab="ads" />} />
                   <Route path="admin/ads/ssai" element={<AdsProducersPage defaultTab="ads" />} />
 
