@@ -238,7 +238,7 @@ services:
   # ============================================================================
   media-streamer:
     image: maxxpixels-go-services:local
-    entrypoint: ["/app/media-streamer"]
+    entrypoint: ["/app/media-streamer", "-server", "-port=8085"]
     container_name: maxx-go-media-streamer
     restart: unless-stopped
     ports:
