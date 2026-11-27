@@ -63,6 +63,10 @@ func Connect(cfg *config.AppConfig) (*gorm.DB, error) {
 		return nil, fmt.Errorf("postgres ping failed: %w", err)
 	}
 
+	if err := RunMigrations(ctx, db); err != nil {
+		slog.Warn("startup migrations warning", "err", err)
+	}
+
 	return db, nil
 }
 

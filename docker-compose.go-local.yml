@@ -1,0 +1,260 @@
+name: maxxpixels-go
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: maxx-go-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: localdevpassword
+      POSTGRES_DB: maxxpixels_ott
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - go_postgres_data:/var/lib/postgresql/data
+      - ./infra/sql/00_create_local_dbs.sql:/docker-entrypoint-initdb.d/01_create_games_db.sql:ro
+      - ./infra/sql/00_init_schema.sql:/docker-entrypoint-initdb.d/02_init_schema.sql:ro
+      - ./infra/sql/fix_parity_100.sql:/docker-entrypoint-initdb.d/03_fix_parity.sql:ro
+      - ./infra/sql/04_local_schema_sync.sql:/docker-entrypoint-initdb.d/04_local_schema_sync.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d maxxpixels_ott"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    networks:
+      - maxx-go-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: maxx-go-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - maxx-go-net
+
+  # ============================================================================
+  # Go Microservices (8 Independent Containers sharing 1 built Alpine image)
+  # ============================================================================
+  identity-service:
+    image: maxxpixels-go-services:local
+    build:
+      context: ./services/go-api
+    entrypoint: ["/app/identity-service"]
+    container_name: maxx-go-identity
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PORT: 8081
+      GO_ENV: development
+      DATABASE_URL: postgres://postgres:localdevpassword@postgres:5432/maxxpixels_ott?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-maxxpixels-2026}
+    networks:
+      - maxx-go-net
+
+  catalog-service:
+    image: maxxpixels-go-services:local
+    entrypoint: ["/app/catalog-service"]
+    container_name: maxx-go-catalog
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PORT: 8082
+      GO_ENV: development
+      DATABASE_URL: postgres://postgres:localdevpassword@postgres:5432/maxxpixels_ott?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-maxxpixels-2026}
+      PUBLIC_BASE_URL: http://127.0.0.1:8081
+    networks:
+      - maxx-go-net
+
+  streaming-service:
+    image: maxxpixels-go-services:local
+    entrypoint: ["/app/streaming-service"]
+    container_name: maxx-go-streaming
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 8083
+      GO_ENV: development
+      DATABASE_URL: postgres://postgres:localdevpassword@postgres:5432/maxxpixels_ott?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-maxxpixels-2026}
+      PUBLIC_BASE_URL: http://127.0.0.1:8081
+    networks:
+      - maxx-go-net
+
+  commerce-service:
+    image: maxxpixels-go-services:local
+    entrypoint: ["/app/commerce-service"]
+    container_name: maxx-go-commerce
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PORT: 8084
+      GO_ENV: development
+      DATABASE_URL: postgres://postgres:localdevpassword@postgres:5432/maxxpixels_ott?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-maxxpixels-2026}
+    networks:
+      - maxx-go-net
+
+  monetization-service:
+    image: maxxpixels-go-services:local
+    entrypoint: ["/app/monetization-service"]
+    container_name: maxx-go-monetization
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PORT: 8085
+      GO_ENV: development
+      DATABASE_URL: postgres://postgres:localdevpassword@postgres:5432/maxxpixels_ott?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-maxxpixels-2026}
+      PUBLIC_BASE_URL: http://127.0.0.1:8081
+    networks:
+      - maxx-go-net
+
+  platform-service:
+    image: maxxpixels-go-services:local
+    entrypoint: ["/app/platform-service"]
+    container_name: maxx-go-platform
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PORT: 8086
+      GO_ENV: development
+      DATABASE_URL: postgres://postgres:localdevpassword@postgres:5432/maxxpixels_ott?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-maxxpixels-2026}
+    networks:
+      - maxx-go-net
+
+  worker-service:
+    image: maxxpixels-go-services:local
+    entrypoint: ["/app/worker-service"]
+    container_name: maxx-go-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PORT: 8087
+      GO_ENV: development
+      DATABASE_URL: postgres://postgres:localdevpassword@postgres:5432/maxxpixels_ott?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+    networks:
+      - maxx-go-net
+
+  api:
+    image: maxxpixels-go-services:local
+    entrypoint: ["/app/api-gateway"]
+    container_name: maxx-go-gateway
+    depends_on:
+      redis:
+        condition: service_healthy
+      identity-service:
+        condition: service_started
+      catalog-service:
+        condition: service_started
+      streaming-service:
+        condition: service_started
+      commerce-service:
+        condition: service_started
+      monetization-service:
+        condition: service_started
+      platform-service:
+        condition: service_started
+    ports:
+      - "127.0.0.1:8081:8081"
+    environment:
+      PORT: 8081
+      GO_ENV: development
+      REDIS_URL: redis://redis:6379/0
+      IDENTITY_SERVICE_URL: http://identity-service:8081
+      CATALOG_SERVICE_URL: http://catalog-service:8082
+      STREAMING_SERVICE_URL: http://streaming-service:8083
+      COMMERCE_SERVICE_URL: http://commerce-service:8084
+      MONETIZATION_SERVICE_URL: http://monetization-service:8085
+      PLATFORM_SERVICE_URL: http://platform-service:8086
+      CORS_ALLOWED_ORIGINS: http://localhost:3001,http://127.0.0.1:3001,http://localhost:4200,http://127.0.0.1:4200
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/health >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      maxx-go-net:
+        aliases:
+          - api-gateway
+          - media-streamer
+
+  # ============================================================================
+  # Web Frontend (Next.js 14) -> Go API Gateway
+  # ============================================================================
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      args:
+        API_BACKEND_URL: http://api:8081
+        NEXT_PUBLIC_API_BASE_URL: /api/v1
+        NEXT_PUBLIC_APP_NAME: Maxxpixels
+    container_name: maxx-go-web
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      API_BACKEND_URL: http://api:8081
+    networks:
+      - maxx-go-net
+
+  # ============================================================================
+  # Admin & Producer Panel (Angular 17 + Nginx) -> Go API Gateway
+  # ============================================================================
+  admin:
+    build:
+      context: ./apps/admin
+      dockerfile: Dockerfile
+    container_name: maxx-go-admin
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:4200:80"
+    environment:
+      ADMIN_API_HOST: ""
+      ADMIN_API_BASE_URL: /api/v1
+      ADMIN_APP_NAME: MaxxPixels OTT Admin
+    networks:
+      - maxx-go-net
+
+networks:
+  maxx-go-net:
+    driver: bridge
+
+volumes:
+  go_postgres_data:
