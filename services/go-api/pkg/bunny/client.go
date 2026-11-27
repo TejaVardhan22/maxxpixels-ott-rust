@@ -167,7 +167,7 @@ func (c *StorageClient) UploadFile(ctx context.Context, folder, fileName string,
 	uniqueName := fmt.Sprintf("%d-%s", time.Now().UnixMilli(), safeName)
 
 	if c.APIKey == "" || c.StorageZone == "" {
-		return nil, fmt.Errorf("Bunny Storage is not configured (BUNNY_STORAGE_ZONE_NAME / BUNNY_STORAGE_ZONE_PASSWORD)")
+		return c.saveLocalFallback(safeFolder, uniqueName, data)
 	}
 
 	remoteURL := fmt.Sprintf("%s/%s/%s/%s", c.StorageEndpoint, c.StorageZone, safeFolder, uniqueName)
@@ -183,11 +183,11 @@ func (c *StorageClient) UploadFile(ctx context.Context, folder, fileName string,
 
 	resp, err := sharedHTTP.Do(req)
 	if err != nil {
-		return nil, err
+		return c.saveLocalFallback(safeFolder, uniqueName, data)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("Bunny Storage upload failed with HTTP %d", resp.StatusCode)
+		return c.saveLocalFallback(safeFolder, uniqueName, data)
 	}
 
 	directCDN := strings.EqualFold(os.Getenv("MEDIA_DIRECT_CDN"), "true")
@@ -199,6 +199,24 @@ func (c *StorageClient) UploadFile(ctx context.Context, folder, fileName string,
 	}
 	return map[string]any{
 		"provider": "BUNNY_STORAGE",
+		"folder":   safeFolder,
+		"fileName": uniqueName,
+		"url":      fullURL,
+		"fileUrl":  fullURL,
+	}, nil
+}
+
+func (c *StorageClient) saveLocalFallback(safeFolder, uniqueName string, data []byte) (map[string]any, error) {
+	dir := fmt.Sprintf("./uploads/%s", safeFolder)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(fmt.Sprintf("%s/%s", dir, uniqueName), data, 0o644); err != nil {
+		return nil, err
+	}
+	fullURL := fmt.Sprintf("%s/api/v1/uploads/%s/%s", c.PublicBaseURL, safeFolder, uniqueName)
+	return map[string]any{
+		"provider": "LOCAL_STORAGE",
 		"folder":   safeFolder,
 		"fileName": uniqueName,
 		"url":      fullURL,

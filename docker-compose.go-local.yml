@@ -76,7 +76,19 @@ services:
       DATABASE_URL: postgres://postgres:localdevpassword@postgres:5432/maxxpixels_ott?sslmode=disable
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-maxxpixels-2026}
-      PUBLIC_BASE_URL: http://127.0.0.1:8081
+      PUBLIC_BASE_URL: http://127.0.0.1:4200
+      BUNNY_STREAM_LIBRARY_ID: ${BUNNY_STREAM_LIBRARY_ID:-}
+      BUNNY_STREAM_API_KEY: ${BUNNY_STREAM_API_KEY:-}
+      BUNNY_STREAM_CDN_HOSTNAME: ${BUNNY_STREAM_CDN_HOSTNAME:-}
+      BUNNY_STREAM_TOKEN_AUTH_KEY: ${BUNNY_STREAM_TOKEN_AUTH_KEY:-}
+      BUNNY_STORAGE_ZONE_NAME: ${BUNNY_STORAGE_ZONE_NAME:-}
+      BUNNY_STORAGE_ZONE_PASSWORD: ${BUNNY_STORAGE_ZONE_PASSWORD:-}
+      BUNNY_STORAGE_ENDPOINT: ${BUNNY_STORAGE_ENDPOINT:-}
+      BUNNY_STORAGE_REGION: ${BUNNY_STORAGE_REGION:-}
+      BUNNY_PULL_ZONE_DOMAIN: ${BUNNY_PULL_ZONE_DOMAIN:-}
+      MEDIA_DIRECT_CDN: ${MEDIA_DIRECT_CDN:-false}
+    volumes:
+      - go_uploads:/app/uploads
     networks:
       - maxx-go-net
 
@@ -92,7 +104,9 @@ services:
       GO_ENV: development
       DATABASE_URL: postgres://postgres:localdevpassword@postgres:5432/maxxpixels_ott?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-maxxpixels-2026}
-      PUBLIC_BASE_URL: http://127.0.0.1:8081
+      PUBLIC_BASE_URL: http://127.0.0.1:4200
+      BUNNY_STREAM_CDN_HOSTNAME: ${BUNNY_STREAM_CDN_HOSTNAME:-}
+      BUNNY_STREAM_TOKEN_AUTH_KEY: ${BUNNY_STREAM_TOKEN_AUTH_KEY:-}
     networks:
       - maxx-go-net
 
@@ -218,7 +232,28 @@ services:
       maxx-go-net:
         aliases:
           - api-gateway
-          - media-streamer
+
+  # ============================================================================
+  # Google Drive -> Bunny Stream Pipeline (Go zero-disk streamer + Google OAuth)
+  # ============================================================================
+  media-streamer:
+    build:
+      context: ./services/media-streamer
+      dockerfile: Dockerfile
+    container_name: maxx-go-media-streamer
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8085:8085"
+    environment:
+      BUNNY_STREAM_LIBRARY_ID: ${BUNNY_STREAM_LIBRARY_ID:-}
+      BUNNY_STREAM_API_KEY: ${BUNNY_STREAM_API_KEY:-}
+      BUNNY_STREAM_CDN_HOSTNAME: ${BUNNY_STREAM_CDN_HOSTNAME:-}
+      GDRIVE_TOKEN_PATH: /app/data/token.json
+    volumes:
+      - ./services/media-streamer/credentials.json:/app/credentials.json:ro
+      - go_streamer_data:/app/data
+    networks:
+      - maxx-go-net
 
   # ============================================================================
   # Web Frontend (Next.js 14) -> Go API Gateway
@@ -270,3 +305,5 @@ networks:
 
 volumes:
   go_postgres_data:
+  go_uploads:
+  go_streamer_data:
