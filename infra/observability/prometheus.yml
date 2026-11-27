@@ -1,0 +1,30 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: "maxx-go-gateway"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8081"]
+
+  - job_name: "maxx-go-worker"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["worker-service:8087"]
+
+  - job_name: "maxx-go-services"
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - "identity-service:8081"
+          - "catalog-service:8082"
+          - "streaming-service:8083"
+          - "commerce-service:8084"
+          - "monetization-service:8085"
+          - "platform-service:8086"
+          - "games-service:8090"

@@ -17,6 +17,7 @@ import (
 	"github.com/maxxpixels/go-api/pkg/cache"
 	"github.com/maxxpixels/go-api/pkg/config"
 	"github.com/maxxpixels/go-api/pkg/models"
+	"github.com/maxxpixels/go-api/pkg/outbox"
 	"gorm.io/gorm"
 )
 
@@ -346,7 +347,21 @@ func (s *Service) VerifyPayment(ctx context.Context, userID int64, orderID, paym
 			_ = tx.Model(&models.Coupon{}).Where("UPPER(code) = UPPER(?)", *order.CouponCode).
 				Update("used_count", gorm.Expr("COALESCE(used_count, 0) + 1")).Error
 		}
-		return s.fulfillOrderTx(tx, &order, paymentID, purchaseType)
+		if err := s.fulfillOrderTx(tx, &order, paymentID, purchaseType); err != nil {
+			return err
+		}
+		return outbox.Enqueue(ctx, tx, outbox.TopicPayments, "payment", paymentID, "payment.captured", map[string]any{
+			"paymentId":    paymentID,
+			"orderId":      orderID,
+			"userId":       userID,
+			"amount":       amt,
+			"currency":     curr,
+			"planId":       order.PlanId,
+			"contentId":    order.ContentId,
+			"orderType":    order.OrderType,
+			"purchaseType": purchaseType,
+			"capturedAt":   now.Format(time.RFC3339),
+		})
 	})
 	if err != nil {
 		return nil, err

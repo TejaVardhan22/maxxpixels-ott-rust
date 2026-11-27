@@ -34,21 +34,65 @@ func RequestID(next http.Handler) http.Handler {
 	})
 }
 
-// AccessLogger emits low-overhead structured slog access logs.
+// LogEvent represents a structured HTTP log event emitted by AccessLogger.
+type LogEvent struct {
+	Service    string
+	Level      string
+	RequestID  string
+	Method     string
+	Path       string
+	Status     int
+	DurationMs int64
+	Message    string
+}
+
+var centralLogSink func(LogEvent)
+
+// SetLogSink registers an optional centralized log sink (e.g. Postgres service_logs) for warnings/errors/slow requests.
+func SetLogSink(fn func(LogEvent)) {
+	centralLogSink = fn
+}
+
+// AccessLogger emits low-overhead structured slog access logs and forwards 4xx/5xx or slow requests to the central log sink.
 func AccessLogger(serviceName string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			next.ServeHTTP(ww, r)
+			end := time.Now()
+			durMs := end.Sub(start).Milliseconds()
+			status := ww.Status()
+			if status == 0 {
+				status = http.StatusOK
+			}
+			reqID := w.Header().Get("X-Request-Id")
+			recordHTTPMetric(serviceName, r.Method, status, durMs)
+			exportOTLPSpanAsync(serviceName, r.Method, r.URL.Path, r.Header.Get("X-Trace-Id"), "", status, start, end)
 			slog.Info("http_request",
 				"service", serviceName,
 				"method", r.Method,
 				"path", r.URL.Path,
-				"status", ww.Status(),
-				"duration_ms", time.Since(start).Milliseconds(),
-				"request_id", w.Header().Get("X-Request-Id"),
+				"status", status,
+				"duration_ms", durMs,
+				"request_id", reqID,
 			)
+			if centralLogSink != nil && (status >= 400 || durMs >= 1000) {
+				lvl := "WARN"
+				if status >= 500 {
+					lvl = "ERROR"
+				}
+				centralLogSink(LogEvent{
+					Service:    serviceName,
+					Level:      lvl,
+					RequestID:  reqID,
+					Method:     r.Method,
+					Path:       r.URL.Path,
+					Status:     status,
+					DurationMs: durMs,
+					Message:    "http_request",
+				})
+			}
 		})
 	}
 }

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/maxxpixels/go-api/pkg/config"
+	"github.com/maxxpixels/go-api/pkg/httpx"
+	"github.com/maxxpixels/go-api/pkg/outbox"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -66,6 +68,25 @@ func Connect(cfg *config.AppConfig) (*gorm.DB, error) {
 	if err := RunMigrations(ctx, db); err != nil {
 		slog.Warn("startup migrations warning", "err", err)
 	}
+
+	// Register centralized log sink so 4xx/5xx and slow requests from all microservices land in service_logs
+	httpx.SetLogSink(func(ev httpx.LogEvent) {
+		reqID := ev.RequestID
+		method := ev.Method
+		path := ev.Path
+		status := ev.Status
+		dur := ev.DurationMs
+		outbox.RecordLog(db, outbox.ServiceLog{
+			Service:    ev.Service,
+			Level:      ev.Level,
+			RequestID:  &reqID,
+			Method:     &method,
+			Path:       &path,
+			Status:     &status,
+			DurationMs: &dur,
+			Message:    ev.Message,
+		})
+	})
 
 	return db, nil
 }

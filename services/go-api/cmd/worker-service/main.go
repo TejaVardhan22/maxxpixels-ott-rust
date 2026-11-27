@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -18,13 +19,21 @@ import (
 	"github.com/maxxpixels/go-api/pkg/config"
 	"github.com/maxxpixels/go-api/pkg/database"
 	"github.com/maxxpixels/go-api/pkg/httpx"
+	"github.com/maxxpixels/go-api/pkg/kafka"
 	"github.com/maxxpixels/go-api/pkg/models"
 	"github.com/maxxpixels/go-api/pkg/notify"
+	"github.com/maxxpixels/go-api/pkg/outbox"
 	"gorm.io/gorm"
 )
 
-// worker-service replaces the 4 Rust background workers (billing, notifications, sessions, analytics)
-// with bounded Go goroutine workers and graceful cancellation.
+// worker-service runs all background workers with bounded concurrency and graceful shutdown:
+// 1. Billing expiry worker (5m)
+// 2. Stale playback session cleanup (2m)
+// 3. Maintenance & settings Redis sync (30s)
+// 4. Scheduled notifications fan-out (1m)
+// 5. Daily plan-expiry push notifications with template rendering (1h, deduped 1/day/user)
+// 6. Transactional Outbox Relay -> Kafka (2s, FOR UPDATE SKIP LOCKED + exponential backoff)
+// 7. Kafka Consumers for ott.content.views, ott.watch.history, ott.payments (when KAFKA_ENABLED=true)
 func main() {
 	cfg, err := config.Load(8087)
 	if err != nil {
@@ -38,6 +47,8 @@ func main() {
 	}
 	redisStore := cache.New(cfg.RedisURL)
 	platSvc := platform.NewService(db, redisStore)
+	kafkaPub := kafka.NewPublisher(cfg.KafkaEnabled, cfg.KafkaBrokers)
+	defer kafkaPub.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
@@ -93,14 +104,54 @@ func main() {
 		})
 	}()
 
-	// Lightweight health probe HTTP server
+	// 5. Daily Plan-Expiry Push Notification Worker (checks every 1 hour; deduped to max 1/day/user/template)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		runPeriodic(ctx, time.Hour, "plan_expiry_push_worker", func(c context.Context) {
+			if _, _, err := platform.RunDailyExpiryNotifications(c, db); err != nil {
+				slog.Warn("plan_expiry_push_worker error", "err", err)
+			}
+		})
+	}()
+
+	// 6. Transactional Outbox Relay Worker (every 2 seconds -> Kafka or local audit)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		runPeriodic(ctx, 2*time.Second, "outbox_relay_worker", func(c context.Context) {
+			relayOutboxBatch(c, db, kafkaPub)
+		})
+	}()
+
+	// 7. Kafka Consumers (when KAFKA_ENABLED=true) — idempotent DB persistence for views, watch history & payments
+	if cfg.KafkaEnabled && len(cfg.KafkaBrokers) > 0 {
+		for _, topic := range []string{outbox.TopicContentViews, outbox.TopicWatchHistory, outbox.TopicPayments} {
+			t := topic
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				kafka.ConsumeTopic(ctx, cfg.KafkaBrokers, cfg.KafkaConsumerGroup, t, func(c context.Context, key string, val []byte) error {
+					return handleKafkaEvent(c, db, t, key, val)
+				})
+			}()
+		}
+	}
+
+	// Lightweight health & Prometheus metrics probe HTTP server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		httpx.OK(w, map[string]any{"status": "UP", "service": "worker-service", "db": database.HealthCheck(r.Context(), db) == nil})
+		httpx.OK(w, map[string]any{
+			"status":       "UP",
+			"service":      "worker-service",
+			"db":           database.HealthCheck(r.Context(), db) == nil,
+			"kafkaEnabled": kafkaPub.Enabled(),
+		})
 	})
+	mux.HandleFunc("/metrics", httpx.MetricsHandler("worker-service"))
 	srv := &http.Server{Addr: fmt.Sprintf("%s:%d", cfg.Host, cfg.Port), Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
-		slog.Info("worker-service health probe listening", "addr", srv.Addr)
+		slog.Info("worker-service health probe listening", "addr", srv.Addr, "kafka_enabled", kafkaPub.Enabled())
 		_ = srv.ListenAndServe()
 	}()
 
@@ -133,6 +184,133 @@ func runPeriodic(ctx context.Context, interval time.Duration, name string, fn fu
 	}
 }
 
+func handleKafkaEvent(ctx context.Context, db *gorm.DB, topic, key string, val []byte) error {
+	switch topic {
+	case outbox.TopicContentViews:
+		var ev struct {
+			EventID   string `json:"eventId"`
+			ContentID int64  `json:"contentId"`
+			UserID    *int64 `json:"userId"`
+			ViewerKey string `json:"viewerKey"`
+		}
+		if err := json.Unmarshal(val, &ev); err != nil || ev.ContentID <= 0 || ev.EventID == "" {
+			return nil
+		}
+		res := db.WithContext(ctx).Exec(`
+			INSERT INTO content_view_events (event_id, content_id, user_id, viewer_key, session_id, event_type)
+			VALUES (?, ?, ?, ?, ?, 'start')
+			ON CONFLICT (event_id) DO NOTHING
+		`, ev.EventID, ev.ContentID, ev.UserID, ev.ViewerKey, ev.EventID)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected > 0 {
+			_ = db.WithContext(ctx).Exec(
+				"UPDATE contents SET view_count = COALESCE(view_count, 0) + 1, updated_at = NOW() WHERE id = ?",
+				ev.ContentID,
+			).Error
+		}
+		return nil
+
+	case outbox.TopicWatchHistory:
+		var ev struct {
+			UserID          int64   `json:"userId"`
+			ContentID       int64   `json:"contentId"`
+			EpisodeID       *int64  `json:"episodeId"`
+			PositionSeconds int32   `json:"positionSeconds"`
+			DurationSeconds int32   `json:"durationSeconds"`
+			Percentage      float64 `json:"percentage"`
+			Completed       bool    `json:"completed"`
+		}
+		if err := json.Unmarshal(val, &ev); err != nil || ev.UserID <= 0 || ev.ContentID <= 0 {
+			return nil
+		}
+		now := time.Now().UTC()
+		res := db.WithContext(ctx).Model(&models.WatchHistory{}).
+			Where("user_id = ? AND content_id = ?", ev.UserID, ev.ContentID).
+			Updates(map[string]any{
+				"episode_id":             ev.EpisodeID,
+				"position_seconds":       ev.PositionSeconds,
+				"duration_seconds":       ev.DurationSeconds,
+				"watched_seconds":        ev.PositionSeconds,
+				"total_duration_seconds": ev.DurationSeconds,
+				"percentage":             ev.Percentage,
+				"completed":              ev.Completed,
+				"is_completed":           ev.Completed,
+				"last_watched_at":        now,
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		return nil
+
+	case outbox.TopicPayments:
+		outbox.RecordLog(db, outbox.ServiceLog{
+			Service: "kafka-consumer",
+			Level:   "INFO",
+			Message: fmt.Sprintf("processed kafka payment event key=%s", key),
+		})
+		return nil
+	}
+	return nil
+}
+
+func relayOutboxBatch(ctx context.Context, db *gorm.DB, pub *kafka.Publisher) {
+	now := time.Now().UTC()
+	tx := db.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		return
+	}
+
+	var events []outbox.Event
+	if err := tx.Raw(`
+		SELECT * FROM outbox_events
+		WHERE status = 'PENDING' AND next_retry_at <= ?
+		ORDER BY id ASC
+		LIMIT 100
+		FOR UPDATE SKIP LOCKED
+	`, now).Scan(&events).Error; err != nil || len(events) == 0 {
+		tx.Rollback()
+		return
+	}
+
+	for _, ev := range events {
+		if pub.Enabled() {
+			if err := pub.Publish(ctx, ev.Topic, ev.AggregateID, []byte(ev.Payload)); err != nil {
+				attempts := ev.Attempts + 1
+				status := "PENDING"
+				if attempts >= ev.MaxAttempts {
+					status = "FAILED"
+				}
+				backoff := time.Duration(1<<min(attempts, 6)) * 5 * time.Second
+				errMsg := err.Error()
+				_ = tx.Model(&outbox.Event{}).Where("id = ?", ev.ID).Updates(map[string]any{
+					"attempts":      attempts,
+					"status":        status,
+					"last_error":    errMsg,
+					"next_retry_at": now.Add(backoff),
+				}).Error
+				outbox.RecordLog(db, outbox.ServiceLog{
+					Service: "worker-service",
+					Level:   "ERROR",
+					Message: fmt.Sprintf("outbox kafka publish failed (topic=%s, id=%d): %s", ev.Topic, ev.ID, errMsg),
+				})
+				continue
+			}
+		}
+		// Optional Zapier webhook automation (configured via ZAPIER_*_WEBHOOK_URL in .env)
+		if zErr := outbox.ForwardToZapier(ctx, ev); zErr != nil {
+			slog.Warn("zapier webhook dispatch failed", "eventId", ev.ID, "topic", ev.Topic, "err", zErr)
+		}
+		_ = tx.Model(&outbox.Event{}).Where("id = ?", ev.ID).Updates(map[string]any{
+			"status":       "PUBLISHED",
+			"attempts":     ev.Attempts + 1,
+			"published_at": now,
+		}).Error
+	}
+	_ = tx.Commit().Error
+}
+
 func dispatchScheduledNotifications(ctx context.Context, db *gorm.DB) {
 	now := time.Now().UTC()
 	var due []models.Notification
@@ -161,7 +339,6 @@ func dispatchScheduledNotifications(ctx context.Context, db *gorm.DB) {
 			actURL = *n.ActionUrl
 		}
 
-		// 1. Dispatch real FCM HTTP v1 push (user tokens or /topics/<audience>)
 		if channel == "PUSH" || channel == "FCM" {
 			if n.TargetUserId != nil && *n.TargetUserId != "" {
 				if uid, err := strconv.ParseInt(*n.TargetUserId, 10, 64); err == nil {
@@ -185,7 +362,6 @@ func dispatchScheduledNotifications(ctx context.Context, db *gorm.DB) {
 			}
 		}
 
-		// 2. Fan out into in-app user_notifications inbox
 		if len(userIDs) > 0 {
 			isRead := false
 			batch := make([]models.UserNotification, 0, len(userIDs))

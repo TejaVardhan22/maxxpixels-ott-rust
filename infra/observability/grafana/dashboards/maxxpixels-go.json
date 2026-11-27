@@ -1,0 +1,45 @@
+{
+  "title": "MaxxPixels Go Microservices",
+  "uid": "maxxpixels-go-overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "HTTP Requests / sec by Status",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "sum by (service, status) (rate(maxx_http_requests_total[1m]))", "legendFormat": "{{service}} [{{status}}]" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Avg HTTP Latency (ms)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "rate(maxx_http_request_duration_ms_sum[1m]) / clamp_min(rate(maxx_http_request_duration_ms_count[1m]), 1)", "legendFormat": "{{service}}" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Active Goroutines",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "maxx_goroutines", "legendFormat": "{{job}}" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Heap Memory Allocated (MB)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        { "expr": "maxx_memory_alloc_bytes / 1048576", "legendFormat": "{{job}}" }
+      ]
+    }
+  ]
+}

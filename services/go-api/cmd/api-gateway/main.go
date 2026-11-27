@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -91,18 +90,7 @@ func main() {
 	for _, p := range []string{"/health", "/api/health", "/api/v1/health", "/actuator/health", "/api/actuator/health", "/api/v1/actuator/health"} {
 		r.Get(p, healthFn)
 	}
-	startedAt := time.Now().UTC()
-	metricsFn := func(w http.ResponseWriter, r *http.Request) {
-		var mem runtime.MemStats
-		runtime.ReadMemStats(&mem)
-		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-		_, _ = fmt.Fprintf(w,
-			"# HELP maxx_uptime_seconds Gateway uptime in seconds\n# TYPE maxx_uptime_seconds gauge\nmaxx_uptime_seconds %.2f\n"+
-				"# HELP maxx_goroutines Current number of goroutines\n# TYPE maxx_goroutines gauge\nmaxx_goroutines %d\n"+
-				"# HELP maxx_memory_alloc_bytes Allocated heap bytes\n# TYPE maxx_memory_alloc_bytes gauge\nmaxx_memory_alloc_bytes %d\n",
-			time.Since(startedAt).Seconds(), runtime.NumGoroutine(), mem.Alloc,
-		)
-	}
+	metricsFn := httpx.MetricsHandler("api-gateway")
 	r.Get("/metrics", metricsFn)
 	r.Get("/prometheus", metricsFn)
 

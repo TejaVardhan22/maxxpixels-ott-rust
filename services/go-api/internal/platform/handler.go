@@ -147,7 +147,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		sub.Put("/languages/{code}", h.adminUpsertLanguage)
 		sub.Delete("/languages/{code}", h.adminDeleteLanguage)
 
-		// Admin Notifications (FCM HTTP v1 Push + MSG91 SMS)
+		// Admin Notifications (FCM HTTP v1 Push + MSG91 SMS + Templates + Daily Expiry)
 		sub.Get("/notifications/history", h.adminNotificationHistory)
 		sub.Get("/notifications/devices", h.adminListDevices)
 		sub.Get("/notifications/config", h.adminNotificationConfig)
@@ -157,6 +157,16 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		sub.Post("/notifications/push/topic", h.adminPushTopic)
 		sub.Post("/notifications/push/user/{userId}", h.adminPushUser)
 		sub.Post("/notifications/sms/send", h.adminSendSMS)
+		sub.Get("/notifications/templates", h.adminListNotificationTemplates)
+		sub.Post("/notifications/templates", h.adminUpsertNotificationTemplate)
+		sub.Put("/notifications/templates/{id}", h.adminUpsertNotificationTemplate)
+		sub.Delete("/notifications/templates/{id}", h.adminDeleteNotificationTemplate)
+		sub.Post("/notifications/run-expiry-check", h.adminRunExpiryNotifications)
+
+		// Centralized Service Logs & Transactional Outbox Inspector
+		sub.Get("/logs", h.adminListServiceLogs)
+		sub.Get("/outbox", h.adminListOutboxEvents)
+		sub.Post("/outbox/retry", h.adminRetryOutboxEvents)
 		sub.Post("/notifications/sms/bulk", h.adminSendSMS)
 		sub.Post("/notifications/whatsapp/send", h.adminSendWhatsApp)
 		sub.Post("/notifications/whatsapp/bulk", h.adminSendWhatsApp)

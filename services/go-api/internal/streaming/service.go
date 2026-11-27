@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/maxxpixels/go-api/pkg/config"
 	"github.com/maxxpixels/go-api/pkg/models"
+	"github.com/maxxpixels/go-api/pkg/outbox"
 	"gorm.io/gorm"
 )
 
@@ -273,6 +274,17 @@ func (s *Service) AuthorizePlayback(ctx context.Context, in AuthorizeInput) (*Pl
 				in.ContentID,
 			).Error
 		}
+		_ = outbox.Enqueue(ctx, s.db, outbox.TopicContentViews, "content", fmt.Sprintf("%d", in.ContentID), "playback.started", map[string]any{
+			"eventId":    sessionID,
+			"contentId":  in.ContentID,
+			"episodeId":  in.EpisodeID,
+			"userId":     in.UserID,
+			"viewerKey":  viewerKey,
+			"deviceId":   in.DeviceID,
+			"deviceType": in.DeviceType,
+			"planCode":   ent.PlanCode,
+			"startedAt":  now.Format(time.RFC3339),
+		})
 	}
 
 	// Show ads based on plan (ads_enabled/has_ads), or on AVOD/FREE content for non-subscribers (never on trailers, admins, or paid TVOD rentals)
@@ -391,7 +403,20 @@ func (s *Service) SaveProgress(ctx context.Context, userID, contentID int64, epi
 			IsCompleted:          &completed,
 			LastWatchedAt:        &now,
 		}
-		return s.db.WithContext(ctx).Create(&row).Error
+		if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
+			return err
+		}
+		_ = outbox.Enqueue(ctx, s.db, outbox.TopicWatchHistory, "watch_history", fmt.Sprintf("%d:%d", userID, contentID), "watch.progress", map[string]any{
+			"userId":          userID,
+			"contentId":       contentID,
+			"episodeId":       episodeID,
+			"positionSeconds": finalPos,
+			"durationSeconds": durSec,
+			"percentage":      pct,
+			"completed":       completed,
+			"updatedAt":       now.Format(time.RFC3339),
+		})
+		return nil
 	} else if err != nil {
 		return err
 	}
