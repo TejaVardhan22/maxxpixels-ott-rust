@@ -335,22 +335,21 @@ services:
       - maxx-go-net
 
   # ============================================================================
-  # Admin & Producer Panel (Angular 17 + Nginx) -> Go API Gateway
+  # Admin & Producer Panel (React + Refine + Ant Design + Nginx) -> Go API Gateway
   # ============================================================================
   admin:
     build:
-      context: ./apps/admin
+      context: ./apps/admin-refine
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api/v1
     container_name: maxx-go-admin
+    restart: unless-stopped
     depends_on:
       api:
         condition: service_healthy
     ports:
       - "127.0.0.1:4200:80"
-    environment:
-      ADMIN_API_HOST: ""
-      ADMIN_API_BASE_URL: /api/v1
-      ADMIN_APP_NAME: MaxxPixels OTT Admin
     networks:
       - maxx-go-net
 
