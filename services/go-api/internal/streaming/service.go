@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/maxxpixels/go-api/pkg/config"
+	"github.com/maxxpixels/go-api/pkg/database"
 	"github.com/maxxpixels/go-api/pkg/models"
 	"github.com/maxxpixels/go-api/pkg/outbox"
 	"gorm.io/gorm"
@@ -253,46 +254,48 @@ func (s *Service) AuthorizePlayback(ctx context.Context, in AuthorizeInput) (*Pl
 		ip := strings.TrimSpace(in.IPAddress)
 		sess.IpAddress = &ip
 	}
-	_ = s.db.WithContext(ctx).Create(&sess).Error
-
-	// Idempotent view count ledger (matches Rust content_view_events)
-	if !in.IsTrailer {
-		viewerKey := "session:" + sessionID
-		if in.UserID != nil && *in.UserID > 0 {
-			viewerKey = fmt.Sprintf("user:%d", *in.UserID)
-		} else if strings.TrimSpace(in.DeviceID) != "" {
-			viewerKey = "device:" + strings.TrimSpace(in.DeviceID)
+	// Persist playback session + idempotent view ledger + outbox event in one atomic ACID transaction
+	_ = database.WithTx(ctx, s.db, func(tx *gorm.DB) error {
+		if err := tx.Create(&sess).Error; err != nil {
+			return err
 		}
-		viewRow := outbox.ContentViewEvent{
-			EventID:   sessionID,
-			ContentID: in.ContentID,
-			UserID:    in.UserID,
-			ViewerKey: viewerKey,
-			SessionID: sessionID,
-			EventType: "start",
-			CreatedAt: now,
+		if !in.IsTrailer {
+			viewerKey := "session:" + sessionID
+			if in.UserID != nil && *in.UserID > 0 {
+				viewerKey = fmt.Sprintf("user:%d", *in.UserID)
+			} else if strings.TrimSpace(in.DeviceID) != "" {
+				viewerKey = "device:" + strings.TrimSpace(in.DeviceID)
+			}
+			viewRow := outbox.ContentViewEvent{
+				EventID:   sessionID,
+				ContentID: in.ContentID,
+				UserID:    in.UserID,
+				ViewerKey: viewerKey,
+				SessionID: sessionID,
+				EventType: "start",
+				CreatedAt: now,
+			}
+			res := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "event_id"}}, DoNothing: true}).Create(&viewRow)
+			if res.Error == nil && res.RowsAffected > 0 {
+				_ = tx.Model(&models.Content{}).Where("id = ?", in.ContentID).Updates(map[string]any{
+					"view_count": gorm.Expr("COALESCE(view_count, 0) + 1"),
+					"updated_at": now,
+				}).Error
+			}
+			_ = outbox.Enqueue(ctx, tx, outbox.TopicContentViews, "content", fmt.Sprintf("%d", in.ContentID), "playback.started", map[string]any{
+				"eventId":    sessionID,
+				"contentId":  in.ContentID,
+				"episodeId":  in.EpisodeID,
+				"userId":     in.UserID,
+				"viewerKey":  viewerKey,
+				"deviceId":   in.DeviceID,
+				"deviceType": in.DeviceType,
+				"planCode":   ent.PlanCode,
+				"startedAt":  now.Format(time.RFC3339),
+			})
 		}
-		res := s.db.WithContext(ctx).
-			Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "event_id"}}, DoNothing: true}).
-			Create(&viewRow)
-		if res.Error == nil && res.RowsAffected > 0 {
-			_ = s.db.WithContext(ctx).Model(&models.Content{}).Where("id = ?", in.ContentID).Updates(map[string]any{
-				"view_count": gorm.Expr("COALESCE(view_count, 0) + 1"),
-				"updated_at": now,
-			}).Error
-		}
-		_ = outbox.Enqueue(ctx, s.db, outbox.TopicContentViews, "content", fmt.Sprintf("%d", in.ContentID), "playback.started", map[string]any{
-			"eventId":    sessionID,
-			"contentId":  in.ContentID,
-			"episodeId":  in.EpisodeID,
-			"userId":     in.UserID,
-			"viewerKey":  viewerKey,
-			"deviceId":   in.DeviceID,
-			"deviceType": in.DeviceType,
-			"planCode":   ent.PlanCode,
-			"startedAt":  now.Format(time.RFC3339),
-		})
-	}
+		return nil
+	})
 
 	// Show ads based on plan (ads_enabled/has_ads), or on AVOD/FREE content for non-subscribers (never on trailers, admins, or paid TVOD rentals)
 	showAds := !in.IsTrailer && !isAdmin && !hasTvod && (ent.AdsEnabled || ((monetization == "AVOD" || monetization == "FREE") && !ent.HasActivePlan))

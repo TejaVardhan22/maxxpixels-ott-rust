@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/maxxpixels/go-api/pkg/cache"
+	"github.com/maxxpixels/go-api/pkg/database"
 	"github.com/maxxpixels/go-api/pkg/models"
 	"gorm.io/gorm"
 )
@@ -115,14 +116,17 @@ func (s *Service) TrackAdEvent(ctx context.Context, campaignID int64, eventType 
 		DedupKey:     uuid.NewString(),
 		CreatedAt:    &now,
 	}
-	_ = s.db.WithContext(ctx).Create(&ev).Error
-
 	col := "impressions_count"
 	if strings.EqualFold(eventType, "CLICK") {
 		col = "clicks_count"
 	}
-	return s.db.WithContext(ctx).Model(&models.AdCampaign{}).Where("id = ?", campaignID).
-		Update(col, gorm.Expr("COALESCE("+col+", 0) + 1")).Error
+	return database.WithTx(ctx, s.db, func(tx *gorm.DB) error {
+		if err := tx.Create(&ev).Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.AdCampaign{}).Where("id = ?", campaignID).
+			Update(col, gorm.Expr("COALESCE("+col+", 0) + 1")).Error
+	})
 }
 
 func (s *Service) ValidateMarketingAgent(ctx context.Context, code string) (*models.MarketingAgent, error) {

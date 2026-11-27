@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/maxxpixels/go-api/pkg/cache"
 	"github.com/maxxpixels/go-api/pkg/config"
+	"github.com/maxxpixels/go-api/pkg/database"
 	"github.com/maxxpixels/go-api/pkg/models"
 	"github.com/maxxpixels/go-api/pkg/outbox"
 	"gorm.io/gorm"
@@ -313,7 +314,7 @@ func (s *Service) VerifyPayment(ctx context.Context, userID int64, orderID, paym
 	}
 
 	now := time.Now().UTC()
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := database.WithTx(ctx, s.db, func(tx *gorm.DB) error {
 		// Atomic compare-and-swap guard: only the first concurrent verify/webhook wins settlement
 		res := tx.Model(&models.PaymentOrder{}).
 			Where("id = ? AND UPPER(COALESCE(status, '')) <> ?", order.ID, "PAID").

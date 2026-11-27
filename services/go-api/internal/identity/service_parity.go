@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/maxxpixels/go-api/pkg/database"
 	"github.com/maxxpixels/go-api/pkg/models"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 const DefaultReferralRewardDays = 7
@@ -493,42 +495,51 @@ func (s *Service) RegisterDevice(ctx context.Context, userID int64, in RegisterD
 }
 
 func (s *Service) RevokeDevice(ctx context.Context, userID int64, deviceID string) error {
-	var dev models.Device
-	err := s.db.WithContext(ctx).Where("user_id = ? AND device_id = ?", userID, deviceID).First(&dev).Error
-	if err != nil {
-		if numID, parseErr := strconv.ParseInt(deviceID, 10, 64); parseErr == nil {
-			err = s.db.WithContext(ctx).Where("user_id = ? AND id = ?", userID, numID).First(&dev).Error
+	return database.WithTx(ctx, s.db, func(tx *gorm.DB) error {
+		var dev models.Device
+		err := tx.Where("user_id = ? AND device_id = ?", userID, deviceID).First(&dev).Error
+		if err != nil {
+			if numID, parseErr := strconv.ParseInt(deviceID, 10, 64); parseErr == nil {
+				err = tx.Where("user_id = ? AND id = ?", userID, numID).First(&dev).Error
+			}
 		}
-	}
-	if err != nil {
-		return nil
-	}
-	_ = s.db.WithContext(ctx).Model(&dev).Update("is_active", false).Error
-	_ = s.db.WithContext(ctx).Model(&models.PlaybackSession{}).
-		Where("user_id = ? AND device_id = ? AND is_active = TRUE", userID, dev.DeviceId).
-		Update("is_active", false).Error
-	return nil
+		if err != nil {
+			return nil
+		}
+		if err := tx.Model(&dev).Update("is_active", false).Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.PlaybackSession{}).
+			Where("user_id = ? AND device_id = ? AND is_active = ?", userID, dev.DeviceId, true).
+			Update("is_active", false).Error
+	})
 }
 
 func (s *Service) RevokeOtherDevices(ctx context.Context, userID int64, currentDeviceID string) (int, error) {
 	curr := strings.TrimSpace(currentDeviceID)
-	var devs []models.Device
-	if err := s.db.WithContext(ctx).Where("user_id = ? AND is_active = TRUE", userID).Find(&devs).Error; err != nil {
-		return 0, err
-	}
 	revoked := 0
-	for _, d := range devs {
-		if curr != "" && d.DeviceId == curr {
-			continue
+	err := database.WithTx(ctx, s.db, func(tx *gorm.DB) error {
+		var devs []models.Device
+		if err := tx.Where("user_id = ? AND is_active = ?", userID, true).Order("id ASC").Find(&devs).Error; err != nil {
+			return err
 		}
-		if s.db.WithContext(ctx).Model(&models.Device{}).Where("id = ?", d.ID).Update("is_active", false).Error == nil {
+		for _, d := range devs {
+			if curr != "" && d.DeviceId == curr {
+				continue
+			}
+			if err := tx.Model(&models.Device{}).Where("id = ?", d.ID).Update("is_active", false).Error; err != nil {
+				return err
+			}
 			revoked++
+			if err := tx.Model(&models.PlaybackSession{}).
+				Where("user_id = ? AND device_id = ? AND is_active = ?", userID, d.DeviceId, true).
+				Update("is_active", false).Error; err != nil {
+				return err
+			}
 		}
-		_ = s.db.WithContext(ctx).Model(&models.PlaybackSession{}).
-			Where("user_id = ? AND device_id = ? AND is_active = TRUE", userID, d.DeviceId).
-			Update("is_active", false).Error
-	}
-	return revoked, nil
+		return nil
+	})
+	return revoked, err
 }
 
 // --- Referrals (Exact Rust referrals.rs parity) ---
@@ -906,19 +917,43 @@ func (s *Service) AdminToggleStatus(ctx context.Context, id int64) (map[string]a
 }
 
 func (s *Service) AdminRevokeAllDevices(ctx context.Context, userID int64) (int64, error) {
-	res := s.db.WithContext(ctx).Model(&models.Device{}).
-		Where("user_id = ? AND is_active = TRUE", userID).
-		Update("is_active", false)
-	_ = s.db.WithContext(ctx).Model(&models.PlaybackSession{}).
-		Where("user_id = ? AND is_active = TRUE", userID).
-		Update("is_active", false).Error
-	return res.RowsAffected, res.Error
+	var count int64
+	err := database.WithTx(ctx, s.db, func(tx *gorm.DB) error {
+		res := tx.Model(&models.Device{}).
+			Where("user_id = ? AND is_active = ?", userID, true).
+			Update("is_active", false)
+		if res.Error != nil {
+			return res.Error
+		}
+		count = res.RowsAffected
+		if err := tx.Model(&models.PlaybackSession{}).
+			Where("user_id = ? AND is_active = ?", userID, true).
+			Update("is_active", false).Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.RefreshToken{}).
+			Where("user_id = ? AND revoked = ?", userID, false).
+			Update("revoked", true).Error
+	})
+	return count, err
 }
 
 func (s *Service) AdminSoftDeleteUser(ctx context.Context, id int64) error {
-	_, _ = s.AdminRevokeAllDevices(ctx, id)
-	_, err := s.AdminUpdateStatus(ctx, id, "DELETED")
-	return err
+	return database.WithTx(ctx, s.db, func(tx *gorm.DB) error {
+		if err := tx.Model(&models.Device{}).Where("user_id = ? AND is_active = ?", id, true).Update("is_active", false).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&models.PlaybackSession{}).Where("user_id = ? AND is_active = ?", id, true).Update("is_active", false).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&models.RefreshToken{}).Where("user_id = ? AND revoked = ?", id, false).Update("revoked", true).Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.User{}).Where("id = ?", id).Updates(map[string]any{
+			"status":     "DELETED",
+			"updated_at": time.Now().UTC(),
+		}).Error
+	})
 }
 
 func (s *Service) AdminResetPassword(ctx context.Context, id int64, newPassword string) error {
