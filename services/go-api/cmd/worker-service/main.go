@@ -23,6 +23,7 @@ import (
 	"github.com/maxxpixels/go-api/pkg/models"
 	"github.com/maxxpixels/go-api/pkg/notify"
 	"github.com/maxxpixels/go-api/pkg/outbox"
+	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -281,37 +282,57 @@ func relayOutboxBatch(ctx context.Context, db *gorm.DB, pub *kafka.Publisher) {
 		return
 	}
 
-	for _, ev := range events {
-		if pub.Enabled() {
-			if err := pub.Publish(ctx, ev.Topic, ev.AggregateID, []byte(ev.Payload)); err != nil {
-				attempts := ev.Attempts + 1
-				status := "PENDING"
-				if attempts >= ev.MaxAttempts {
-					status = "FAILED"
-				}
-				backoff := time.Duration(1<<min(attempts, 6)) * 5 * time.Second
-				errMsg := err.Error()
-				_ = tx.Model(&outbox.Event{}).Where("id = ?", ev.ID).Updates(map[string]any{
-					"attempts":      attempts,
-					"status":        status,
-					"last_error":    errMsg,
-					"next_retry_at": now.Add(backoff),
-				}).Error
-				outbox.RecordLog(db, outbox.ServiceLog{
-					Service: "worker-service",
-					Level:   "ERROR",
-					Message: fmt.Sprintf("outbox kafka publish failed (topic=%s, id=%d): %s", ev.Topic, ev.ID, errMsg),
-				})
-				continue
+	// Fan out network publishes (Kafka + Zapier) in parallel across a bounded 10-worker pool
+	type publishResult struct {
+		ev  outbox.Event
+		err error
+	}
+	results := make([]publishResult, len(events))
+	var g errgroup.Group
+	g.SetLimit(10)
+	for i, ev := range events {
+		idx, item := i, ev
+		g.Go(func() error {
+			var pErr error
+			if pub.Enabled() {
+				pErr = pub.Publish(ctx, item.Topic, item.AggregateID, []byte(item.Payload))
 			}
+			if pErr == nil {
+				if zErr := outbox.ForwardToZapier(ctx, item); zErr != nil {
+					slog.Warn("zapier webhook dispatch failed", "eventId", item.ID, "topic", item.Topic, "err", zErr)
+				}
+			}
+			results[idx] = publishResult{ev: item, err: pErr}
+			return nil
+		})
+	}
+	_ = g.Wait()
+
+	for _, r := range results {
+		if r.err != nil {
+			attempts := r.ev.Attempts + 1
+			status := "PENDING"
+			if attempts >= r.ev.MaxAttempts {
+				status = "FAILED"
+			}
+			backoff := time.Duration(1<<min(attempts, 6)) * 5 * time.Second
+			errMsg := r.err.Error()
+			_ = tx.Model(&outbox.Event{}).Where("id = ?", r.ev.ID).Updates(map[string]any{
+				"attempts":      attempts,
+				"status":        status,
+				"last_error":    errMsg,
+				"next_retry_at": now.Add(backoff),
+			}).Error
+			outbox.RecordLog(db, outbox.ServiceLog{
+				Service: "worker-service",
+				Level:   "ERROR",
+				Message: fmt.Sprintf("outbox kafka publish failed (topic=%s, id=%d): %s", r.ev.Topic, r.ev.ID, errMsg),
+			})
+			continue
 		}
-		// Optional Zapier webhook automation (configured via ZAPIER_*_WEBHOOK_URL in .env)
-		if zErr := outbox.ForwardToZapier(ctx, ev); zErr != nil {
-			slog.Warn("zapier webhook dispatch failed", "eventId", ev.ID, "topic", ev.Topic, "err", zErr)
-		}
-		_ = tx.Model(&outbox.Event{}).Where("id = ?", ev.ID).Updates(map[string]any{
+		_ = tx.Model(&outbox.Event{}).Where("id = ?", r.ev.ID).Updates(map[string]any{
 			"status":       "PUBLISHED",
-			"attempts":     ev.Attempts + 1,
+			"attempts":     r.ev.Attempts + 1,
 			"published_at": now,
 		}).Error
 	}

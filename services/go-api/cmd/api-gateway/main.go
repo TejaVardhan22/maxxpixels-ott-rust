@@ -69,6 +69,12 @@ func main() {
 	r.Use(httpx.CORSMiddleware(cfg.CORSAllowedOrigins))
 	r.Use(httpx.SecurityHeaders)
 	r.Use(httpx.AccessLogger("api-gateway"))
+	r.Use(httpx.RateLimitMiddleware(redisStore, httpx.RateLimitConfig{
+		Disabled:         cfg.DisableRateLimit,
+		GeneralPerMinute: cfg.RateLimitGeneralPerMinute,
+		AuthPerMinute:    cfg.RateLimitAuthPerMinute,
+		PaymentPerMinute: cfg.RateLimitPaymentPerMinute,
+	}))
 	r.Use(maintenanceMiddleware(redisStore))
 
 	// Health & Observability aliases (NestJS / Spring / Rust parity)

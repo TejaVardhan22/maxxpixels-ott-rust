@@ -106,9 +106,10 @@ func (s *Store) AllowRate(ctx context.Context, key string, limit int64, window t
 	if s == nil || s.client == nil {
 		return true, limit
 	}
+	rKey := fmt.Sprintf("rl:%s", key)
 	pipe := s.client.TxPipeline()
-	incr := pipe.Incr(ctx, fmt.Sprintf("rl:%s", key))
-	pipe.Expire(ctx, fmt.Sprintf("rl:%s", key), window)
+	incr := pipe.Incr(ctx, rKey)
+	pipe.ExpireNX(ctx, rKey, window)
 	if _, err := pipe.Exec(ctx); err != nil {
 		return true, limit // fail-open if Redis is temporarily unreachable
 	}

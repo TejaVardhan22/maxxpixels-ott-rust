@@ -59,6 +59,12 @@ type AppConfig struct {
 	MSG91AuthKey    string
 	MSG91TemplateID string
 
+	// Rate Limiting (from .env)
+	DisableRateLimit           bool
+	RateLimitGeneralPerMinute  int64
+	RateLimitAuthPerMinute     int64
+	RateLimitPaymentPerMinute  int64
+
 	// Microservice upstream URLs (used by api-gateway)
 	IdentityServiceURL     string
 	CatalogServiceURL      string
@@ -141,6 +147,11 @@ func Load(defaultPort int) (*AppConfig, error) {
 		SMSProvider:     getEnv("SMS_PROVIDER", "MSG91"),
 		MSG91AuthKey:    os.Getenv("MSG91_AUTH_KEY"),
 		MSG91TemplateID: os.Getenv("MSG91_TEMPLATE_ID"),
+
+		DisableRateLimit:          strings.EqualFold(getEnv("DISABLE_RATE_LIMIT", "false"), "true"),
+		RateLimitGeneralPerMinute: int64(getEnvInt("RATE_LIMIT_GENERAL_PER_MINUTE", 600)),
+		RateLimitAuthPerMinute:    int64(getEnvInt("RATE_LIMIT_AUTH_PER_MINUTE", 30)),
+		RateLimitPaymentPerMinute: int64(getEnvInt("RATE_LIMIT_PAYMENT_PER_MINUTE", 30)),
 
 		IdentityServiceURL:     getEnv("IDENTITY_SERVICE_URL", "http://localhost:8081"),
 		CatalogServiceURL:      getEnv("CATALOG_SERVICE_URL", "http://localhost:8082"),

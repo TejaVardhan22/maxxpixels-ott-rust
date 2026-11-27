@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -15,6 +16,7 @@ import (
 	"github.com/maxxpixels/go-api/pkg/models"
 	"github.com/maxxpixels/go-api/pkg/notify"
 	"github.com/maxxpixels/go-api/pkg/outbox"
+	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -256,121 +258,131 @@ func RunDailyExpiryNotifications(ctx context.Context, db *gorm.DB) (sentCount in
 	}
 
 	fcm := notify.NewFCMFromEnv()
+	var sentAtomic, skippedAtomic atomic.Int64
+	var g errgroup.Group
+	g.SetLimit(16) // Bounded multi-threaded push fan-out pool
 
-	for _, sub := range subs {
-		hoursLeft := sub.EndDate.Sub(now).Hours()
-		daysLeft := int(math.Ceil(hoursLeft / 24.0))
+	for _, subRow := range subs {
+		sub := subRow
+		g.Go(func() error {
+			hoursLeft := sub.EndDate.Sub(now).Hours()
+			daysLeft := int(math.Ceil(hoursLeft / 24.0))
 
-		var code string
-		switch {
-		case hoursLeft <= 0:
-			code = "PLAN_EXPIRED"
-		case daysLeft <= 0 || hoursLeft <= 12:
-			code = "PLAN_EXPIRING_TODAY"
-		case daysLeft == 1:
-			code = "PLAN_EXPIRING_1D"
-		case daysLeft == 2:
-			code = "PLAN_EXPIRING_2D"
-		case daysLeft == 3:
-			code = "PLAN_EXPIRING_3D"
-		default:
-			code = "PLAN_EXPIRING_7D"
-		}
-
-		tpl, ok := tplByCode[code]
-		if !ok {
-			skippedCount++
-			continue
-		}
-
-		// Daily deduplication gate using pure GORM OnConflict (DB-agnostic)
-		subID := sub.SubscriptionID
-		dispatchRow := outbox.NotificationDispatchLog{
-			UserID:         sub.UserID,
-			SubscriptionID: &subID,
-			TemplateCode:   code,
-			Channel:        tpl.Channel,
-			DispatchDate:   todayDate,
-			Status:         "SENT",
-			CreatedAt:      now,
-		}
-		res := db.WithContext(ctx).
-			Clauses(clause.OnConflict{
-				Columns:   []clause.Column{{Name: "user_id"}, {Name: "template_code"}, {Name: "dispatch_date"}},
-				DoNothing: true,
-			}).
-			Create(&dispatchRow)
-		if res.Error != nil || res.RowsAffected == 0 {
-			skippedCount++
-			continue
-		}
-
-		if daysLeft < 0 {
-			daysLeft = 0
-		}
-		vars := map[string]string{
-			"userName":   sub.UserName,
-			"planName":   sub.PlanName,
-			"daysLeft":   strconv.Itoa(daysLeft),
-			"expiryDate": sub.EndDate.Format("02 Jan 2006"),
-		}
-		title := outbox.RenderTemplate(tpl.TitleTemplate, vars)
-		body := outbox.RenderTemplate(tpl.BodyTemplate, vars)
-		actionURL := tpl.ActionURL
-		if actionURL == "" {
-			actionURL = "/plans"
-		}
-
-		// 1. Send FCM HTTP v1 push to all active device tokens of the user
-		var devs []models.Device
-		_ = db.WithContext(ctx).
-			Where("user_id = ? AND COALESCE(is_active, TRUE) = TRUE AND fcm_token IS NOT NULL AND fcm_token <> ''", sub.UserID).
-			Find(&devs).Error
-		for _, d := range devs {
-			if d.FcmToken != nil {
-				_ = fcm.SendToTarget(ctx, *d.FcmToken, title, body, "", actionURL)
+			var code string
+			switch {
+			case hoursLeft <= 0:
+				code = "PLAN_EXPIRED"
+			case daysLeft <= 0 || hoursLeft <= 12:
+				code = "PLAN_EXPIRING_TODAY"
+			case daysLeft == 1:
+				code = "PLAN_EXPIRING_1D"
+			case daysLeft == 2:
+				code = "PLAN_EXPIRING_2D"
+			case daysLeft == 3:
+				code = "PLAN_EXPIRING_3D"
+			default:
+				code = "PLAN_EXPIRING_7D"
 			}
-		}
 
-		// 2. Persist in-app notification inbox entry
-		channel := tpl.Channel
-		status := "SENT"
-		targetUID := strconv.FormatInt(sub.UserID, 10)
-		sentOne := int32(1)
-		notif := models.Notification{
-			Title:        title,
-			Message:      body,
-			Channel:      &channel,
-			Status:       &status,
-			TargetUserId: &targetUID,
-			ActionUrl:    &actionURL,
-			SentAt:       &now,
-			SentCount:    &sentOne,
-			CreatedAt:    now,
-		}
-		if db.WithContext(ctx).Create(&notif).Error == nil {
-			isRead := false
-			_ = db.WithContext(ctx).Create(&models.UserNotification{
-				UserId:         sub.UserID,
-				NotificationId: notif.ID,
-				IsRead:         &isRead,
+			tpl, ok := tplByCode[code]
+			if !ok {
+				skippedAtomic.Add(1)
+				return nil
+			}
+
+			// Daily deduplication gate using pure GORM OnConflict (DB-agnostic)
+			subID := sub.SubscriptionID
+			dispatchRow := outbox.NotificationDispatchLog{
+				UserID:         sub.UserID,
+				SubscriptionID: &subID,
+				TemplateCode:   code,
+				Channel:        tpl.Channel,
+				DispatchDate:   todayDate,
+				Status:         "SENT",
 				CreatedAt:      now,
-			}).Error
-		}
+			}
+			res := db.WithContext(ctx).
+				Clauses(clause.OnConflict{
+					Columns:   []clause.Column{{Name: "user_id"}, {Name: "template_code"}, {Name: "dispatch_date"}},
+					DoNothing: true,
+				}).
+				Create(&dispatchRow)
+			if res.Error != nil || res.RowsAffected == 0 {
+				skippedAtomic.Add(1)
+				return nil
+			}
 
-		// 3. Emit outbox event for Kafka audit/analytics
-		_ = outbox.Enqueue(ctx, db, outbox.TopicNotifications, "subscription", fmt.Sprintf("%d", sub.SubscriptionID), "plan.expiry_notified", map[string]any{
-			"userId":         sub.UserID,
-			"subscriptionId": sub.SubscriptionID,
-			"templateCode":   code,
-			"title":          title,
-			"daysLeft":       daysLeft,
-			"expiryDate":     sub.EndDate.Format(time.RFC3339),
+			if daysLeft < 0 {
+				daysLeft = 0
+			}
+			vars := map[string]string{
+				"userName":   sub.UserName,
+				"planName":   sub.PlanName,
+				"daysLeft":   strconv.Itoa(daysLeft),
+				"expiryDate": sub.EndDate.Format("02 Jan 2006"),
+			}
+			title := outbox.RenderTemplate(tpl.TitleTemplate, vars)
+			body := outbox.RenderTemplate(tpl.BodyTemplate, vars)
+			actionURL := tpl.ActionURL
+			if actionURL == "" {
+				actionURL = "/plans"
+			}
+
+			// 1. Send FCM HTTP v1 push to all active device tokens of the user
+			var devs []models.Device
+			_ = db.WithContext(ctx).
+				Where("user_id = ? AND COALESCE(is_active, TRUE) = TRUE AND fcm_token IS NOT NULL AND fcm_token <> ''", sub.UserID).
+				Find(&devs).Error
+			for _, d := range devs {
+				if d.FcmToken != nil {
+					_ = fcm.SendToTarget(ctx, *d.FcmToken, title, body, "", actionURL)
+				}
+			}
+
+			// 2. Persist in-app notification inbox entry
+			channel := tpl.Channel
+			status := "SENT"
+			targetUID := strconv.FormatInt(sub.UserID, 10)
+			sentOne := int32(1)
+			notif := models.Notification{
+				Title:        title,
+				Message:      body,
+				Channel:      &channel,
+				Status:       &status,
+				TargetUserId: &targetUID,
+				ActionUrl:    &actionURL,
+				SentAt:       &now,
+				SentCount:    &sentOne,
+				CreatedAt:    now,
+			}
+			if db.WithContext(ctx).Create(&notif).Error == nil {
+				isRead := false
+				_ = db.WithContext(ctx).Create(&models.UserNotification{
+					UserId:         sub.UserID,
+					NotificationId: notif.ID,
+					IsRead:         &isRead,
+					CreatedAt:      now,
+				}).Error
+			}
+
+			// 3. Emit outbox event for Kafka/Zapier audit
+			_ = outbox.Enqueue(ctx, db, outbox.TopicNotifications, "subscription", fmt.Sprintf("%d", sub.SubscriptionID), "plan.expiry_notified", map[string]any{
+				"userId":         sub.UserID,
+				"subscriptionId": sub.SubscriptionID,
+				"templateCode":   code,
+				"title":          title,
+				"daysLeft":       daysLeft,
+				"expiryDate":     sub.EndDate.Format(time.RFC3339),
+			})
+
+			sentAtomic.Add(1)
+			return nil
 		})
-
-		sentCount++
 	}
+	_ = g.Wait()
 
+	sentCount = int(sentAtomic.Load())
+	skippedCount = int(skippedAtomic.Load())
 	if sentCount > 0 {
 		slog.Info("daily plan-expiry push notifications sent", "sent", sentCount, "skipped", skippedCount)
 	}
