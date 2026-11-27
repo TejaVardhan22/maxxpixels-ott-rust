@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -17,6 +19,7 @@ import (
 	"github.com/maxxpixels/go-api/pkg/database"
 	"github.com/maxxpixels/go-api/pkg/httpx"
 	"github.com/maxxpixels/go-api/pkg/models"
+	"github.com/maxxpixels/go-api/pkg/notify"
 	"gorm.io/gorm"
 )
 
@@ -135,14 +138,54 @@ func dispatchScheduledNotifications(ctx context.Context, db *gorm.DB) {
 	var due []models.Notification
 	if err := db.WithContext(ctx).
 		Where("UPPER(COALESCE(status, '')) = 'SCHEDULED' AND scheduled_at IS NOT NULL AND scheduled_at <= ?", now).
-		Limit(20).
+		Limit(50).
 		Find(&due).Error; err != nil || len(due) == 0 {
 		return
 	}
 
+	fcm := notify.NewFCMFromEnv()
 	var userIDs []int64
-	_ = db.WithContext(ctx).Model(&models.User{}).Where("UPPER(status) = 'ACTIVE'").Pluck("id", &userIDs).Error
+	_ = db.WithContext(ctx).Model(&models.User{}).Where("UPPER(status) = 'ACTIVE'").Limit(5000).Pluck("id", &userIDs).Error
+
 	for _, n := range due {
+		channel := "PUSH"
+		if n.Channel != nil && *n.Channel != "" {
+			channel = strings.ToUpper(*n.Channel)
+		}
+		imgURL := ""
+		if n.ImageUrl != nil {
+			imgURL = *n.ImageUrl
+		}
+		actURL := ""
+		if n.ActionUrl != nil {
+			actURL = *n.ActionUrl
+		}
+
+		// 1. Dispatch real FCM HTTP v1 push (user tokens or /topics/<audience>)
+		if channel == "PUSH" || channel == "FCM" {
+			if n.TargetUserId != nil && *n.TargetUserId != "" {
+				if uid, err := strconv.ParseInt(*n.TargetUserId, 10, 64); err == nil {
+					var devs []models.Device
+					_ = db.WithContext(ctx).Where("user_id = ? AND fcm_token IS NOT NULL AND fcm_token <> ''", uid).Find(&devs).Error
+					for _, d := range devs {
+						if d.FcmToken != nil {
+							_ = fcm.SendToTarget(ctx, *d.FcmToken, n.Title, n.Message, imgURL, actURL)
+						}
+					}
+				}
+			} else {
+				topic := "all_users"
+				if n.TargetAudience != nil && strings.TrimSpace(*n.TargetAudience) != "" {
+					t := strings.ToUpper(strings.TrimSpace(*n.TargetAudience))
+					if t != "ALL" && t != "ALL_USERS" && t != "EVERYONE" {
+						topic = strings.ToLower(t)
+					}
+				}
+				_ = fcm.SendToTarget(ctx, "/topics/"+topic, n.Title, n.Message, imgURL, actURL)
+			}
+		}
+
+		// 2. Fan out into in-app user_notifications inbox
 		if len(userIDs) > 0 {
 			isRead := false
 			batch := make([]models.UserNotification, 0, len(userIDs))
@@ -157,7 +200,7 @@ func dispatchScheduledNotifications(ctx context.Context, db *gorm.DB) {
 			_ = db.WithContext(ctx).CreateInBatches(batch, 500).Error
 		}
 		_ = db.WithContext(ctx).Model(&models.Notification{}).Where("id = ?", n.ID).
-			Updates(map[string]any{"status": "SENT", "sent_at": now}).Error
-		slog.Info("dispatched scheduled notification", "notification_id", n.ID, "recipients", len(userIDs))
+			Updates(map[string]any{"status": "SENT", "sent_at": now, "sent_count": len(userIDs)}).Error
+		slog.Info("dispatched scheduled notification", "notification_id", n.ID, "recipients", len(userIDs), "fcm_configured", fcm.IsConfigured())
 	}
 }

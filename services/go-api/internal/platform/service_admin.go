@@ -12,6 +12,7 @@ import (
 
 	"github.com/maxxpixels/go-api/pkg/bunny"
 	"github.com/maxxpixels/go-api/pkg/models"
+	"github.com/maxxpixels/go-api/pkg/notify"
 	"gorm.io/gorm"
 )
 
@@ -421,7 +422,7 @@ func (s *Service) AdminNotificationHistory(ctx context.Context) ([]models.Notifi
 	return rows, err
 }
 
-func (s *Service) AdminPushToUser(ctx context.Context, userID int64, title, message, notifType string) (*models.Notification, error) {
+func (s *Service) AdminPushToUser(ctx context.Context, userID int64, title, message, notifType string) (map[string]any, error) {
 	if notifType == "" {
 		notifType = "PUSH"
 	}
@@ -429,6 +430,18 @@ func (s *Service) AdminPushToUser(ctx context.Context, userID int64, title, mess
 	uidStr := fmt.Sprintf("%d", userID)
 	st := "SENT"
 	tType := "USER"
+
+	// Dispatch real FCM HTTP v1 push to all registered device tokens for this user
+	fcm := notify.NewFCMFromEnv()
+	var devices []models.Device
+	_ = s.db.WithContext(ctx).Where("user_id = ? AND fcm_token IS NOT NULL AND fcm_token <> ''", userID).Find(&devices).Error
+	fcmSent := 0
+	for _, d := range devices {
+		if d.FcmToken != nil && fcm.SendToTarget(ctx, *d.FcmToken, title, message, "", "") {
+			fcmSent++
+		}
+	}
+	sentCnt := int32(fcmSent)
 	n := models.Notification{
 		Title:        title,
 		Message:      message,
@@ -436,6 +449,7 @@ func (s *Service) AdminPushToUser(ctx context.Context, userID int64, title, mess
 		Status:       &st,
 		TargetType:   &tType,
 		TargetUserId: &uidStr,
+		SentCount:    &sentCnt,
 		SentAt:       &now,
 		CreatedAt:    now,
 	}
@@ -444,10 +458,73 @@ func (s *Service) AdminPushToUser(ctx context.Context, userID int64, title, mess
 	}
 	// Also insert into user_notifications inbox so the user sees it immediately
 	_ = s.db.WithContext(ctx).Exec(
-		"INSERT INTO user_notifications (user_id, title, body, message, notification_type, is_read, created_at) VALUES (?, ?, ?, ?, ?, FALSE, NOW())",
-		userID, title, message, message, notifType,
+		"INSERT INTO user_notifications (user_id, notification_id, is_read, created_at) VALUES (?, ?, FALSE, NOW())",
+		userID, n.ID,
 	).Error
-	return &n, nil
+	return map[string]any{
+		"notification":  n,
+		"fcmConfigured": fcm.IsConfigured(),
+		"fcmDelivered":  fcmSent,
+		"deviceTokens":  len(devices),
+	}, nil
+}
+
+func (s *Service) AdminPushTopic(ctx context.Context, topic, title, message, imageURL, actionURL string) (map[string]any, error) {
+	cleanTopic := strings.ToLower(strings.TrimSpace(topic))
+	if cleanTopic == "" || cleanTopic == "all" || cleanTopic == "everyone" {
+		cleanTopic = "all_users"
+	}
+	fcm := notify.NewFCMFromEnv()
+	delivered := fcm.SendToTarget(ctx, "/topics/"+cleanTopic, title, message, imageURL, actionURL)
+
+	now := time.Now().UTC()
+	ch := "PUSH"
+	st := "SENT"
+	tType := "TOPIC"
+	n := models.Notification{
+		Title:          title,
+		Message:        message,
+		Channel:        &ch,
+		Status:         &st,
+		TargetType:     &tType,
+		TargetAudience: &cleanTopic,
+		ImageUrl:       pOptStr(imageURL),
+		ActionUrl:      pOptStr(actionURL),
+		SentAt:         &now,
+		CreatedAt:      now,
+	}
+	_ = s.db.WithContext(ctx).Create(&n).Error
+	return map[string]any{
+		"notification":  n,
+		"topic":         cleanTopic,
+		"fcmConfigured": fcm.IsConfigured(),
+		"fcmDelivered":  delivered,
+	}, nil
+}
+
+func (s *Service) AdminSendSMS(ctx context.Context, phones []string, templateID, message string) (map[string]any, error) {
+	msg91 := notify.NewMSG91FromEnv()
+	count, provider, err := msg91.SendSMS(ctx, phones, templateID, message)
+	if err != nil {
+		return map[string]any{"sent": false, "provider": provider, "error": err.Error()}, err
+	}
+	return map[string]any{"sent": true, "provider": provider, "recipientCount": count}, nil
+}
+
+func (s *Service) AdminNotificationConfig() map[string]any {
+	msg91 := notify.NewMSG91FromEnv()
+	fcm := notify.NewFCMFromEnv()
+	return map[string]any{
+		"sms": map[string]any{
+			"provider":   "MSG91",
+			"configured": msg91.IsConfigured(),
+			"senderId":   msg91.SenderID,
+		},
+		"push": map[string]any{
+			"provider":   "FCM_HTTP_V1",
+			"configured": fcm.IsConfigured(),
+		},
+	}
 }
 
 func (s *Service) GetRealtimeAnalytics(ctx context.Context) map[string]any {

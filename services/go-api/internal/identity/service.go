@@ -13,6 +13,7 @@ import (
 	"github.com/maxxpixels/go-api/pkg/auth"
 	"github.com/maxxpixels/go-api/pkg/cache"
 	"github.com/maxxpixels/go-api/pkg/models"
+	"github.com/maxxpixels/go-api/pkg/notify"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -154,6 +155,7 @@ func (s *Service) SendOTP(ctx context.Context, phone string) (string, error) {
 	}
 	code := fmt.Sprintf("%06d", n.Int64()+100000)
 	_ = s.cache.Set(ctx, "otp:code:"+phone, code, 5*time.Minute)
+	_ = notify.NewMSG91FromEnv().SendOTP(ctx, phone, code)
 	return code, nil
 }
 

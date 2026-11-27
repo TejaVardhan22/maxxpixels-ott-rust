@@ -118,10 +118,17 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		sub.Put("/languages/{code}", h.adminUpsertLanguage)
 		sub.Delete("/languages/{code}", h.adminDeleteLanguage)
 
-		// Admin Notifications
+		// Admin Notifications (FCM HTTP v1 Push + MSG91 SMS)
 		sub.Get("/notifications/history", h.adminNotificationHistory)
 		sub.Get("/notifications/devices", h.adminListDevices)
+		sub.Get("/notifications/config", h.adminNotificationConfig)
+		sub.Post("/notifications/config", h.adminNotificationConfig)
+		sub.Post("/notifications/config/{channel}", h.adminNotificationConfig)
+		sub.Post("/notifications/test", h.adminNotificationConfig)
+		sub.Post("/notifications/push/topic", h.adminPushTopic)
 		sub.Post("/notifications/push/user/{userId}", h.adminPushUser)
+		sub.Post("/notifications/sms/send", h.adminSendSMS)
+		sub.Post("/notifications/sms/bulk", h.adminSendSMS)
 
 		// Admin Analytics & Realtime SSE
 		sub.Get("/analytics", h.dashboardOverview)

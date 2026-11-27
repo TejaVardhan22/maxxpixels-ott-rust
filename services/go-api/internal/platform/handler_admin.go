@@ -315,12 +315,69 @@ func (h *Handler) adminPushUser(w http.ResponseWriter, r *http.Request) {
 	if msg == "" {
 		msg = body.Body
 	}
-	row, err := h.svc.AdminPushToUser(r.Context(), uid, body.Title, msg, body.Type)
+	res, err := h.svc.AdminPushToUser(r.Context(), uid, body.Title, msg, body.Type)
 	if err != nil {
 		httpx.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	httpx.OK(w, row, "Notification sent")
+	httpx.OK(w, res, "Notification dispatched")
+}
+
+func (h *Handler) adminPushTopic(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Topic     string `json:"topic"`
+		Audience  string `json:"targetAudience"`
+		Title     string `json:"title"`
+		Message   string `json:"message"`
+		Body      string `json:"body"`
+		ImageURL  string `json:"imageUrl"`
+		ActionURL string `json:"actionUrl"`
+	}
+	_ = httpx.DecodeJSON(r, &body)
+	topic := body.Topic
+	if topic == "" {
+		topic = body.Audience
+	}
+	msg := body.Message
+	if msg == "" {
+		msg = body.Body
+	}
+	res, err := h.svc.AdminPushTopic(r.Context(), topic, body.Title, msg, body.ImageURL, body.ActionURL)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	httpx.OK(w, res, "Topic push dispatched via FCM")
+}
+
+func (h *Handler) adminSendSMS(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Phone      string   `json:"phone"`
+		Mobile     string   `json:"mobile"`
+		Phones     []string `json:"phones"`
+		Mobiles    []string `json:"mobiles"`
+		TemplateID string   `json:"templateId"`
+		Message    string   `json:"message"`
+	}
+	_ = httpx.DecodeJSON(r, &body)
+	targets := append([]string{}, body.Phones...)
+	targets = append(targets, body.Mobiles...)
+	if body.Phone != "" {
+		targets = append(targets, body.Phone)
+	}
+	if body.Mobile != "" {
+		targets = append(targets, body.Mobile)
+	}
+	res, err := h.svc.AdminSendSMS(r.Context(), targets, body.TemplateID, body.Message)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	httpx.OK(w, res, "SMS dispatched via MSG91")
+}
+
+func (h *Handler) adminNotificationConfig(w http.ResponseWriter, r *http.Request) {
+	httpx.OK(w, h.svc.AdminNotificationConfig())
 }
 
 func (h *Handler) realtimeAnalytics(w http.ResponseWriter, r *http.Request) {
