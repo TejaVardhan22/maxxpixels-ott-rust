@@ -46,8 +46,12 @@ func registerGDriveBrowseRoutes(mux *http.ServeMux) {
 		w.Header().Set("Content-Type", "application/json")
 		tok, err := getValidGDriveAccessToken()
 		if err != nil {
-			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]any{"error": err.Error(), "connected": false})
+			// Return 200 with connected=false so Angular's 401 auth interceptor does not log the admin out
+			json.NewEncoder(w).Encode(map[string]any{
+				"connected": false,
+				"files":     []any{},
+				"message":   "Google Drive is not connected yet. Click Connect Google Drive to sign in.",
+			})
 			return
 		}
 
