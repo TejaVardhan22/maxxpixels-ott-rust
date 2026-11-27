@@ -95,15 +95,7 @@ func registerGDriveOAuthRoutes(mux *http.ServeMux) {
 		}
 		redirectURI := strings.TrimSpace(r.URL.Query().Get("redirectUri"))
 		if redirectURI == "" {
-			host := strings.TrimSpace(r.Host)
-			if host == "" {
-				host = "localhost:8085"
-			}
-			scheme := "http"
-			if strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-				scheme = "https"
-			}
-			redirectURI = fmt.Sprintf("%s://%s/api/gdrive/callback", scheme, host)
+			redirectURI = resolveGDriveRedirectURI(r)
 		}
 		params := url.Values{
 			"client_id":     {cfg.ClientID},
@@ -142,11 +134,7 @@ func registerGDriveOAuthRoutes(mux *http.ServeMux) {
 			fmt.Fprintf(w, "<h3>Configuration error: %s</h3>", err.Error())
 			return
 		}
-		scheme := "http"
-		if strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-			scheme = "https"
-		}
-		redirectURI := fmt.Sprintf("%s://%s/api/gdrive/callback", scheme, r.Host)
+		redirectURI := resolveGDriveRedirectURI(r)
 		if err := exchangeAndSaveGDriveCode(cfg, code, redirectURI); err != nil {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusBadRequest)
@@ -209,6 +197,21 @@ func registerGDriveOAuthRoutes(mux *http.ServeMux) {
 	})
 
 	registerGDriveBrowseRoutes(mux)
+}
+
+func resolveGDriveRedirectURI(r *http.Request) string {
+	if envURI := strings.TrimSpace(os.Getenv("GDRIVE_REDIRECT_URI")); envURI != "" {
+		return envURI
+	}
+	host := strings.TrimSpace(r.Host)
+	if host == "" || host == "localhost" || host == "127.0.0.1" {
+		host = "127.0.0.1:8085"
+	}
+	scheme := "http"
+	if strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	return fmt.Sprintf("%s://%s/api/gdrive/callback", scheme, host)
 }
 
 func exchangeAndSaveGDriveCode(cfg oauthDesktopClient, code, redirectURI string) error {
