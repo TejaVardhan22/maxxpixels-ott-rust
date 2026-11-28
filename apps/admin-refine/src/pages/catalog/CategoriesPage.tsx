@@ -1,7 +1,163 @@
 import React, { useEffect, useState } from "react";
-import { Tabs, Table, Button, Space, Modal, Form, Input, InputNumber, Switch, Popconfirm, message, Card, Typography } from "antd";
-import { PlusOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { Tabs, Table, Button, Space, Modal, Form, Input, InputNumber, Switch, Select, Avatar, Tag, Popconfirm, message, Card, Typography } from "antd";
+import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined } from "@ant-design/icons";
 import { apiGet, apiPost, apiPut, apiDelete, extractArray } from "../../providers/api";
+import { MediaUpload } from "../../components/MediaUpload";
+
+const CAST_ROLES = [
+  "ACTOR",
+  "ACTRESS",
+  "DIRECTOR",
+  "PRODUCER",
+  "WRITER",
+  "MUSIC_DIRECTOR",
+  "CINEMATOGRAPHER",
+  "EDITOR",
+  "SINGER",
+  "HOST",
+  "CREW",
+];
+
+const CastCrewTab: React.FC = () => {
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [form] = Form.useForm();
+  const watchedImage = Form.useWatch("imageUrl", form);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      setRows(extractArray(await apiGet("/admin/cast")));
+    } catch (e: any) {
+      message.error(e?.message || "Failed loading Cast & Crew");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleSave = async (vals: any) => {
+    try {
+      const payload = {
+        name: vals.name,
+        role: vals.role || "ACTOR",
+        bio: vals.bio || "",
+        imageUrl: vals.imageUrl || "",
+        profileImageUrl: vals.imageUrl || "",
+      };
+      if (editing?.id) {
+        await apiPut(`/admin/cast/${editing.id}`, payload);
+      } else {
+        await apiPost("/admin/cast", payload);
+      }
+      message.success("Cast member saved");
+      setOpen(false);
+      load();
+    } catch (e: any) {
+      message.error(e?.message || "Save failed");
+    }
+  };
+
+  return (
+    <div>
+      <Space style={{ marginBottom: 12, justifyContent: "flex-end", width: "100%" }}>
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          onClick={() => {
+            setEditing(null);
+            form.resetFields();
+            form.setFieldsValue({ role: "ACTOR", imageUrl: "" });
+            setOpen(true);
+          }}
+        >
+          Add Cast Member
+        </Button>
+      </Space>
+      <Table
+        rowKey={(r) => String(r.id || r.name)}
+        loading={loading}
+        dataSource={rows}
+        pagination={{ pageSize: 15 }}
+        columns={[
+          {
+            title: "Photo",
+            width: 72,
+            render: (_, r) => {
+              const img = r.imageUrl || r.image_url || r.profileImageUrl;
+              return img ? (
+                <Avatar src={img} size={42} />
+              ) : (
+                <Avatar icon={<UserOutlined />} size={42} />
+              );
+            },
+          },
+          { title: "Name", dataIndex: "name", render: (v) => <strong>{v}</strong> },
+          { title: "Role", dataIndex: "role", width: 150, render: (v) => <Tag color="blue">{v || "ACTOR"}</Tag> },
+          { title: "Bio", dataIndex: "bio", ellipsis: true, render: (v) => v || "-" },
+          {
+            title: "Actions",
+            width: 120,
+            render: (_, r) => (
+              <Space>
+                <Button
+                  size="small"
+                  icon={<EditOutlined />}
+                  onClick={() => {
+                    setEditing(r);
+                    form.setFieldsValue({
+                      name: r.name,
+                      role: r.role || "ACTOR",
+                      bio: r.bio || "",
+                      imageUrl: r.imageUrl || r.image_url || r.profileImageUrl || "",
+                    });
+                    setOpen(true);
+                  }}
+                />
+                <Popconfirm title="Delete cast member?" onConfirm={async () => { await apiDelete(`/admin/cast/${r.id}`); load(); }}>
+                  <Button size="small" danger icon={<DeleteOutlined />} />
+                </Popconfirm>
+              </Space>
+            ),
+          },
+        ]}
+      />
+      <Modal
+        title={editing ? "Edit Cast / Crew Member" : "Add Cast / Crew Member"}
+        open={open}
+        onCancel={() => setOpen(false)}
+        onOk={() => form.submit()}
+        width={560}
+      >
+        <Form form={form} layout="vertical" onFinish={handleSave}>
+          <Form.Item name="name" label="Full Name" rules={[{ required: true, message: "Name is required" }]}>
+            <Input placeholder="e.g. Prabhas" />
+          </Form.Item>
+          <Form.Item name="role" label="Role / Department">
+            <Select
+              showSearch
+              options={CAST_ROLES.map((r) => ({ value: r, label: r.replace(/_/g, " ") }))}
+            />
+          </Form.Item>
+          <Form.Item name="imageUrl" label="Profile Photo (Upload or Google Drive)">
+            <MediaUpload type="image" folder="avatars" placeholder="Upload photo or import from Google Drive" />
+          </Form.Item>
+          {watchedImage && (
+            <div style={{ marginBottom: 14 }}>
+              <Avatar src={watchedImage} size={64} />
+            </div>
+          )}
+          <Form.Item name="bio" label="Biography">
+            <Input.TextArea rows={3} placeholder="Short bio..." />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  );
+};
 
 const TaxonomyTab: React.FC<{ endpoint: string; label: string; idField?: string }> = ({ endpoint, label, idField = "id" }) => {
   const [rows, setRows] = useState<any[]>([]);
@@ -93,7 +249,7 @@ export const CategoriesPage: React.FC = () => (
         { key: "genres", label: "Genres", children: <TaxonomyTab endpoint="genres" label="Genre" /> },
         { key: "languages", label: "Languages", children: <TaxonomyTab endpoint="languages" label="Language" idField="code" /> },
         { key: "content-types", label: "Content Types", children: <TaxonomyTab endpoint="content-types" label="Content Type" /> },
-        { key: "cast", label: "Cast & Crew", children: <TaxonomyTab endpoint="cast" label="Cast Member" /> },
+        { key: "cast", label: "Cast & Crew", children: <CastCrewTab /> },
       ]}
     />
   </Card>
