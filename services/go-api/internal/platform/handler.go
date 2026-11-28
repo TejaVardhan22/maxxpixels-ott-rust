@@ -223,6 +223,8 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		r.Get(pref+"/settings", h.publicSettings)
 		r.Get(pref+"/settings/public", h.publicSettings)
 		r.Get(pref+"/general_setting", h.publicSettings)
+		r.Get(pref+"/social-links", h.socialLinks)
+		r.Get(pref+"/social_links", h.socialLinks)
 		r.Get(pref+"/system/maintenance", h.maintenanceStatus)
 		r.Get(pref+"/cms/home", h.homePage)
 		r.Get(pref+"/cms/pages/home", h.homePage)
@@ -371,6 +373,42 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.OK(w, map[string]any{"updated": len(updates)})
+}
+
+func (h *Handler) socialLinks(w http.ResponseWriter, r *http.Request) {
+	settings, err := h.svc.GetPublicSettings(r.Context())
+	if err != nil {
+		httpx.OK(w, []map[string]any{})
+		return
+	}
+	getStr := func(keys ...string) string {
+		for _, k := range keys {
+			if v, ok := settings[k]; ok {
+				if s, ok := v.(string); ok && s != "" {
+					return s
+				}
+			}
+		}
+		return ""
+	}
+	defs := []struct {
+		id   int
+		name string
+		keys []string
+	}{
+		{1, "Facebook", []string{"facebookUrl", "facebook_url", "FACEBOOK_URL", "socialFacebook"}},
+		{2, "Instagram", []string{"instagramUrl", "instagram_url", "INSTAGRAM_URL", "socialInstagram"}},
+		{3, "X (Twitter)", []string{"twitterUrl", "twitter_url", "TWITTER_URL", "xUrl", "socialTwitter"}},
+		{4, "YouTube", []string{"youtubeUrl", "youtube_url", "YOUTUBE_URL", "socialYoutube"}},
+		{5, "LinkedIn", []string{"linkedinUrl", "linkedin_url", "LINKEDIN_URL", "socialLinkedin"}},
+	}
+	out := make([]map[string]any, 0, len(defs))
+	for _, d := range defs {
+		if u := getStr(d.keys...); u != "" {
+			out = append(out, map[string]any{"id": d.id, "name": d.name, "url": u})
+		}
+	}
+	httpx.OK(w, out)
 }
 
 func (h *Handler) legalPages(w http.ResponseWriter, r *http.Request) {

@@ -170,8 +170,13 @@ export default function Footer() {
     return out;
   }, [languagesQ.data]);
 
-  const rawSettings =
-    (settingsQ.data as any)?.result ?? (settingsQ.data as any)?.data ?? settingsQ.data;
+  const rawSettings = useMemo(() => {
+    const outer = (settingsQ.data as any)?.result ?? (settingsQ.data as any)?.data ?? settingsQ.data;
+    if (outer && typeof outer === 'object' && outer.settings && typeof outer.settings === 'object') {
+      return { ...outer, ...outer.settings };
+    }
+    return outer;
+  }, [settingsQ.data]);
 
   const androidAppUrl = useMemo(() => {
     if (brand.androidAppUrl) return brand.androidAppUrl;
@@ -354,7 +359,7 @@ export default function Footer() {
                   Home
                 </Link>
               </li>
-              {mainTypes.slice(0, 5).map((ct) => (
+              {mainTypes.map((ct) => (
                 <li key={ct.id ?? ct.slug}>
                   <Link
                     href={`/kannada/${encodeURIComponent(ct.slug)}`}
