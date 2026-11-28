@@ -154,8 +154,13 @@ func (s *Service) SendOTP(ctx context.Context, phone string) (string, error) {
 		return "", err
 	}
 	code := fmt.Sprintf("%06d", n.Int64()+100000)
+	normPhone := notify.FormatIndianMobile(phone)
 	_ = s.cache.Set(ctx, "otp:code:"+phone, code, 5*time.Minute)
-	_ = notify.NewMSG91FromEnv().SendOTP(ctx, phone, code)
+	_ = s.cache.Set(ctx, "otp:code:"+normPhone, code, 5*time.Minute)
+	provider := notify.NewMSG91FromDBAndEnv(ctx, s.db).SendOTP(ctx, phone, code)
+	if provider != "MSG91" {
+		return code, fmt.Errorf("failed to dispatch SMS via MSG91 (%s)", provider)
+	}
 	return code, nil
 }
 
@@ -166,11 +171,15 @@ func (s *Service) VerifyOTP(ctx context.Context, phone, otp, fullName string) (*
 		return nil, errors.New("phone and otp are required")
 	}
 
+	normPhone := notify.FormatIndianMobile(phone)
 	stored, ok := s.cache.Get(ctx, "otp:code:"+phone)
+	if !ok || stored != otp {
+		stored, ok = s.cache.Get(ctx, "otp:code:"+normPhone)
+	}
 	if !ok || stored != otp {
 		return nil, errors.New("invalid or expired OTP")
 	}
-	_ = s.cache.Del(ctx, "otp:code:"+phone)
+	_ = s.cache.Del(ctx, "otp:code:"+phone, "otp:code:"+normPhone)
 
 	var user models.User
 	err := s.db.WithContext(ctx).Where("phone_number = ? OR phone = ?", phone, phone).First(&user).Error
