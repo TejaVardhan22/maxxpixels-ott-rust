@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -149,9 +150,13 @@ func (s *Service) GetDetail(ctx context.Context, idOrSlug string) (map[string]an
 	}
 
 	var (
-		seasons  []models.Season
-		tvodList []models.TvodProduct
-		genres   []models.Genre
+		seasons    []models.Season
+		tvodList   []models.TvodProduct
+		genres     []models.Genre
+		categories []models.Category
+		movie      models.Movie
+		hasMovie   bool
+		langName   string
 	)
 
 	g, gctx := errgroup.WithContext(ctx)
@@ -174,6 +179,32 @@ func (s *Service) GetDetail(ctx context.Context, idOrSlug string) (map[string]an
 			Find(&genres).Error
 		return nil
 	})
+	g.Go(func() error {
+		_ = s.db.WithContext(gctx).
+			Table("categories").
+			Joins("JOIN content_categories cc ON cc.category_id = categories.id").
+			Where("cc.content_id = ?", content.ID).
+			Find(&categories).Error
+		return nil
+	})
+	g.Go(func() error {
+		if s.db.WithContext(gctx).Where("content_id = ? OR id = ?", content.ID, content.ID).First(&movie).Error == nil {
+			hasMovie = true
+		}
+		return nil
+	})
+	g.Go(func() error {
+		if content.OriginalLanguageCode != nil && strings.TrimSpace(*content.OriginalLanguageCode) != "" {
+			code := strings.TrimSpace(*content.OriginalLanguageCode)
+			var lang models.Language
+			if s.db.WithContext(gctx).Where("LOWER(code) = LOWER(?) OR LOWER(name) = LOWER(?)", code, code).First(&lang).Error == nil && lang.Name != "" {
+				langName = lang.Name
+			} else {
+				langName = code
+			}
+		}
+		return nil
+	})
 	_ = g.Wait()
 
 	var rentPrice, purchasePrice float64
@@ -192,22 +223,146 @@ func (s *Service) GetDetail(ctx context.Context, idOrSlug string) (map[string]an
 	for _, gr := range genres {
 		genreNames = append(genreNames, gr.Name)
 	}
+	catNames := make([]string, 0, len(categories))
+	for _, ct := range categories {
+		catNames = append(catNames, ct.Name)
+	}
+
+	parseJSONSlice := func(raw *string) []any {
+		if raw == nil || strings.TrimSpace(*raw) == "" {
+			return []any{}
+		}
+		var out []any
+		if err := json.Unmarshal([]byte(*raw), &out); err == nil {
+			return out
+		}
+		return []any{}
+	}
+	parseCSVOrJSON := func(raw *string) []string {
+		if raw == nil || strings.TrimSpace(*raw) == "" {
+			return []string{}
+		}
+		trimmed := strings.TrimSpace(*raw)
+		if strings.HasPrefix(trimmed, "[") {
+			var out []string
+			if err := json.Unmarshal([]byte(trimmed), &out); err == nil {
+				return out
+			}
+		}
+		parts := strings.Split(trimmed, ",")
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if s := strings.TrimSpace(p); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+
+	var streamURL, hlsURL, videoURL, bunnyGuid, prodHouse, director, writers, country string
+	var durSecs int32
+	var durMins int32
+	if content.DurationSeconds != nil {
+		durSecs = *content.DurationSeconds
+	}
+	if hasMovie {
+		if movie.HlsUrl != nil && *movie.HlsUrl != "" {
+			hlsURL = *movie.HlsUrl
+		}
+		if movie.StreamUrl != nil && *movie.StreamUrl != "" {
+			streamURL = *movie.StreamUrl
+		}
+		if movie.VideoUrl != nil && *movie.VideoUrl != "" {
+			videoURL = *movie.VideoUrl
+		}
+		if movie.BunnyVideoGuid != nil {
+			bunnyGuid = *movie.BunnyVideoGuid
+		}
+		if movie.ProductionHouse != nil {
+			prodHouse = *movie.ProductionHouse
+		}
+		if movie.Director != nil {
+			director = *movie.Director
+		}
+		if movie.Writers != nil {
+			writers = *movie.Writers
+		}
+		if movie.CountryOfOrigin != nil {
+			country = *movie.CountryOfOrigin
+		}
+		if durSecs == 0 && movie.DurationSeconds != nil {
+			durSecs = *movie.DurationSeconds
+		}
+		if movie.DurationMinutes != nil {
+			durMins = *movie.DurationMinutes
+		}
+	}
+	masterPlaylist := hlsURL
+	if masterPlaylist == "" {
+		masterPlaylist = streamURL
+	}
+	if masterPlaylist == "" {
+		masterPlaylist = videoURL
+	}
+	if prodHouse == "" && content.ProductionName != nil {
+		prodHouse = *content.ProductionName
+	}
 
 	return map[string]any{
-		"content":       content,
-		"id":            content.ID,
-		"title":         content.Title,
-		"slug":          content.Slug,
-		"description":   content.Description,
-		"posterUrl":     content.PosterUrl,
-		"backdropUrl":   content.BackdropUrl,
-		"landscapeUrl":  content.LandscapeImageUrl,
-		"monetization":  content.Monetization,
-		"rentPrice":     rentPrice,
-		"purchasePrice": purchasePrice,
-		"genres":        genreNames,
-		"seasons":       seasons,
-		"tvodProducts":  tvodList,
+		"content":              content,
+		"movie":                movie,
+		"id":                   content.ID,
+		"title":                content.Title,
+		"slug":                 content.Slug,
+		"contentType":          content.ContentType,
+		"status":               content.Status,
+		"description":          content.Description,
+		"shortDescription":     content.ShortDescription,
+		"posterUrl":            content.PosterUrl,
+		"poster2Url":           content.Poster2Url,
+		"backdropUrl":          content.BackdropUrl,
+		"bannerUrl":            content.BannerImageUrl,
+		"landscapeUrl":         content.LandscapeImageUrl,
+		"logoImageUrl":         content.LogoImageUrl,
+		"trailerUrl":           content.TrailerUrl,
+		"originalLanguage":     langName,
+		"originalLanguageCode": content.OriginalLanguageCode,
+		"language":             langName,
+		"releaseDate":          content.ReleaseDate,
+		"releaseYear":          content.ReleaseYear,
+		"ageRating":            content.AgeRating,
+		"maturityRating":       content.AgeRating,
+		"durationSeconds":      durSecs,
+		"durationMinutes":      durMins,
+		"masterPlaylistUrl":    masterPlaylist,
+		"hlsUrl":               hlsURL,
+		"streamUrl":            streamURL,
+		"videoUrl":             videoURL,
+		"bunnyVideoGuid":       bunnyGuid,
+		"producer":             prodHouse,
+		"productionHouse":      prodHouse,
+		"director":             director,
+		"writers":              writers,
+		"countryOfOrigin":      country,
+		"monetization":         content.Monetization,
+		"accessType":           content.AccessType,
+		"rentPrice":            rentPrice,
+		"purchasePrice":        purchasePrice,
+		"validityHours":        content.ValidityHours,
+		"skipIntroStart":       content.SkipIntroStart,
+		"skipIntroEnd":         content.SkipIntroEnd,
+		"skipOutroStart":       content.SkipOutroStart,
+		"scheduledPublishAt":   content.ScheduledPublishAt,
+		"expiresAt":            content.ExpiresAt,
+		"subtitles":            parseJSONSlice(content.SubtitlesJson),
+		"audioTracks":          parseJSONSlice(content.AudioTracksJson),
+		"cast":                 parseJSONSlice(content.CastJson),
+		"contentWarnings":      parseCSVOrJSON(content.ContentWarnings),
+		"qualityBadges":        parseCSVOrJSON(content.QualityBadges),
+		"categories":           catNames,
+		"genres":               genreNames,
+		"seasons":              seasons,
+		"tvodProducts":         tvodList,
 	}, nil
 }
 
