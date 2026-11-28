@@ -66,8 +66,10 @@ func (s *Service) BrowseByCategory(ctx context.Context, idOrSlug string, page, s
 // --- Admin Movies CRUD ---
 
 func (s *Service) AdminListMovies(ctx context.Context, page, size int, search, status string) ([]map[string]any, int64, error) {
-	if size <= 0 || size > 100 {
+	if size <= 0 {
 		size = 20
+	} else if size > 500 {
+		size = 500
 	}
 	if page < 0 {
 		page = 0
