@@ -71,6 +71,10 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		r.Get(pref+"/live/events", h.listLiveEvents)
 		r.Get(pref+"/live-channels", h.listLiveChannels)
 
+		// GraphQL endpoint for Mobile & Web Catalog / Home / Series Detail
+		r.Get(pref+"/graphql", h.handleGraphQL)
+		r.Post(pref+"/graphql", h.handleGraphQL)
+
 		// Public Media Serving Proxy (local disk -> Bunny Edge Storage)
 		r.Get(pref+"/uploads/{folder}/{file_name}", h.serveMedia(""))
 		r.Get(pref+"/uploads/{file_name}", h.serveMedia(""))
