@@ -201,6 +201,7 @@ services:
       DB_BACKUP_DIR: /app/backups
       DB_BACKUP_BUNNY_PREFIX: ${DB_BACKUP_BUNNY_PREFIX:-db-backups}
       DB_BACKUP_RETENTION_DAYS: ${DB_BACKUP_RETENTION_DAYS:-14}
+      GAMES_SERVICE_URL: http://games:8090
     volumes:
       - db_backups:/app/backups
       - /etc/maxxpixels/fcm-service-account.json:/etc/maxxpixels/fcm-service-account.json:ro
@@ -238,6 +239,7 @@ services:
       DB_BACKUP_DIR: /app/backups
       DB_BACKUP_BUNNY_PREFIX: ${DB_BACKUP_BUNNY_PREFIX:-db-backups}
       DB_BACKUP_RETENTION_DAYS: ${DB_BACKUP_RETENTION_DAYS:-14}
+      GAMES_SERVICE_URL: http://games:8090
     volumes:
       - db_backups:/app/backups
       - /etc/maxxpixels/fcm-service-account.json:/etc/maxxpixels/fcm-service-account.json:ro
@@ -327,6 +329,10 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
+    networks:
+      maxx-net:
+        aliases:
+          - games-service
 
   # ============================================================================
   # Google Drive -> Bunny Stream Pipeline (Go zero-disk streaming service)
