@@ -194,7 +194,11 @@ export const MovieFormPage: React.FC = () => {
         originalLanguage: rec.originalLanguage || rec.language || "Telugu",
         cast: Array.isArray(rec.cast) ? rec.cast : [],
         producer: rec.producer || rec.productionHouse || "",
-        releaseDate: rec.releaseDate ? String(rec.releaseDate).slice(0, 10) : "",
+        releaseDate: rec.releaseDate
+          ? String(rec.releaseDate).slice(0, 10)
+          : rec.releaseYear
+          ? `${rec.releaseYear}-01-01`
+          : "",
         durationTime: durStr,
         maturityRating: rec.maturityRating || "UA_13+",
         masterPlaylistUrl: rec.masterPlaylistUrl || rec.streamUrl || rec.hlsUrl || rec.videoUrl || "",
@@ -411,8 +415,8 @@ export const MovieFormPage: React.FC = () => {
     if (!file) return;
     setBunnyUploading(true);
     try {
-      const res = await apiUpload("/storage/upload?folder=videos", file);
-      const url = res?.url || res?.fileUrl || res?.hlsUrl;
+      const res = await apiUpload("/storage/upload-video", file);
+      const url = res?.hlsUrl || res?.streamUrl || res?.url || res?.fileUrl;
       if (url) {
         form.setFieldValue("masterPlaylistUrl", url);
         message.success("Video uploaded and linked!");

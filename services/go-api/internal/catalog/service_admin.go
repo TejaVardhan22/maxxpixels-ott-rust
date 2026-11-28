@@ -192,6 +192,15 @@ func (s *Service) AdminCreateMovie(ctx context.Context, payload map[string]any) 
 	if y := int32Val(payload, "releaseYear", "release_year"); y > 0 {
 		c.ReleaseYear = &y
 	}
+	if rd := strVal(payload, "releaseDate", "release_date"); rd != "" {
+		if t, err := parseFlexibleDate(rd); err == nil {
+			c.ReleaseDate = &t
+			if c.ReleaseYear == nil {
+				yr := int32(t.Year())
+				c.ReleaseYear = &yr
+			}
+		}
+	}
 	if d := int32Val(payload, "durationSeconds", "duration_seconds"); d > 0 {
 		c.DurationSeconds = &d
 	}
@@ -250,6 +259,14 @@ func (s *Service) AdminUpdateMovie(ctx context.Context, id int64, payload map[st
 	}
 	if y := int32Val(payload, "releaseYear", "release_year"); y > 0 {
 		upd["release_year"] = y
+	}
+	if rd := strVal(payload, "releaseDate", "release_date"); rd != "" {
+		if t, err := parseFlexibleDate(rd); err == nil {
+			upd["release_date"] = t
+			if _, hasYr := upd["release_year"]; !hasYr {
+				upd["release_year"] = int32(t.Year())
+			}
+		}
 	}
 	if d := int32Val(payload, "durationSeconds", "duration_seconds"); d > 0 {
 		upd["duration_seconds"] = d
@@ -712,6 +729,21 @@ func (s *Service) ServeMedia(ctx context.Context, folder, fileName string) ([]by
 }
 
 // --- JSON Map Helpers ---
+
+func parseFlexibleDate(raw string) (time.Time, error) {
+	s := strings.TrimSpace(raw)
+	for _, layout := range []string{"2006-01-02", time.RFC3339, "2006-01-02T15:04:05", "2006-01-02 15:04:05"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UTC(), nil
+		}
+	}
+	if len(s) >= 10 {
+		if t, err := time.Parse("2006-01-02", s[:10]); err == nil {
+			return t.UTC(), nil
+		}
+	}
+	return time.Time{}, errors.New("invalid date")
+}
 
 func strVal(m map[string]any, keys ...string) string {
 	for _, k := range keys {
