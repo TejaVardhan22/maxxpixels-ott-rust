@@ -9,6 +9,7 @@ import {
 import { ApiClient } from './apiClient';
 import { AuthService } from './authService';
 import { AppConfig } from '../core/config';
+import { GraphQLService } from './graphqlService';
 
 export interface HomeCatalogResult {
   banners: CatalogItem[];
@@ -21,6 +22,16 @@ export interface HomeCatalogResult {
 
 export class CatalogService {
   public static async getHomeCatalog(typeId: number = 0, lang?: string): Promise<HomeCatalogResult> {
+    // Primary: single round-trip Go GraphQL query (with automatic REST fallback)
+    try {
+      const gqlRes = await GraphQLService.getHomeCatalog(typeId, lang);
+      if (gqlRes && (gqlRes.banners.length > 0 || gqlRes.sections.length > 0 || gqlRes.types.length > 0)) {
+        return gqlRes;
+      }
+    } catch (gqlErr) {
+      console.warn('GraphQL getHomeCatalog fallback to REST:', gqlErr);
+    }
+
     const errors: string[] = [];
     const queryParams: Record<string, any> = {};
     if (typeId > 0) {
@@ -176,7 +187,17 @@ export class CatalogService {
         : itemOrId;
     const cleanId = String(rawId ?? '').trim();
 
-    // Direct REST API fetch
+    // Primary: Go GraphQL (fetches detail + nested seasons & episodes in 1 round-trip)
+    try {
+      if (cleanId && cleanId !== '0' && cleanId !== 'NaN' && cleanId !== 'undefined') {
+        const gqlDetail = await GraphQLService.getContentDetail(cleanId);
+        if (gqlDetail) return gqlDetail;
+      }
+    } catch (gqlErr) {
+      console.warn('GraphQL getContentDetail fallback to REST:', gqlErr);
+    }
+
+    // Fallback: Direct REST API fetch
     try {
       if (cleanId && cleanId !== '0' && cleanId !== 'NaN' && cleanId !== 'undefined') {
         const result = await ApiClient.getApi(`catalog/${encodeURIComponent(cleanId)}`, {
@@ -200,7 +221,17 @@ export class CatalogService {
   public static async searchContent(query: string): Promise<CatalogItem[]> {
     if (!query || query.trim().length === 0) return [];
 
-    // Direct REST catalog search
+    // Primary: Go GraphQL search
+    try {
+      const gqlResults = await GraphQLService.searchContent(query.trim(), 25);
+      if (Array.isArray(gqlResults) && gqlResults.length > 0) {
+        return gqlResults;
+      }
+    } catch (gqlErr) {
+      console.warn('GraphQL searchContent fallback to REST:', gqlErr);
+    }
+
+    // Fallback: Direct REST catalog search
     try {
       const results = await ApiClient.getApi('search', { queryParams: { q: query.trim() } });
       if (Array.isArray(results)) {

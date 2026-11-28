@@ -5,63 +5,90 @@ import { HomeCatalogResult } from './catalogService';
 import { AppConfig } from '../core/config';
 
 export const GET_HOME_CATALOG_QUERY = `
-  query GetHomeCatalog($typeId: Int, $language: String) {
-    homeCatalog(typeId: $typeId, language: $language) {
+  query GetMobileHome($platform: String, $language: String) {
+    home(platform: $platform, language: $language) {
       banners {
         id
         title
         subtitle
         imageUrl
         mobileImageUrl
+        actionUrl
         contentId
-        pageSlug
-        content {
-          id
-          title
-          slug
-          description
-          posterUrl
-          bannerUrl
-          trailerUrl
-          videoType
-          typeId
-          rating
-          duration
-          releaseYear
-          isPremium
-          genres
-          languages
-        }
+        displayOrder
+        platform
       }
       sections {
         id
         title
-        videoType
-        landscape
+        subtitle
+        layout
         items {
           id
           title
           slug
+          contentType
           description
           posterUrl
           bannerUrl
+          backdropUrl
           trailerUrl
-          videoType
-          typeId
-          rating
-          duration
+          language
           releaseYear
+          ageRating
+          durationSeconds
+          monetization
+          accessType
           isPremium
-          genres
-          languages
+          isFeatured
+          isTrending
+          rentPrice
+          viewCount
         }
+      }
+      featured {
+        id
+        title
+        slug
+        contentType
+        description
+        posterUrl
+        bannerUrl
+        backdropUrl
+        trailerUrl
+        language
+        releaseYear
+        durationSeconds
+        accessType
+        isPremium
+      }
+      trending {
+        id
+        title
+        slug
+        contentType
+        description
+        posterUrl
+        bannerUrl
+        backdropUrl
+        trailerUrl
+        language
+        releaseYear
+        durationSeconds
+        accessType
+        isPremium
+      }
+      contentTypes {
+        id
+        name
+        title
+        slug
+        displayOrder
       }
       categories {
         id
         name
         slug
-        imageUrl
-        typeId
       }
       languages {
         id
@@ -74,77 +101,78 @@ export const GET_HOME_CATALOG_QUERY = `
 `;
 
 export const GET_CONTENT_DETAIL_QUERY = `
-  query GetContentDetail($id: ID, $slug: String) {
-    contentDetail(id: $id, slug: $slug) {
+  query GetContentDetail($idOrSlug: String!) {
+    content(idOrSlug: $idOrSlug) {
       id
       title
       slug
+      contentType
+      status
       description
+      shortDescription
       posterUrl
       bannerUrl
+      backdropUrl
       trailerUrl
-      videoUrl
-      videoType
-      typeId
-      rating
-      duration
+      language
       releaseYear
+      releaseDate
+      ageRating
+      durationSeconds
+      durationMinutes
+      monetization
+      accessType
       isPremium
-      isRented
-      isWatchlisted
+      rentPrice
+      viewCount
+      masterPlaylistUrl
+      categories
       genres
-      languages
-      episodes {
+      seasons {
         id
-        title
-        description
-        episodeNumber
         seasonNumber
-        duration
-        thumbnailUrl
-        videoUrl
-      }
-      cast {
-        id
-        name
-        characterName
-        role
-        imageUrl
-      }
-      relatedContent {
-        id
         title
-        slug
         description
         posterUrl
-        bannerUrl
-        videoType
-        typeId
-        rating
-        duration
+        releaseDate
+        episodes {
+          id
+          episodeNumber
+          title
+          description
+          thumbnailUrl
+          hlsUrl
+          videoUrl
+          durationSeconds
+          isFreePreview
+          releaseDate
+        }
       }
     }
   }
 `;
 
 export const SEARCH_CONTENT_QUERY = `
-  query SearchContent($query: String!, $limit: Int) {
-    searchContent(query: $query, limit: $limit) {
-      id
-      title
-      slug
-      description
-      posterUrl
-      bannerUrl
-      trailerUrl
-      videoType
-      typeId
-      rating
-      duration
-      releaseYear
-      isPremium
-      genres
-      languages
+  query SearchContent($query: String, $limit: Int) {
+    browse(query: $query, size: $limit) {
+      total
+      hasMore
+      items {
+        id
+        title
+        slug
+        contentType
+        description
+        posterUrl
+        bannerUrl
+        backdropUrl
+        trailerUrl
+        language
+        releaseYear
+        durationSeconds
+        accessType
+        isPremium
+      }
     }
   }
 `;
@@ -220,157 +248,176 @@ export class GraphQLService {
    * Execute consolidated Home Catalog query in a single GraphQL network round-trip.
    */
   public static async getHomeCatalog(typeId: number = 0, lang?: string): Promise<HomeCatalogResult> {
-    const data = await ApiClient.executeGraphQL<{ homeCatalog: any }>(
+    const data = await ApiClient.executeGraphQL<{ home: any }>(
       GET_HOME_CATALOG_QUERY,
       {
-        typeId: typeId > 0 ? typeId : undefined,
-        language: lang || undefined,
+        platform: 'MOBILE',
+        language: lang || '',
       },
       { userToken: AuthService.authToken || undefined }
     );
 
-    const catalog = data?.homeCatalog;
+    const catalog = data?.home;
     if (!catalog) {
-      throw new Error('GraphQL returned empty homeCatalog payload');
+      throw new Error('GraphQL returned empty home payload');
     }
+
+    const mapItem = (item: any): CatalogItem =>
+      parseCatalogItem({
+        id: item.id,
+        name: item.title,
+        title: item.title,
+        slug: item.slug,
+        contentType: item.contentType,
+        type: item.contentType,
+        description: item.description,
+        poster: AppConfig.normalizeMediaUrl(item.posterUrl || ''),
+        landscape: AppConfig.normalizeMediaUrl(item.bannerUrl || item.backdropUrl || item.posterUrl || ''),
+        trailerUrl: item.trailerUrl,
+        videoType: String(item.contentType || '').toUpperCase() === 'SERIES' ? 6 : 1,
+        typeId: String(item.contentType || '').toUpperCase() === 'SERIES' ? 6 : 1,
+        duration: item.durationSeconds,
+        releaseYear: item.releaseYear,
+        isPremium: item.isPremium ? 1 : 0,
+        genres: item.genres,
+      });
 
     const banners: CatalogItem[] = (catalog.banners || []).map((b: any) =>
       parseCatalogItem({
         id: b.contentId || b.id,
         name: b.title,
         title: b.title,
-        description: b.subtitle || b.content?.description,
-        landscape: b.imageUrl || b.mobileImageUrl,
-        poster: b.mobileImageUrl || b.imageUrl,
-        videoType: b.content?.videoType || 1,
-        typeId: b.content?.typeId || 1,
-        rating: b.content?.rating || 0,
-        releaseYear: b.content?.releaseYear,
-        isPremium: b.content?.isPremium ? 1 : 0,
-        genres: b.content?.genres,
+        description: b.subtitle,
+        landscape: AppConfig.normalizeMediaUrl(b.mobileImageUrl || b.imageUrl || ''),
+        poster: AppConfig.normalizeMediaUrl(b.mobileImageUrl || b.imageUrl || ''),
+        videoType: 1,
+        typeId: 1,
       })
     );
 
-    const sections: HomeSection[] = (catalog.sections || []).map((s: any, idx: number) => ({
-      id: Number(s.id || idx + 1),
-      title: s.title || '',
-      videoType: Number(s.videoType || 1),
-      landscape: Boolean(s.landscape),
-      data: (s.items || []).map((item: any) =>
-        parseCatalogItem({
-          id: item.id,
-          name: item.title,
-          title: item.title,
-          slug: item.slug,
-          description: item.description,
-          poster: item.posterUrl,
-          landscape: item.bannerUrl,
-          videoType: item.videoType || 1,
-          typeId: item.typeId || 1,
-          rating: item.rating || 0,
-          duration: item.duration,
-          releaseYear: item.releaseYear,
-          isPremium: item.isPremium ? 1 : 0,
-          genres: item.genres,
-        })
-      ),
-    }));
+    const sections: HomeSection[] = (catalog.sections || [])
+      .map((s: any, idx: number) => ({
+        id: Number(s.id || idx + 1),
+        title: s.title || '',
+        videoType: 1,
+        landscape: String(s.layout || '').toUpperCase() === 'HORIZONTAL',
+        data: (s.items || []).map(mapItem),
+      }))
+      .filter((s: HomeSection) => s.data.length > 0);
+
+    const trendingItems: CatalogItem[] = (catalog.trending || []).map(mapItem);
+    const featuredItems: CatalogItem[] = (catalog.featured || []).map(mapItem);
+
+    if (sections.length === 0 && trendingItems.length > 0) {
+      sections.push({ id: 901, title: 'Trending Now', videoType: 1, landscape: false, data: trendingItems });
+    }
+    if (sections.length <= 1 && featuredItems.length > 0) {
+      sections.push({ id: 902, title: 'Featured Picks', videoType: 1, landscape: true, data: featuredItems });
+    }
 
     const categories: CatalogCategory[] = (catalog.categories || []).map((c: any) => ({
       id: Number(c.id),
       name: c.name || '',
-      typeId: Number(c.typeId || 0),
-      image: AppConfig.normalizeMediaUrl(c.imageUrl || ''),
+      typeId: 0,
+      image: '',
     }));
 
-    const defaultTypes: CatalogContentType[] = [
-      { id: 1, name: 'Movies' },
-      { id: 2, name: 'Songs' },
-      { id: 3, name: 'Short Films' },
-      { id: 4, name: 'Micro-Drama' },
-      { id: 5, name: 'Podcasts' },
-      { id: 6, name: 'Web Series' },
-    ];
+    const types: CatalogContentType[] =
+      Array.isArray(catalog.contentTypes) && catalog.contentTypes.length > 0
+        ? catalog.contentTypes.map((t: any) => ({
+            id: Number(t.id || 1),
+            name: t.name || t.title || t.slug || 'Category',
+          }))
+        : [];
+
+    const matchesType = (item: CatalogItem) => (typeId === 0 ? true : item.typeId === typeId || item.videoType === typeId);
 
     return {
-      banners: banners.length > 0 ? banners : sections[0]?.data.slice(0, 6) || [],
-      sections,
+      banners: (banners.length > 0 ? banners : featuredItems.slice(0, 6)).filter(matchesType),
+      sections: typeId === 0 ? sections : sections.map((s) => ({ ...s, data: s.data.filter(matchesType) })).filter((s) => s.data.length > 0),
       categories,
-      types: defaultTypes,
+      types,
       errors: [],
-      latest: sections.find((s) => /recent|new/i.test(s.title))?.data || [],
+      latest: trendingItems.length > 0 ? trendingItems : sections[0]?.data || [],
     };
   }
 
   /**
-   * Fetch movie or series detail via GraphQL
+   * Fetch movie or series detail (with nested seasons & episodes) via Go GraphQL
    */
   public static async getContentDetail(idOrSlug: string | number): Promise<CatalogItem | null> {
     const raw = String(idOrSlug || '').trim();
     if (!raw) return null;
 
-    const isNumeric = /^\d+$/.test(raw);
-    const variables = isNumeric ? { id: raw } : { slug: raw };
-
-    const data = await ApiClient.executeGraphQL<{ contentDetail: any }>(
+    const data = await ApiClient.executeGraphQL<{ content: any }>(
       GET_CONTENT_DETAIL_QUERY,
-      variables,
+      { idOrSlug: raw },
       { userToken: AuthService.authToken || undefined }
     );
 
-    const detail = data?.contentDetail;
+    const detail = data?.content;
     if (!detail) return null;
+
+    const flattenedEpisodes = Array.isArray(detail.seasons)
+      ? detail.seasons.flatMap((s: any) =>
+          (s.episodes || []).map((ep: any) => ({
+            ...ep,
+            seasonId: s.id,
+            seasonNumber: s.seasonNumber,
+            duration: ep.durationSeconds,
+            videoUrl: ep.hlsUrl || ep.videoUrl,
+          }))
+        )
+      : [];
 
     return parseCatalogItem({
       id: detail.id,
       name: detail.title,
       title: detail.title,
       slug: detail.slug,
+      contentType: detail.contentType,
       description: detail.description,
-      poster: detail.posterUrl,
-      landscape: detail.bannerUrl,
+      poster: AppConfig.normalizeMediaUrl(detail.posterUrl || ''),
+      landscape: AppConfig.normalizeMediaUrl(detail.bannerUrl || detail.backdropUrl || ''),
       trailerUrl: detail.trailerUrl,
-      videoUrl: detail.videoUrl,
-      videoType: detail.videoType || 1,
-      typeId: detail.typeId || 1,
-      rating: detail.rating || 0,
-      duration: detail.duration,
+      videoUrl: detail.masterPlaylistUrl,
+      videoType: String(detail.contentType || '').toUpperCase() === 'SERIES' ? 6 : 1,
+      typeId: String(detail.contentType || '').toUpperCase() === 'SERIES' ? 6 : 1,
+      duration: detail.durationSeconds,
       releaseYear: detail.releaseYear,
       isPremium: detail.isPremium ? 1 : 0,
-      isRent: detail.isRented ? 1 : 0,
       genres: detail.genres,
-      languages: detail.languages,
-      episodes: detail.episodes,
-      cast: detail.cast,
-      relatedContent: detail.relatedContent,
+      seasons: detail.seasons,
+      episodes: flattenedEpisodes,
     });
   }
 
   /**
-   * Search content via GraphQL
+   * Search content via Go GraphQL
    */
   public static async searchContent(query: string, limit = 20): Promise<CatalogItem[]> {
     if (!query || !query.trim()) return [];
 
-    const data = await ApiClient.executeGraphQL<{ searchContent: any[] }>(
+    const data = await ApiClient.executeGraphQL<{ browse: { items: any[] } }>(
       SEARCH_CONTENT_QUERY,
       { query: query.trim(), limit },
       { userToken: AuthService.authToken || undefined }
     );
 
-    return (data?.searchContent || []).map((item) =>
+    return (data?.browse?.items || []).map((item) =>
       parseCatalogItem({
         id: item.id,
         name: item.title,
         title: item.title,
         slug: item.slug,
+        contentType: item.contentType,
         description: item.description,
-        poster: item.posterUrl,
-        landscape: item.bannerUrl,
-        videoType: item.videoType || 1,
-        typeId: item.typeId || 1,
-        rating: item.rating || 0,
+        poster: AppConfig.normalizeMediaUrl(item.posterUrl || ''),
+        landscape: AppConfig.normalizeMediaUrl(item.bannerUrl || item.backdropUrl || ''),
+        videoType: String(item.contentType || '').toUpperCase() === 'SERIES' ? 6 : 1,
+        typeId: String(item.contentType || '').toUpperCase() === 'SERIES' ? 6 : 1,
         releaseYear: item.releaseYear,
+        isPremium: item.isPremium ? 1 : 0,
       })
     );
   }
