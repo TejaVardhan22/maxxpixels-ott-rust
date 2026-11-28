@@ -1,5 +1,13 @@
 name: maxxpixels
 
+x-go-common: &go-common
+  image: maxxpixels-go-services:prod
+  restart: unless-stopped
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  networks:
+    - maxx-net
+
 services:
   # ============================================================================
   # Redis (runs inside Docker; PostgreSQL runs on the VPS host outside Docker)
@@ -25,8 +33,6 @@ services:
 
   # ============================================================================
   # Confluent Kafka (KRaft mode — no ZooKeeper required)
-  # Consumed by Rust API's spawn_kafka_view_consumer (ott.content.views,
-  # ott.watch.history). Auto-creates topics.
   # ============================================================================
   kafka:
     image: confluentinc/cp-kafka:7.7.1
@@ -60,67 +66,47 @@ services:
       - maxx-net
 
   # ============================================================================
-  # Main OTT API (Rust + Axum)
-  # Runs built-in cron workers (billing_worker, analytics_worker, event_worker,
-  # notification_worker) + Kafka view consumer.
-  # Connects to PostgreSQL on the VPS host via host.docker.internal.
+  # Go Microservices (shared Alpine image built once by identity-service)
+  # Connects to PostgreSQL on the VPS host via host.docker.internal:5432
   # ============================================================================
-  api:
+  identity-service:
+    <<: *go-common
     build:
-      context: ./services/api
+      context: ./services/go-api
       dockerfile: Dockerfile
-    container_name: maxx-api
-    restart: unless-stopped
+    entrypoint: ["/app/identity-service"]
+    container_name: maxx-identity
     depends_on:
       redis:
         condition: service_healthy
-      kafka:
-        condition: service_healthy
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    ports:
-      - "127.0.0.1:${API_PORT:-8081}:8081"
     environment:
-      RUST_ENV: ${RUST_ENV:-production}
-      RUST_LOG: ${RUST_LOG:-info}
-      HOST: 0.0.0.0
       PORT: 8081
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://api.maxxpixels.com}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://maxxpixels.com,https://www.maxxpixels.com,https://admin.maxxpixels.com,https://producer.maxxpixels.com}
-
-      # Host VPS PostgreSQL (outside Docker)
+      GO_ENV: ${GO_ENV:-production}
       DATABASE_URL: ${DATABASE_URL}
-      DATABASE_MAX_CONNECTIONS: ${DATABASE_MAX_CONNECTIONS:-25}
-      DATABASE_MIN_CONNECTIONS: ${DATABASE_MIN_CONNECTIONS:-5}
-      DATABASE_CONNECT_TIMEOUT_SEC: ${DATABASE_CONNECT_TIMEOUT_SEC:-10}
-      DATABASE_IDLE_TIMEOUT_SEC: ${DATABASE_IDLE_TIMEOUT_SEC:-300}
-
-      # Docker Redis
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-20}
-
-      # Kafka (Redpanda inside Docker for batched view/watch collection)
-      KAFKA_ENABLED: ${KAFKA_ENABLED:-true}
-      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
-      KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-maxxott-rust-backend}
-      KAFKA_CONSUMER_GROUP: ${KAFKA_CONSUMER_GROUP:-maxx-ott-group-rust}
-
-      # Notifications & Email (used by built-in notification_worker)
-      FCM_SERVER_KEY: ${FCM_SERVER_KEY:-}
-      FCM_ENDPOINT: ${FCM_ENDPOINT:-}
-      # FCM HTTP v1 service account (preferred over legacy server key)
-      FCM_SERVICE_ACCOUNT_PATH: ${FCM_SERVICE_ACCOUNT_PATH:-}
-      FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
-      FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
-      RESEND_API_KEY: ${RESEND_API_KEY:-}
-      EMAIL_FROM: ${EMAIL_FROM:-}
-
-      # Auth / JWT
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRATION_SECONDS: ${JWT_EXPIRATION_SECONDS:-86400}
       JWT_REFRESH_EXPIRATION_SECONDS: ${JWT_REFRESH_EXPIRATION_SECONDS:-2592000}
+      SMS_PROVIDER: ${SMS_PROVIDER:-MSG91}
+      MSG91_AUTH_KEY: ${MSG91_AUTH_KEY:-}
+      MSG91_TEMPLATE_ID: ${MSG91_TEMPLATE_ID:-}
+      MSG91_SENDER_ID: ${MSG91_SENDER_ID:-MAXXPX}
+      RECAPTCHA_SECRET_KEY: ${RECAPTCHA_SECRET_KEY:-}
 
-      # Bunny.net Stream & Storage
+  catalog-service:
+    <<: *go-common
+    entrypoint: ["/app/catalog-service"]
+    container_name: maxx-catalog
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      PORT: 8082
+      GO_ENV: ${GO_ENV:-production}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      JWT_SECRET: ${JWT_SECRET}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://api.maxxpixels.com}
       BUNNY_STREAM_LIBRARY_ID: ${BUNNY_STREAM_LIBRARY_ID:-}
       BUNNY_STREAM_API_KEY: ${BUNNY_STREAM_API_KEY:-}
       BUNNY_STREAM_CDN_HOSTNAME: ${BUNNY_STREAM_CDN_HOSTNAME:-}
@@ -131,49 +117,194 @@ services:
       BUNNY_STORAGE_REGION: ${BUNNY_STORAGE_REGION:-}
       BUNNY_PULL_ZONE_DOMAIN: ${BUNNY_PULL_ZONE_DOMAIN:-}
       MEDIA_DIRECT_CDN: ${MEDIA_DIRECT_CDN:-false}
+    volumes:
+      - api_uploads:/app/uploads
 
-      # Payments (Razorpay)
+  streaming-service:
+    <<: *go-common
+    entrypoint: ["/app/streaming-service"]
+    container_name: maxx-streaming
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      PORT: 8083
+      GO_ENV: ${GO_ENV:-production}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      JWT_SECRET: ${JWT_SECRET}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://api.maxxpixels.com}
+      BUNNY_STREAM_CDN_HOSTNAME: ${BUNNY_STREAM_CDN_HOSTNAME:-}
+      BUNNY_STREAM_TOKEN_AUTH_KEY: ${BUNNY_STREAM_TOKEN_AUTH_KEY:-}
+
+  commerce-service:
+    <<: *go-common
+    entrypoint: ["/app/commerce-service"]
+    container_name: maxx-commerce
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      PORT: 8084
+      GO_ENV: ${GO_ENV:-production}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      JWT_SECRET: ${JWT_SECRET}
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
       RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
 
-      # SMS (MSG91)
-      SMS_PROVIDER: ${SMS_PROVIDER:-MSG91}
+  monetization-service:
+    <<: *go-common
+    entrypoint: ["/app/monetization-service"]
+    container_name: maxx-monetization
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      PORT: 8085
+      GO_ENV: ${GO_ENV:-production}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      JWT_SECRET: ${JWT_SECRET}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://api.maxxpixels.com}
+
+  platform-service:
+    <<: *go-common
+    entrypoint: ["/app/platform-service"]
+    container_name: maxx-platform
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      PORT: 8086
+      GO_ENV: ${GO_ENV:-production}
+      DATABASE_URL: ${DATABASE_URL}
+      GAMES_DATABASE_URL: ${GAMES_DATABASE_URL:-}
+      EXTRA_BACKUP_DATABASE_URLS: ${EXTRA_BACKUP_DATABASE_URLS:-}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      JWT_SECRET: ${JWT_SECRET}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://api.maxxpixels.com}
       MSG91_AUTH_KEY: ${MSG91_AUTH_KEY:-}
       MSG91_TEMPLATE_ID: ${MSG91_TEMPLATE_ID:-}
-      RECAPTCHA_SECRET_KEY: ${RECAPTCHA_SECRET_KEY:-}
+      MSG91_SENDER_ID: ${MSG91_SENDER_ID:-MAXXPX}
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+      FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
+      FCM_SERVICE_ACCOUNT_PATH: ${FCM_SERVICE_ACCOUNT_PATH:-}
+      BUNNY_STORAGE_ZONE_NAME: ${BUNNY_STORAGE_ZONE_NAME:-}
+      BUNNY_STORAGE_ZONE_PASSWORD: ${BUNNY_STORAGE_ZONE_PASSWORD:-}
+      BUNNY_STORAGE_ENDPOINT: ${BUNNY_STORAGE_ENDPOINT:-}
+      BUNNY_STORAGE_REGION: ${BUNNY_STORAGE_REGION:-}
+      BUNNY_PULL_ZONE_DOMAIN: ${BUNNY_PULL_ZONE_DOMAIN:-}
+      DB_BACKUP_DIR: /app/backups
+      DB_BACKUP_BUNNY_PREFIX: ${DB_BACKUP_BUNNY_PREFIX:-db-backups}
+      DB_BACKUP_RETENTION_DAYS: ${DB_BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - db_backups:/app/backups
+      - /etc/maxxpixels/fcm-service-account.json:/etc/maxxpixels/fcm-service-account.json:ro
 
-      # Rate limiting
+  worker-service:
+    <<: *go-common
+    entrypoint: ["/app/worker-service"]
+    container_name: maxx-worker
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      PORT: 8087
+      GO_ENV: ${GO_ENV:-production}
+      DATABASE_URL: ${DATABASE_URL}
+      GAMES_DATABASE_URL: ${GAMES_DATABASE_URL:-}
+      EXTRA_BACKUP_DATABASE_URLS: ${EXTRA_BACKUP_DATABASE_URLS:-}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      JWT_SECRET: ${JWT_SECRET}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-true}
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+      FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
+      FCM_SERVICE_ACCOUNT_PATH: ${FCM_SERVICE_ACCOUNT_PATH:-}
+      BUNNY_STORAGE_ZONE_NAME: ${BUNNY_STORAGE_ZONE_NAME:-}
+      BUNNY_STORAGE_ZONE_PASSWORD: ${BUNNY_STORAGE_ZONE_PASSWORD:-}
+      BUNNY_STORAGE_ENDPOINT: ${BUNNY_STORAGE_ENDPOINT:-}
+      BUNNY_STORAGE_REGION: ${BUNNY_STORAGE_REGION:-}
+      BUNNY_PULL_ZONE_DOMAIN: ${BUNNY_PULL_ZONE_DOMAIN:-}
+      DB_BACKUP_ENABLED: ${DB_BACKUP_ENABLED:-true}
+      DB_BACKUP_DIR: /app/backups
+      DB_BACKUP_BUNNY_PREFIX: ${DB_BACKUP_BUNNY_PREFIX:-db-backups}
+      DB_BACKUP_RETENTION_DAYS: ${DB_BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - db_backups:/app/backups
+      - /etc/maxxpixels/fcm-service-account.json:/etc/maxxpixels/fcm-service-account.json:ro
+
+  # ============================================================================
+  # API Gateway (Go — exposes REST + GraphQL on :8081)
+  # ============================================================================
+  api:
+    <<: *go-common
+    entrypoint: ["/app/api-gateway"]
+    container_name: maxx-api
+    depends_on:
+      redis:
+        condition: service_healthy
+      identity-service:
+        condition: service_started
+      catalog-service:
+        condition: service_started
+      streaming-service:
+        condition: service_started
+      commerce-service:
+        condition: service_started
+      monetization-service:
+        condition: service_started
+      platform-service:
+        condition: service_started
+    ports:
+      - "127.0.0.1:${API_PORT:-8081}:8081"
+    environment:
+      PORT: 8081
+      GO_ENV: ${GO_ENV:-production}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      JWT_SECRET: ${JWT_SECRET}
+      IDENTITY_SERVICE_URL: http://identity-service:8081
+      CATALOG_SERVICE_URL: http://catalog-service:8082
+      STREAMING_SERVICE_URL: http://streaming-service:8083
+      COMMERCE_SERVICE_URL: http://commerce-service:8084
+      MONETIZATION_SERVICE_URL: http://monetization-service:8085
+      PLATFORM_SERVICE_URL: http://platform-service:8086
+      GAMES_SERVICE_URL: http://games:8090
       DISABLE_RATE_LIMIT: ${DISABLE_RATE_LIMIT:-false}
       RATE_LIMIT_GENERAL_PER_MINUTE: ${RATE_LIMIT_GENERAL_PER_MINUTE:-600}
       RATE_LIMIT_AUTH_PER_MINUTE: ${RATE_LIMIT_AUTH_PER_MINUTE:-30}
       RATE_LIMIT_PAYMENT_PER_MINUTE: ${RATE_LIMIT_PAYMENT_PER_MINUTE:-30}
-    volumes:
-      - api_uploads:/app/uploads
-      - db_backups:/app/backups
-      - /etc/maxxpixels/fcm-service-account.json:/etc/maxxpixels/fcm-service-account.json:ro
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://maxxpixels.com,https://www.maxxpixels.com,https://admin.maxxpixels.com,https://producer.maxxpixels.com}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/health >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
     networks:
-      - maxx-net
+      maxx-net:
+        aliases:
+          - api-gateway
 
   # ============================================================================
-  # Games & Coins Microservice (Rust + Axum)
-  # Connects to the separate games DB on the VPS host PostgreSQL
+  # Games & Coins Microservice (Go — connects to separate host games DB)
   # ============================================================================
   games:
-    build:
-      context: ./services/games
-      dockerfile: Dockerfile
+    <<: *go-common
+    entrypoint: ["/app/games-service"]
     container_name: maxx-games
-    restart: unless-stopped
     depends_on:
       api:
         condition: service_healthy
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:${GAMES_PORT:-8090}:8090"
     environment:
-      NODE_ENV: production
+      GO_ENV: ${GO_ENV:-production}
       GAMES_SERVICE_PORT: 8090
       GAMES_DATABASE_URL: ${GAMES_DATABASE_URL}
       MAIN_API_URL: http://api:8081
@@ -189,11 +320,35 @@ services:
       SUBSCRIPTION_GRANT_COINS: ${SUBSCRIPTION_GRANT_COINS:-1000}
       SUBSCRIPTION_MONTHLY_COINS: ${SUBSCRIPTION_MONTHLY_COINS:-100}
       COIN_PACKS: ${COIN_PACKS:-}
-    networks:
-      - maxx-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8090/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
   # ============================================================================
-  # Web Frontend (Next.js 14 standalone)
+  # Google Drive -> Bunny Stream Pipeline (Go zero-disk streaming service)
+  # ============================================================================
+  media-streamer:
+    <<: *go-common
+    entrypoint: ["/app/media-streamer", "-server", "-port=8085"]
+    container_name: maxx-media-streamer
+    ports:
+      - "127.0.0.1:${STREAMER_PORT:-8085}:8085"
+    environment:
+      API_BACKEND_URL: http://api:8081
+      BUNNY_STREAM_LIBRARY_ID: ${BUNNY_STREAM_LIBRARY_ID:-}
+      BUNNY_STREAM_API_KEY: ${BUNNY_STREAM_API_KEY:-}
+      BUNNY_STREAM_CDN_HOSTNAME: ${BUNNY_STREAM_CDN_HOSTNAME:-}
+      GDRIVE_TOKEN_PATH: /app/data/token.json
+      GDRIVE_CREDENTIALS_PATH: /app/credentials.json
+      GDRIVE_REDIRECT_URI: ${GDRIVE_REDIRECT_URI:-}
+    volumes:
+      - ./services/media-streamer/credentials.json:/app/credentials.json:ro
+      - streamer_data:/app/data
+
+  # ============================================================================
+  # Web Frontend (Next.js 14 standalone — REST + Go GraphQL)
   # ============================================================================
   web:
     build:
@@ -229,12 +384,14 @@ services:
       - maxx-net
 
   # ============================================================================
-  # Admin & Producer Panel (Angular 17 + Nginx)
+  # Admin & Producer Console (React + Refine + Ant Design 6 + Nginx)
   # ============================================================================
   admin:
     build:
-      context: ./apps/admin
+      context: ./apps/admin-refine
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${ADMIN_API_BASE_URL:-/api/v1}
     container_name: maxx-admin
     restart: unless-stopped
     depends_on:
@@ -242,32 +399,6 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:${ADMIN_PORT:-4200}:80"
-    environment:
-      ADMIN_API_HOST: ${ADMIN_API_HOST:-}
-      ADMIN_API_BASE_URL: ${ADMIN_API_BASE_URL:-/api/v1}
-      ADMIN_APP_NAME: ${ADMIN_APP_NAME:-MaxxPixels OTT Admin}
-    networks:
-      - maxx-net
-
-  # ============================================================================
-  # Google Drive -> Bunny Stream Pipeline (Go zero-disk streaming service)
-  # ============================================================================
-  media-streamer:
-    build:
-      context: ./services/media-streamer
-      dockerfile: Dockerfile
-    container_name: maxx-media-streamer
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:${STREAMER_PORT:-8085}:8085"
-    environment:
-      BUNNY_STREAM_LIBRARY_ID: ${BUNNY_STREAM_LIBRARY_ID:-}
-      BUNNY_STREAM_API_KEY: ${BUNNY_STREAM_API_KEY:-}
-      BUNNY_STREAM_CDN_HOSTNAME: ${BUNNY_STREAM_CDN_HOSTNAME:-}
-      GDRIVE_TOKEN_PATH: /app/data/token.json
-    volumes:
-      - ./services/media-streamer/credentials.json:/app/credentials.json:ro
-      - streamer_data:/app/data
     networks:
       - maxx-net
 

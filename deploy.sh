@@ -108,6 +108,9 @@ else
   echo "==> Targeted service deploy (${SERVICES[*]}); keeping the rest of the stack running."
 fi
 
+echo "==> Building shared Go microservices image..."
+docker compose "${PROFILE_ARGS[@]}" build identity-service
+
 echo "==> Building and starting fresh containers..."
 docker compose "${PROFILE_ARGS[@]}" up -d --build --remove-orphans "${SERVICES[@]}"
 
@@ -131,10 +134,11 @@ wait_for() {
   return 1
 }
 
-wait_for "API (Rust)" "http://127.0.0.1:${API_PORT}/ping" || true
-wait_for "Games (Rust)" "http://127.0.0.1:${GAMES_PORT}/healthz" || true
+wait_for "API Gateway (Go)" "http://127.0.0.1:${API_PORT}/ping" || true
+wait_for "GraphQL (Go Catalog)" "http://127.0.0.1:${API_PORT}/api/v1/graphql" || true
+wait_for "Games (Go)" "http://127.0.0.1:${GAMES_PORT}/healthz" || true
 wait_for "Web (Next.js)" "http://127.0.0.1:${WEB_PORT}/" || true
-wait_for "Admin (Angular)" "http://127.0.0.1:${ADMIN_PORT}/" || true
+wait_for "Admin (Refine)" "http://127.0.0.1:${ADMIN_PORT}/" || true
 
 echo ""
 echo "==> Container status:"
