@@ -587,31 +587,137 @@ func (s *Service) CreateLiveChannel(ctx context.Context, payload map[string]any)
 	if name == "" || stream == "" {
 		return nil, errors.New("name and streamUrl are required")
 	}
+	hls := strVal(payload, "hlsStreamUrl", "hls_stream_url")
+	if hls == "" {
+		hls = stream
+	}
 	now := time.Now().UTC()
 	active := true
+	if hasKey(payload, "isActive", "is_active") {
+		active = boolVal(payload, "isActive", "is_active")
+	}
 	isLive := true
+	if hasKey(payload, "isLive", "is_live") {
+		isLive = boolVal(payload, "isLive", "is_live")
+	}
+	isPremium := boolVal(payload, "isPremium", "is_premium")
+	isDRM := boolVal(payload, "isDrmProtected", "is_drm_protected")
+	accessType := strings.ToUpper(strVal(payload, "accessType", "access_type"))
+	if accessType == "" {
+		if isPremium {
+			accessType = "PREMIUM"
+		} else {
+			accessType = "FREE"
+		}
+	}
+	chNum := int32Val(payload, "channelNumber", "channel_number")
+	dispOrder := int32Val(payload, "displayOrder", "display_order")
 	row := models.LiveChannel{
-		Name:         name,
-		Slug:         slugify(name),
-		StreamUrl:    stream,
-		HlsStreamUrl: &stream,
-		Description:  ptrStr(strVal(payload, "description")),
-		LogoUrl:      ptrStr(strVal(payload, "logoUrl", "logo_url")),
-		PosterUrl:    ptrStr(strVal(payload, "posterUrl", "poster_url")),
-		Category:     ptrStr(strVal(payload, "category")),
-		LanguageCode: ptrStr(strVal(payload, "languageCode", "language")),
-		IsActive:     &active,
-		IsLive:       &isLive,
-		CreatedAt:    &now,
+		Name:           name,
+		Slug:           fmt.Sprintf("%s-%d", slugify(name), now.Unix()%10000),
+		StreamUrl:      stream,
+		HlsStreamUrl:   &hls,
+		Description:    ptrStr(strVal(payload, "description")),
+		LogoUrl:        ptrStr(strVal(payload, "logoUrl", "logo_url")),
+		PosterUrl:      ptrStr(strVal(payload, "posterUrl", "poster_url")),
+		Category:       ptrStr(strVal(payload, "category")),
+		LanguageCode:   ptrStr(strVal(payload, "languageCode", "language_code", "language")),
+		AccessType:     &accessType,
+		EpgUrl:         ptrStr(strVal(payload, "epgUrl", "epg_url")),
+		DrmLicenseUrl:  ptrStr(strVal(payload, "drmLicenseUrl", "drm_license_url")),
+		IsActive:       &active,
+		IsLive:         &isLive,
+		IsPremium:      &isPremium,
+		IsDrmProtected: &isDRM,
+		CreatedAt:      &now,
+	}
+	if chNum > 0 {
+		row.ChannelNumber = &chNum
+	}
+	if dispOrder > 0 {
+		row.DisplayOrder = &dispOrder
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
 		return nil, err
 	}
+	s.invalidateCatalogCache(ctx)
+	return &row, nil
+}
+
+func (s *Service) UpdateLiveChannel(ctx context.Context, id int64, payload map[string]any) (*models.LiveChannel, error) {
+	var row models.LiveChannel
+	if err := s.db.WithContext(ctx).First(&row, id).Error; err != nil {
+		return nil, err
+	}
+	upd := map[string]any{}
+	if v := strVal(payload, "name", "title"); v != "" {
+		upd["name"] = v
+	}
+	if v := strVal(payload, "streamUrl", "stream_url"); v != "" {
+		upd["stream_url"] = v
+		if !hasKey(payload, "hlsStreamUrl", "hls_stream_url") {
+			upd["hls_stream_url"] = v
+		}
+	}
+	if hasKey(payload, "hlsStreamUrl", "hls_stream_url") {
+		upd["hls_stream_url"] = ptrStr(strVal(payload, "hlsStreamUrl", "hls_stream_url"))
+	}
+	if hasKey(payload, "description") {
+		upd["description"] = ptrStr(strVal(payload, "description"))
+	}
+	if hasKey(payload, "logoUrl", "logo_url") {
+		upd["logo_url"] = ptrStr(strVal(payload, "logoUrl", "logo_url"))
+	}
+	if hasKey(payload, "posterUrl", "poster_url") {
+		upd["poster_url"] = ptrStr(strVal(payload, "posterUrl", "poster_url"))
+	}
+	if hasKey(payload, "category") {
+		upd["category"] = ptrStr(strVal(payload, "category"))
+	}
+	if hasKey(payload, "languageCode", "language_code", "language") {
+		upd["language_code"] = ptrStr(strVal(payload, "languageCode", "language_code", "language"))
+	}
+	if v := strings.ToUpper(strVal(payload, "accessType", "access_type")); v != "" {
+		upd["access_type"] = v
+	}
+	if hasKey(payload, "epgUrl", "epg_url") {
+		upd["epg_url"] = ptrStr(strVal(payload, "epgUrl", "epg_url"))
+	}
+	if hasKey(payload, "drmLicenseUrl", "drm_license_url") {
+		upd["drm_license_url"] = ptrStr(strVal(payload, "drmLicenseUrl", "drm_license_url"))
+	}
+	if hasKey(payload, "channelNumber", "channel_number") {
+		upd["channel_number"] = int32Val(payload, "channelNumber", "channel_number")
+	}
+	if hasKey(payload, "displayOrder", "display_order") {
+		upd["display_order"] = int32Val(payload, "displayOrder", "display_order")
+	}
+	if hasKey(payload, "isActive", "is_active") {
+		upd["is_active"] = boolVal(payload, "isActive", "is_active")
+	}
+	if hasKey(payload, "isLive", "is_live") {
+		upd["is_live"] = boolVal(payload, "isLive", "is_live")
+	}
+	if hasKey(payload, "isPremium", "is_premium") {
+		upd["is_premium"] = boolVal(payload, "isPremium", "is_premium")
+	}
+	if hasKey(payload, "isDrmProtected", "is_drm_protected") {
+		upd["is_drm_protected"] = boolVal(payload, "isDrmProtected", "is_drm_protected")
+	}
+	if len(upd) > 0 {
+		if err := s.db.WithContext(ctx).Model(&models.LiveChannel{}).Where("id = ?", id).Updates(upd).Error; err != nil {
+			return nil, err
+		}
+	}
+	s.invalidateCatalogCache(ctx)
+	_ = s.db.WithContext(ctx).First(&row, id).Error
 	return &row, nil
 }
 
 func (s *Service) DeleteLiveChannel(ctx context.Context, id int64) error {
-	return s.db.WithContext(ctx).Delete(&models.LiveChannel{}, id).Error
+	err := s.db.WithContext(ctx).Delete(&models.LiveChannel{}, id).Error
+	s.invalidateCatalogCache(ctx)
+	return err
 }
 
 func (s *Service) ListLiveEvents(ctx context.Context) ([]models.LiveEvent, error) {
@@ -622,20 +728,24 @@ func (s *Service) ListLiveEvents(ctx context.Context) ([]models.LiveEvent, error
 
 func (s *Service) CreateLiveEvent(ctx context.Context, payload map[string]any) (*models.LiveEvent, error) {
 	title := strVal(payload, "title", "name")
-	stream := strVal(payload, "streamUrl", "stream_url", "hlsStreamUrl")
+	stream := strVal(payload, "streamUrl", "stream_url", "hlsStreamUrl", "hls_stream_url")
 	if title == "" {
 		return nil, errors.New("title is required")
+	}
+	hls := strVal(payload, "hlsStreamUrl", "hls_stream_url")
+	if hls == "" {
+		hls = stream
 	}
 	now := time.Now().UTC()
 	start := now
 	end := now.Add(2 * time.Hour)
-	if v := strVal(payload, "startTime", "start_time"); v != "" {
-		if parsed, err := time.Parse(time.RFC3339, v); err == nil {
+	if v := strVal(payload, "startTime", "start_time", "scheduledStart", "scheduled_start"); v != "" {
+		if parsed, err := parseFlexibleDate(v); err == nil {
 			start = parsed
 		}
 	}
-	if v := strVal(payload, "endTime", "end_time"); v != "" {
-		if parsed, err := time.Parse(time.RFC3339, v); err == nil {
+	if v := strVal(payload, "endTime", "end_time", "scheduledEnd", "scheduled_end"); v != "" {
+		if parsed, err := parseFlexibleDate(v); err == nil {
 			end = parsed
 		}
 	}
@@ -643,26 +753,125 @@ func (s *Service) CreateLiveEvent(ctx context.Context, payload map[string]any) (
 	if st == "" {
 		st = "SCHEDULED"
 	}
+	isPpv := boolVal(payload, "isPpv", "is_ppv")
+	ppvPrice := floatVal(payload, "ppvPrice", "ppv_price")
+	isPremium := boolVal(payload, "isPremium", "is_premium")
+	isDRM := boolVal(payload, "isDrmProtected", "is_drm_protected")
+	accessType := strings.ToUpper(strVal(payload, "accessType", "access_type"))
+	if accessType == "" {
+		if isPpv {
+			accessType = "PPV"
+		} else if isPremium {
+			accessType = "SUBSCRIPTION"
+		} else {
+			accessType = "FREE"
+		}
+	}
 	row := models.LiveEvent{
-		Title:        title,
-		Slug:         slugify(title),
-		StreamUrl:    stream,
-		HlsStreamUrl: ptrStr(stream),
-		Description:  ptrStr(strVal(payload, "description")),
-		PosterUrl:    ptrStr(strVal(payload, "posterUrl", "poster_url")),
-		StartTime:    start,
-		EndTime:      end,
-		Status:       st,
-		CreatedAt:    &now,
+		Title:          title,
+		Slug:           fmt.Sprintf("%s-%d", slugify(title), now.Unix()%10000),
+		StreamUrl:      stream,
+		HlsStreamUrl:   ptrStr(hls),
+		Description:    ptrStr(strVal(payload, "description")),
+		PosterUrl:      ptrStr(strVal(payload, "posterUrl", "poster_url")),
+		StartTime:      start,
+		EndTime:        end,
+		ScheduledStart: &start,
+		ScheduledEnd:   &end,
+		Status:         st,
+		AccessType:     &accessType,
+		IsPpv:          &isPpv,
+		PpvPrice:       &ppvPrice,
+		IsPremium:      &isPremium,
+		IsDrmProtected: &isDRM,
+		CreatedAt:      &now,
+	}
+	if chID := int64Val(payload, "channelId", "channel_id"); chID > 0 {
+		row.ChannelId = &chID
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
 		return nil, err
 	}
+	s.invalidateCatalogCache(ctx)
+	return &row, nil
+}
+
+func (s *Service) UpdateLiveEvent(ctx context.Context, id int64, payload map[string]any) (*models.LiveEvent, error) {
+	var row models.LiveEvent
+	if err := s.db.WithContext(ctx).First(&row, id).Error; err != nil {
+		return nil, err
+	}
+	upd := map[string]any{}
+	if v := strVal(payload, "title", "name"); v != "" {
+		upd["title"] = v
+	}
+	if hasKey(payload, "streamUrl", "stream_url") {
+		v := strVal(payload, "streamUrl", "stream_url")
+		upd["stream_url"] = v
+		if !hasKey(payload, "hlsStreamUrl", "hls_stream_url") {
+			upd["hls_stream_url"] = ptrStr(v)
+		}
+	}
+	if hasKey(payload, "hlsStreamUrl", "hls_stream_url") {
+		upd["hls_stream_url"] = ptrStr(strVal(payload, "hlsStreamUrl", "hls_stream_url"))
+	}
+	if hasKey(payload, "description") {
+		upd["description"] = ptrStr(strVal(payload, "description"))
+	}
+	if hasKey(payload, "posterUrl", "poster_url") {
+		upd["poster_url"] = ptrStr(strVal(payload, "posterUrl", "poster_url"))
+	}
+	if v := strVal(payload, "startTime", "start_time", "scheduledStart", "scheduled_start"); v != "" {
+		if parsed, err := parseFlexibleDate(v); err == nil {
+			upd["start_time"] = parsed
+			upd["scheduled_start"] = parsed
+		}
+	}
+	if v := strVal(payload, "endTime", "end_time", "scheduledEnd", "scheduled_end"); v != "" {
+		if parsed, err := parseFlexibleDate(v); err == nil {
+			upd["end_time"] = parsed
+			upd["scheduled_end"] = parsed
+		}
+	}
+	if v := strings.ToUpper(strVal(payload, "status")); v != "" {
+		upd["status"] = v
+	}
+	if v := strings.ToUpper(strVal(payload, "accessType", "access_type")); v != "" {
+		upd["access_type"] = v
+	}
+	if hasKey(payload, "channelId", "channel_id") {
+		if chID := int64Val(payload, "channelId", "channel_id"); chID > 0 {
+			upd["channel_id"] = chID
+		} else {
+			upd["channel_id"] = nil
+		}
+	}
+	if hasKey(payload, "isPpv", "is_ppv") {
+		upd["is_ppv"] = boolVal(payload, "isPpv", "is_ppv")
+	}
+	if hasKey(payload, "ppvPrice", "ppv_price") {
+		upd["ppv_price"] = floatVal(payload, "ppvPrice", "ppv_price")
+	}
+	if hasKey(payload, "isPremium", "is_premium") {
+		upd["is_premium"] = boolVal(payload, "isPremium", "is_premium")
+	}
+	if hasKey(payload, "isDrmProtected", "is_drm_protected") {
+		upd["is_drm_protected"] = boolVal(payload, "isDrmProtected", "is_drm_protected")
+	}
+	if len(upd) > 0 {
+		if err := s.db.WithContext(ctx).Model(&models.LiveEvent{}).Where("id = ?", id).Updates(upd).Error; err != nil {
+			return nil, err
+		}
+	}
+	s.invalidateCatalogCache(ctx)
+	_ = s.db.WithContext(ctx).First(&row, id).Error
 	return &row, nil
 }
 
 func (s *Service) DeleteLiveEvent(ctx context.Context, id int64) error {
-	return s.db.WithContext(ctx).Delete(&models.LiveEvent{}, id).Error
+	err := s.db.WithContext(ctx).Delete(&models.LiveEvent{}, id).Error
+	s.invalidateCatalogCache(ctx)
+	return err
 }
 
 // --- Admin Intro Videos & Portal Banners CRUD ---
@@ -881,7 +1090,14 @@ func (s *Service) ServeMedia(ctx context.Context, folder, fileName string) ([]by
 
 func parseFlexibleDate(raw string) (time.Time, error) {
 	s := strings.TrimSpace(raw)
-	for _, layout := range []string{"2006-01-02", time.RFC3339, "2006-01-02T15:04:05", "2006-01-02 15:04:05"} {
+	for _, layout := range []string{
+		time.RFC3339,
+		"2006-01-02T15:04:05",
+		"2006-01-02T15:04",
+		"2006-01-02 15:04:05",
+		"2006-01-02 15:04",
+		"2006-01-02",
+	} {
 		if t, err := time.Parse(layout, s); err == nil {
 			return t.UTC(), nil
 		}
@@ -892,6 +1108,31 @@ func parseFlexibleDate(raw string) (time.Time, error) {
 		}
 	}
 	return time.Time{}, errors.New("invalid date")
+}
+
+func hasKey(m map[string]any, keys ...string) bool {
+	for _, k := range keys {
+		if _, ok := m[k]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func int64Val(m map[string]any, keys ...string) int64 {
+	for _, k := range keys {
+		if v, ok := m[k]; ok && v != nil {
+			switch n := v.(type) {
+			case float64:
+				return int64(n)
+			case int:
+				return int64(n)
+			case int64:
+				return n
+			}
+		}
+	}
+	return 0
 }
 
 func strVal(m map[string]any, keys ...string) string {

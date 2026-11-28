@@ -204,6 +204,21 @@ func (h *Handler) createLiveChannel(w http.ResponseWriter, r *http.Request) {
 	httpx.Created(w, row, "Live channel created")
 }
 
+func (h *Handler) updateLiveChannel(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	var body map[string]any
+	if err := httpx.DecodeJSON(r, &body); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+	row, err := h.svc.UpdateLiveChannel(r.Context(), id, body)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	httpx.OK(w, row, "Live channel updated")
+}
+
 func (h *Handler) deleteLiveChannel(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	_ = h.svc.DeleteLiveChannel(r.Context(), id)
@@ -231,6 +246,21 @@ func (h *Handler) createLiveEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.Created(w, row, "Live event created")
+}
+
+func (h *Handler) updateLiveEvent(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	var body map[string]any
+	if err := httpx.DecodeJSON(r, &body); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+	row, err := h.svc.UpdateLiveEvent(r.Context(), id, body)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	httpx.OK(w, row, "Live event updated")
 }
 
 func (h *Handler) deleteLiveEvent(w http.ResponseWriter, r *http.Request) {

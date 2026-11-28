@@ -123,13 +123,20 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 
 			adm.Get(pref+"/admin/live/channels", h.listLiveChannels)
 			adm.Post(pref+"/admin/live/channels", h.createLiveChannel)
+			adm.Put(pref+"/admin/live/channels/{id}", h.updateLiveChannel)
 			adm.Delete(pref+"/admin/live/channels/{id}", h.deleteLiveChannel)
 			adm.Get(pref+"/admin/live/events", h.listLiveEvents)
 			adm.Post(pref+"/admin/live/events", h.createLiveEvent)
+			adm.Put(pref+"/admin/live/events/{id}", h.updateLiveEvent)
 			adm.Delete(pref+"/admin/live/events/{id}", h.deleteLiveEvent)
 			adm.Get(pref+"/admin/live-channels", h.listLiveChannels)
 			adm.Post(pref+"/admin/live-channels", h.createLiveChannel)
+			adm.Put(pref+"/admin/live-channels/{id}", h.updateLiveChannel)
 			adm.Delete(pref+"/admin/live-channels/{id}", h.deleteLiveChannel)
+			adm.Get(pref+"/admin/live-events", h.listLiveEvents)
+			adm.Post(pref+"/admin/live-events", h.createLiveEvent)
+			adm.Put(pref+"/admin/live-events/{id}", h.updateLiveEvent)
+			adm.Delete(pref+"/admin/live-events/{id}", h.deleteLiveEvent)
 
 			for _, ivPref := range []string{"/admin/intro-video", "/admin/intro-videos"} {
 				adm.Get(pref+ivPref, h.adminListIntroVideos)
