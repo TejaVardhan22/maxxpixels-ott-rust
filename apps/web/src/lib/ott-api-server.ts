@@ -5,6 +5,11 @@
 
 import type { ApiListResponse, Banner, Category, ContentItem, Section } from '@ott/shared';
 import { normalizeApiBaseUrl } from '@ott/shared';
+import {
+  executeWebGraphQL,
+  WEB_CONTENT_DETAIL_GRAPHQL_QUERY,
+  WEB_HOME_GRAPHQL_QUERY,
+} from './graphql-client';
 
 const REVALIDATE_SEC = 15;
 const API_TIMEOUT_MS = 10_000;
@@ -120,9 +125,32 @@ export type HomeInitialData = {
 };
 
 /**
- * Parallel fetch for home page (guest). Safe to fail — client refetches via React Query.
+ * Parallel fetch for home page (guest). Uses Go GraphQL single round-trip first with REST fallback.
  */
 export async function fetchHomeInitialData(): Promise<HomeInitialData> {
+  try {
+    const gql = await executeWebGraphQL<{
+      home?: { banners?: Banner[]; sections?: Section[]; categories?: Category[] };
+      browse?: { items?: ContentItem[] };
+    }>(WEB_HOME_GRAPHQL_QUERY, { platform: 'WEB', language: '' });
+
+    if (gql?.home || gql?.browse) {
+      const wrap = <T,>(arr: T[]): ApiListResponse<T[]> => ({
+        status: 200,
+        message: 'Success',
+        result: arr,
+      });
+      return {
+        banners: wrap(gql.home?.banners ?? []),
+        sections: wrap(gql.home?.sections ?? []),
+        categories: wrap(gql.home?.categories ?? []),
+        latest: wrap(gql.browse?.items ?? []),
+      };
+    }
+  } catch {
+    // Fall back to REST below
+  }
+
   try {
     const [banners, sections, categories, latest] = await Promise.all([
       serverPostJson<ApiListResponse<Banner[]>>('cms/banners', { platform: 'WEB' }),
@@ -147,9 +175,21 @@ export async function fetchHomeInitialData(): Promise<HomeInitialData> {
 
 /**
  * Server fetch for content detail (for SSR, metadata, Schema.org JSON-LD).
+ * Uses Go GraphQL first (single round-trip with seasons & episodes) with REST fallback.
  */
 export async function fetchContentDetailServer(idOrSlug: string): Promise<ContentItem | null> {
   if (!idOrSlug) return null;
+  try {
+    const gql = await executeWebGraphQL<{ content?: ContentItem }>(
+      WEB_CONTENT_DETAIL_GRAPHQL_QUERY,
+      { idOrSlug },
+    );
+    if (gql?.content && ((gql.content as any).id || (gql.content as any).title)) {
+      return gql.content;
+    }
+  } catch {
+    // Fall back to REST below
+  }
   try {
     const res = await serverPostJson<any>(`content/${encodeURIComponent(idOrSlug)}`);
     const raw = res?.result ?? res?.data ?? res;
