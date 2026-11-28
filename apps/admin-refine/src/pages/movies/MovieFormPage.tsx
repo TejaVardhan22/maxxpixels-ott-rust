@@ -208,7 +208,7 @@ export const MovieFormPage: React.FC = () => {
         audioTracks: Array.isArray(rec.audioTracks) ? rec.audioTracks : [],
         description: rec.description || rec.synopsis || "",
         posterUrl: rec.posterUrl || rec.thumbnailUrl || "",
-        bannerUrl: rec.bannerUrl || rec.backdropUrl || "",
+        bannerUrl: rec.bannerUrl || rec.landscapeUrl || rec.backdropUrl || "",
         logoImageUrl: rec.logoImageUrl || "",
         contentWarnings: Array.isArray(rec.contentWarnings) ? rec.contentWarnings : [],
         qualityBadges: Array.isArray(rec.qualityBadges) ? rec.qualityBadges : [],

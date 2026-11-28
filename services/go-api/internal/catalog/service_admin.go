@@ -170,6 +170,7 @@ func (s *Service) AdminCreateMovie(ctx context.Context, payload map[string]any) 
 	isFeat := boolVal(payload, "isFeatured", "is_featured")
 	isTrend := boolVal(payload, "isTrending", "is_trending")
 
+	bannerVal := strVal(payload, "bannerUrl", "banner_image_url", "landscapeUrl", "landscape_image_url", "backdropUrl", "backdrop_url", "landscapePosterUrl")
 	c := models.Content{
 		Title:                title,
 		Slug:                 slug,
@@ -178,7 +179,10 @@ func (s *Service) AdminCreateMovie(ctx context.Context, payload map[string]any) 
 		OriginalLanguageCode: &lang,
 		Status:               status,
 		PosterUrl:            ptrStr(strVal(payload, "posterUrl", "poster_url")),
-		BackdropUrl:          ptrStr(strVal(payload, "backdropUrl", "backdrop_url", "landscapePosterUrl")),
+		BackdropUrl:          ptrStr(bannerVal),
+		LandscapeImageUrl:    ptrStr(bannerVal),
+		BannerImageUrl:       ptrStr(bannerVal),
+		LogoImageUrl:         ptrStr(strVal(payload, "logoImageUrl", "logo_image_url")),
 		TrailerUrl:           ptrStr(strVal(payload, "trailerUrl", "trailer_url")),
 		AgeRating:            ptrStr(strVal(payload, "ageRating", "maturityRating", "age_rating")),
 		Monetization:         &mon,
@@ -247,6 +251,14 @@ func (s *Service) AdminUpdateMovie(ctx context.Context, id int64, payload map[st
 		if v := strVal(payload, m[0]); v != "" {
 			upd[m[1]] = v
 		}
+	}
+	if bVal := strVal(payload, "bannerUrl", "banner_image_url", "landscapeUrl", "landscape_image_url", "backdropUrl", "backdrop_url", "landscapePosterUrl"); bVal != "" {
+		upd["backdrop_url"] = bVal
+		upd["landscape_image_url"] = bVal
+		upd["banner_image_url"] = bVal
+	}
+	if lVal := strVal(payload, "logoImageUrl", "logo_image_url"); lVal != "" {
+		upd["logo_image_url"] = lVal
 	}
 	if _, ok := payload["isPremium"]; ok {
 		upd["is_premium"] = boolVal(payload, "isPremium")

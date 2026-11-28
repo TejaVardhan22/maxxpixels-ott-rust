@@ -308,6 +308,14 @@ func (s *Service) GetDetail(ctx context.Context, idOrSlug string) (map[string]an
 		prodHouse = *content.ProductionName
 	}
 
+	var resolvedBanner *string
+	for _, cand := range []*string{content.BannerImageUrl, content.LandscapeImageUrl, content.BackdropUrl} {
+		if cand != nil && strings.TrimSpace(*cand) != "" {
+			resolvedBanner = cand
+			break
+		}
+	}
+
 	return map[string]any{
 		"content":              content,
 		"movie":                movie,
@@ -320,9 +328,9 @@ func (s *Service) GetDetail(ctx context.Context, idOrSlug string) (map[string]an
 		"shortDescription":     content.ShortDescription,
 		"posterUrl":            content.PosterUrl,
 		"poster2Url":           content.Poster2Url,
-		"backdropUrl":          content.BackdropUrl,
-		"bannerUrl":            content.BannerImageUrl,
-		"landscapeUrl":         content.LandscapeImageUrl,
+		"backdropUrl":          resolvedBanner,
+		"bannerUrl":            resolvedBanner,
+		"landscapeUrl":         resolvedBanner,
 		"logoImageUrl":         content.LogoImageUrl,
 		"trailerUrl":           content.TrailerUrl,
 		"originalLanguage":     langName,
