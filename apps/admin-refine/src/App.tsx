@@ -284,7 +284,18 @@ function App() {
               </Routes>
               <RefineKbar />
               <UnsavedChangesNotifier />
-              <DocumentTitleHandler />
+              <DocumentTitleHandler
+                handler={({ resource, action }) => {
+                  const label = resource?.meta?.label || resource?.name;
+                  if (label && action && action !== "list") {
+                    return `${label} (${action}) | MaxxPixels Admin`;
+                  }
+                  if (label) {
+                    return `${label} | MaxxPixels Admin`;
+                  }
+                  return "MaxxPixels Admin Console";
+                }}
+              />
             </Refine>
           </AntdApp>
         </ColorModeContextProvider>
