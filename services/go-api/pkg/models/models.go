@@ -918,3 +918,141 @@ type Watchlist struct {
 }
 
 func (Watchlist) TableName() string { return "watchlist" }
+
+type CastMember struct {
+	ID        int64      `gorm:"column:id;primaryKey" json:"id,omitempty"`
+	Name      string     `gorm:"column:name" json:"name,omitempty"`
+	Role      *string    `gorm:"column:role" json:"role,omitempty"`
+	Bio       *string    `gorm:"column:bio" json:"bio,omitempty"`
+	ImageUrl  *string    `gorm:"column:image_url" json:"imageUrl,omitempty"`
+	IsActive  *bool      `gorm:"column:is_active" json:"isActive,omitempty"`
+	CreatedAt *time.Time `gorm:"column:created_at" json:"createdAt,omitempty"`
+	UpdatedAt *time.Time `gorm:"column:updated_at" json:"updatedAt,omitempty"`
+}
+
+func (CastMember) TableName() string { return "cast_members" }
+
+type ContentLanguage struct {
+	ContentId    int64   `gorm:"column:content_id" json:"contentId,omitempty"`
+	LanguageId   *int64  `gorm:"column:language_id" json:"languageId,omitempty"`
+	LanguageCode *string `gorm:"column:language_code" json:"languageCode,omitempty"`
+}
+
+func (ContentLanguage) TableName() string { return "content_languages" }
+
+type DRMRule struct {
+	ID                         int64      `gorm:"column:id;primaryKey" json:"id,omitempty"`
+	Name                       *string    `gorm:"column:name" json:"name,omitempty"`
+	Provider                   *string    `gorm:"column:provider" json:"provider,omitempty"`
+	DrmType                    *string    `gorm:"column:drm_type" json:"drmType,omitempty"`
+	LicenseType                *string    `gorm:"column:license_type" json:"licenseType,omitempty"`
+	SecurityLevel              *string    `gorm:"column:security_level" json:"securityLevel,omitempty"`
+	Status                     *string    `gorm:"column:status" json:"status,omitempty"`
+	WidevineLicenseUrl         *string    `gorm:"column:widevine_license_url" json:"widevineLicenseUrl,omitempty"`
+	FairplayLicenseUrl         *string    `gorm:"column:fairplay_license_url" json:"fairplayLicenseUrl,omitempty"`
+	FairplayCertificateUrl     *string    `gorm:"column:fairplay_certificate_url" json:"fairplayCertificateUrl,omitempty"`
+	PlayreadyLicenseUrl        *string    `gorm:"column:playready_license_url" json:"playreadyLicenseUrl,omitempty"`
+	HdcpLevel                  *string    `gorm:"column:hdcp_level" json:"hdcpLevel,omitempty"`
+	DynamicKeyRotation         *bool      `gorm:"column:dynamic_key_rotation" json:"dynamicKeyRotation,omitempty"`
+	KeyRotationIntervalMinutes *int32     `gorm:"column:key_rotation_interval_minutes" json:"keyRotationIntervalMinutes,omitempty"`
+	EnforceHdcp22              *bool      `gorm:"column:enforce_hdcp22" json:"enforceHdcp22,omitempty"`
+	InvisibleWatermarking      *bool      `gorm:"column:invisible_watermarking" json:"invisibleWatermarking,omitempty"`
+	DynamicWatermarking        *bool      `gorm:"column:dynamic_watermarking" json:"dynamicWatermarking,omitempty"`
+	PersistentLicense          *bool      `gorm:"column:persistent_license" json:"persistentLicense,omitempty"`
+	LicenseDurationSeconds     *int32     `gorm:"column:license_duration_seconds" json:"licenseDurationSeconds,omitempty"`
+	PlaybackDurationSeconds    *int32     `gorm:"column:playback_duration_seconds" json:"playbackDurationSeconds,omitempty"`
+	BlockScreenRecording       *bool      `gorm:"column:block_screen_recording" json:"blockScreenRecording,omitempty"`
+	BlockRootedDevices         *bool      `gorm:"column:block_rooted_devices" json:"blockRootedDevices,omitempty"`
+	ConcurrentStreamLimit      *int32     `gorm:"column:concurrent_stream_limit" json:"concurrentStreamLimit,omitempty"`
+	IsActive                   *bool      `gorm:"column:is_active" json:"isActive,omitempty"`
+	CreatedAt                  *time.Time `gorm:"column:created_at" json:"createdAt,omitempty"`
+	UpdatedAt                  *time.Time `gorm:"column:updated_at" json:"updatedAt,omitempty"`
+}
+
+func (DRMRule) TableName() string { return "drm_rules" }
+
+type ProducerSubmission struct {
+	ID                   int64      `gorm:"column:id;primaryKey" json:"id,omitempty"`
+	ContentId            *int64     `gorm:"column:content_id" json:"contentId,omitempty"`
+	ContentType          string     `gorm:"column:content_type" json:"contentType,omitempty"`
+	Title                string     `gorm:"column:title" json:"title,omitempty"`
+	Language             *string    `gorm:"column:language" json:"language,omitempty"`
+	Poster1Url           *string    `gorm:"column:poster_1_url" json:"poster1Url,omitempty"`
+	Poster2Url           *string    `gorm:"column:poster_2_url" json:"poster2Url,omitempty"`
+	TrailerUrl           *string    `gorm:"column:trailer_url" json:"trailerUrl,omitempty"`
+	ProductionName       *string    `gorm:"column:production_name" json:"productionName,omitempty"`
+	ProducerName         *string    `gorm:"column:producer_name" json:"producerName,omitempty"`
+	ProducerContactPhone *string    `gorm:"column:producer_contact_phone" json:"producerContactPhone,omitempty"`
+	ProducerEmail        *string    `gorm:"column:producer_email" json:"producerEmail,omitempty"`
+	PhoneVerified        *bool      `gorm:"column:phone_verified" json:"phoneVerified,omitempty"`
+	GoogleDriveLink      *string    `gorm:"column:google_drive_link" json:"googleDriveLink,omitempty"`
+	OneLineBrief         *string    `gorm:"column:one_line_brief" json:"oneLineBrief,omitempty"`
+	Status               string     `gorm:"column:status" json:"status,omitempty"`
+	KycToken             *string    `gorm:"column:kyc_token" json:"kycToken,omitempty"`
+	AgreementUrl         *string    `gorm:"column:agreement_url" json:"agreementUrl,omitempty"`
+	AgreementStatus      *string    `gorm:"column:agreement_status" json:"agreementStatus,omitempty"`
+	AgreementAccepted    *bool      `gorm:"column:agreement_accepted" json:"agreementAccepted,omitempty"`
+	AgreementSignedName  *string    `gorm:"column:agreement_signed_name" json:"agreementSignedName,omitempty"`
+	AgreementSignedAt    *time.Time `gorm:"column:agreement_signed_at" json:"agreementSignedAt,omitempty"`
+	AadhaarNumber        *string    `gorm:"column:aadhaar_number" json:"aadhaarNumber,omitempty"`
+	AadhaarDocLink       *string    `gorm:"column:aadhaar_doc_link" json:"aadhaarDocLink,omitempty"`
+	PanNumber            *string    `gorm:"column:pan_number" json:"panNumber,omitempty"`
+	PanDocLink           *string    `gorm:"column:pan_doc_link" json:"panDocLink,omitempty"`
+	BankAccountHolder    *string    `gorm:"column:bank_account_holder" json:"bankAccountHolder,omitempty"`
+	BankAccountNumber    *string    `gorm:"column:bank_account_number" json:"bankAccountNumber,omitempty"`
+	BankIfscCode         *string    `gorm:"column:bank_ifsc_code" json:"bankIfscCode,omitempty"`
+	BankName             *string    `gorm:"column:bank_name" json:"bankName,omitempty"`
+	BankChequeLink       *string    `gorm:"column:bank_cheque_link" json:"bankChequeLink,omitempty"`
+	BunnyTransferStatus  *string    `gorm:"column:bunny_transfer_status" json:"bunnyTransferStatus,omitempty"`
+	BunnyVideoJobId      *string    `gorm:"column:bunny_video_job_id" json:"bunnyVideoJobId,omitempty"`
+	BunnyTrailerJobId    *string    `gorm:"column:bunny_trailer_job_id" json:"bunnyTrailerJobId,omitempty"`
+	BunnyPosterUrl       *string    `gorm:"column:bunny_poster_url" json:"bunnyPosterUrl,omitempty"`
+	BunnyBannerUrl       *string    `gorm:"column:bunny_banner_url" json:"bunnyBannerUrl,omitempty"`
+	AdminReviewNotes     *string    `gorm:"column:admin_review_notes" json:"adminReviewNotes,omitempty"`
+	ReviewedBy           *string    `gorm:"column:reviewed_by" json:"reviewedBy,omitempty"`
+	ReviewedAt           *time.Time `gorm:"column:reviewed_at" json:"reviewedAt,omitempty"`
+	ExpiresAt            *time.Time `gorm:"column:expires_at" json:"expiresAt,omitempty"`
+	CreatedAt            time.Time  `gorm:"column:created_at" json:"createdAt,omitempty"`
+	UpdatedAt            time.Time  `gorm:"column:updated_at" json:"updatedAt,omitempty"`
+}
+
+func (ProducerSubmission) TableName() string { return "producer_submissions" }
+
+type SectionItem struct {
+	ID           int64      `gorm:"column:id;primaryKey" json:"id,omitempty"`
+	SectionId    *int64     `gorm:"column:section_id" json:"sectionId,omitempty"`
+	ContentId    *int64     `gorm:"column:content_id" json:"contentId,omitempty"`
+	DisplayOrder *int32     `gorm:"column:display_order" json:"displayOrder,omitempty"`
+	CreatedAt    *time.Time `gorm:"column:created_at" json:"createdAt,omitempty"`
+}
+
+func (SectionItem) TableName() string { return "section_items" }
+
+type SettingAuditLog struct {
+	ID             int64     `gorm:"column:id;primaryKey" json:"id,omitempty"`
+	Action         string    `gorm:"column:action" json:"action,omitempty"`
+	UserEmail      string    `gorm:"column:user_email" json:"userEmail,omitempty"`
+	UserRole       string    `gorm:"column:user_role" json:"userRole,omitempty"`
+	Details        string    `gorm:"column:details" json:"details,omitempty"`
+	BeforeSnapshot string    `gorm:"column:before_snapshot;type:jsonb" json:"beforeSnapshot,omitempty"`
+	AfterSnapshot  string    `gorm:"column:after_snapshot;type:jsonb" json:"afterSnapshot,omitempty"`
+	CreatedAt      time.Time `gorm:"column:created_at" json:"createdAt,omitempty"`
+}
+
+func (SettingAuditLog) TableName() string { return "setting_audit_logs" }
+
+type UserReferral struct {
+	ID             int64      `gorm:"column:id;primaryKey" json:"id,omitempty"`
+	ReferrerUserId int64      `gorm:"column:referrer_user_id" json:"referrerUserId,omitempty"`
+	ReferredUserId int64      `gorm:"column:referred_user_id" json:"referredUserId,omitempty"`
+	ReferralCode   string     `gorm:"column:referral_code" json:"referralCode,omitempty"`
+	Status         string     `gorm:"column:status" json:"status,omitempty"`
+	RewardType     string     `gorm:"column:reward_type" json:"rewardType,omitempty"`
+	RewardDays     int32      `gorm:"column:reward_days" json:"rewardDays,omitempty"`
+	RewardAmount   float64    `gorm:"column:reward_amount" json:"rewardAmount,omitempty"`
+	CreditedAt     *time.Time `gorm:"column:credited_at" json:"creditedAt,omitempty"`
+	CreatedAt      time.Time  `gorm:"column:created_at" json:"createdAt,omitempty"`
+	UpdatedAt      time.Time  `gorm:"column:updated_at" json:"updatedAt,omitempty"`
+}
+
+func (UserReferral) TableName() string { return "user_referrals" }
