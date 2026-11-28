@@ -56,9 +56,9 @@ func NewMSG91FromDBAndEnv(ctx context.Context, db *gorm.DB) *MSG91Client {
 		Value string `gorm:"column:v"`
 	}
 	_ = db.WithContext(ctx).Raw(`
-		SELECT COALESCE(setting_key, key) AS k, COALESCE(setting_value, value, '') AS v
+		SELECT setting_key AS k, COALESCE(setting_value, '') AS v
 		FROM system_settings
-		WHERE LOWER(COALESCE(setting_key, key, '')) LIKE '%msg91%'
+		WHERE LOWER(COALESCE(setting_key, '')) LIKE '%msg91%'
 	`).Scan(&rows).Error
 
 	kv := make(map[string]string, len(rows))
@@ -138,7 +138,7 @@ func (c *MSG91Client) SendOTP(ctx context.Context, rawPhone, otp string) string 
 		}},
 	}
 	if ok := c.postFlow(ctx, payload); ok {
-		slog.Info("OTP dispatched via MSG91 Flow API", "mobile", mobile)
+		slog.Info("OTP dispatched via MSG91 Flow API", "mobile", mobile, "sender", c.SenderID, "template_id", c.TemplateID)
 		return "MSG91"
 	}
 
