@@ -218,31 +218,44 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) sendOTP(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Phone       string `json:"phone"`
-		PhoneNumber string `json:"phoneNumber"`
-		Mobile      string `json:"mobile"`
+		Phone        string `json:"phone"`
+		PhoneNumber  string `json:"phoneNumber"`
+		Mobile       string `json:"mobile"`
+		MobileNumber string `json:"mobileNumber"`
+		Identifier   string `json:"identifier"`
 	}
 	if err := httpx.DecodeJSON(r, &body); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "Invalid JSON payload", "BAD_REQUEST")
 		return
 	}
-	phone := firstNonEmpty(body.PhoneNumber, body.Phone, body.Mobile)
+	phone := firstNonEmpty(body.MobileNumber, body.PhoneNumber, body.Phone, body.Mobile, body.Identifier)
 	_, err := h.svc.SendOTP(r.Context(), phone)
 	if err != nil {
 		httpx.Error(w, http.StatusTooManyRequests, err.Error(), "OTP_ERROR")
 		return
 	}
-	httpx.OK(w, map[string]any{"sent": true, "phone": phone}, "OTP sent successfully")
+	httpx.OK(w, map[string]any{
+		"accepted":         true,
+		"sent":             true,
+		"otpSent":          true,
+		"phone":            phone,
+		"mobile":           phone,
+		"identifier":       phone,
+		"expiresInSeconds": 300,
+		"provider":         "MSG91",
+	}, "OTP sent successfully")
 }
 
 func (h *Handler) verifyOTP(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Phone       string `json:"phone"`
-		PhoneNumber string `json:"phoneNumber"`
-		Mobile      string `json:"mobile"`
-		OTP         string `json:"otp"`
-		Code        string `json:"code"`
-		FullName    string `json:"fullName"`
+		Phone        string `json:"phone"`
+		PhoneNumber  string `json:"phoneNumber"`
+		Mobile       string `json:"mobile"`
+		MobileNumber string `json:"mobileNumber"`
+		Identifier   string `json:"identifier"`
+		OTP          string `json:"otp"`
+		Code         string `json:"code"`
+		FullName     string `json:"fullName"`
 	}
 	if err := httpx.DecodeJSON(r, &body); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "Invalid JSON payload", "BAD_REQUEST")
@@ -250,7 +263,7 @@ func (h *Handler) verifyOTP(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.VerifyOTP(
 		r.Context(),
-		firstNonEmpty(body.PhoneNumber, body.Phone, body.Mobile),
+		firstNonEmpty(body.MobileNumber, body.PhoneNumber, body.Phone, body.Mobile, body.Identifier),
 		firstNonEmpty(body.OTP, body.Code),
 		body.FullName,
 	)

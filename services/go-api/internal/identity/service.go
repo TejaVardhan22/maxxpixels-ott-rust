@@ -181,8 +181,18 @@ func (s *Service) VerifyOTP(ctx context.Context, phone, otp, fullName string) (*
 	}
 	_ = s.cache.Del(ctx, "otp:code:"+phone, "otp:code:"+normPhone)
 
+	last10 := normPhone
+	if len(last10) >= 10 {
+		last10 = last10[len(last10)-10:]
+	}
+	plus91 := "+91" + last10
+
 	var user models.User
-	err := s.db.WithContext(ctx).Where("phone_number = ? OR phone = ?", phone, phone).First(&user).Error
+	err := s.db.WithContext(ctx).Where(
+		"phone_number IN ? OR phone IN ?",
+		[]string{phone, normPhone, plus91, last10},
+		[]string{phone, normPhone, plus91, last10},
+	).First(&user).Error
 	now := time.Now().UTC()
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		name := strings.TrimSpace(fullName)
