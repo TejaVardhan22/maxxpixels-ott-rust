@@ -221,6 +221,7 @@ func (s *Service) AdminCreateMovie(ctx context.Context, payload map[string]any) 
 		hls := strVal(payload, "hlsUrl", "hls_url", "streamUrl", "stream_url", "videoUrl", "video_url")
 		guid := strVal(payload, "bunnyVideoGuid", "bunny_video_guid", "bunnyVideoId")
 		mv := models.Movie{
+			ID:              c.ID,
 			ContentId:       &c.ID,
 			HlsUrl:          ptrStr(hls),
 			StreamUrl:       ptrStr(hls),
@@ -297,7 +298,7 @@ func (s *Service) AdminUpdateMovie(ctx context.Context, id int64, payload map[st
 		guid := strVal(payload, "bunnyVideoGuid", "bunny_video_guid", "bunnyVideoId")
 		if hls != "" || guid != "" {
 			var mv models.Movie
-			if tx.Where("content_id = ?", id).First(&mv).Error == nil {
+			if tx.Where("id = ? OR content_id = ?", id, id).First(&mv).Error == nil {
 				mvUpd := map[string]any{}
 				if hls != "" {
 					mvUpd["hls_url"] = hls
@@ -310,6 +311,7 @@ func (s *Service) AdminUpdateMovie(ctx context.Context, id int64, payload map[st
 				return tx.Model(&mv).Updates(mvUpd).Error
 			}
 			return tx.Create(&models.Movie{
+				ID:             id,
 				ContentId:      &id,
 				HlsUrl:         ptrStr(hls),
 				StreamUrl:      ptrStr(hls),
@@ -352,12 +354,13 @@ func (s *Service) AdminDeleteMovie(ctx context.Context, id int64) error {
 
 func (s *Service) ensureSeriesRow(ctx context.Context, contentID int64) int64 {
 	var ser models.Series
-	if s.db.WithContext(ctx).Where("content_id = ?", contentID).First(&ser).Error == nil && ser.ID > 0 {
+	if s.db.WithContext(ctx).Where("id = ? OR content_id = ?", contentID, contentID).First(&ser).Error == nil && ser.ID > 0 {
 		return ser.ID
 	}
 	one := int32(1)
 	ongoing := true
 	ser = models.Series{
+		ID:            contentID,
 		ContentId:     &contentID,
 		TotalSeasons:  &one,
 		TotalEpisodes: &one,
