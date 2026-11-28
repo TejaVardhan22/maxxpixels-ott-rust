@@ -224,6 +224,55 @@ func (c *StorageClient) saveLocalFallback(safeFolder, uniqueName string, data []
 	}, nil
 }
 
+// NewBackupStorageClientFromEnv creates a Bunny Storage client for DB backups,
+// preferring optional dedicated BUNNY_BACKUP_STORAGE_* vars and falling back to BUNNY_STORAGE_*.
+func NewBackupStorageClientFromEnv() *StorageClient {
+	c := NewStorageClientFromEnv("")
+	if z := strings.TrimSpace(os.Getenv("BUNNY_BACKUP_STORAGE_ZONE")); z != "" {
+		c.StorageZone = z
+	}
+	if k := strings.TrimSpace(os.Getenv("BUNNY_BACKUP_STORAGE_PASSWORD")); k != "" {
+		c.APIKey = k
+	}
+	if ep := strings.TrimSpace(os.Getenv("BUNNY_BACKUP_STORAGE_ENDPOINT")); ep != "" {
+		if !strings.HasPrefix(ep, "http://") && !strings.HasPrefix(ep, "https://") {
+			ep = "https://" + ep
+		}
+		c.StorageEndpoint = strings.TrimRight(ep, "/")
+	}
+	return c
+}
+
+// UploadRawPath uploads bytes directly to an exact path in Bunny Storage (e.g. db-backups/2026-11-28/file.sql.gz).
+func (c *StorageClient) UploadRawPath(ctx context.Context, remotePath string, data []byte, contentType string) (string, error) {
+	if c.APIKey == "" || c.StorageZone == "" {
+		return "", fmt.Errorf("bunny storage credentials not configured")
+	}
+	cleanPath := strings.TrimLeft(strings.TrimSpace(remotePath), "/")
+	targetURL := fmt.Sprintf("%s/%s/%s", c.StorageEndpoint, c.StorageZone, cleanPath)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, targetURL, bytes.NewReader(data))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("AccessKey", c.APIKey)
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	req.Header.Set("Content-Type", contentType)
+
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return "", fmt.Errorf("bunny storage upload failed HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return fmt.Sprintf("bunny://%s/%s", c.StorageZone, cleanPath), nil
+}
+
 // DownloadFile proxies directly from Bunny Edge Storage API with fallback folder search.
 func (c *StorageClient) DownloadFile(ctx context.Context, folder, fileName string) ([]byte, string, bool) {
 	cleanFolder := strings.Trim(folder, "/")

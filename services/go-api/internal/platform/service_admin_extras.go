@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/maxxpixels/go-api/pkg/backup"
 	"github.com/maxxpixels/go-api/pkg/models"
 	"github.com/maxxpixels/go-api/pkg/notify"
 )
@@ -154,27 +154,19 @@ func (s *Service) ListBackups() []map[string]any {
 }
 
 func (s *Service) TriggerBackup(ctx context.Context) (map[string]any, error) {
-	if err := os.MkdirAll(backupsDir, 0o755); err != nil {
+	results, err := backup.RunAllDatabasesBackup(ctx, s.db, backupsDir)
+	if err != nil {
 		return nil, err
 	}
-	overview, _ := s.GetDashboardOverview(ctx)
-	migrations := s.ListMigrations(ctx)
-	snapshot := map[string]any{
-		"generatedAt": time.Now().UTC().Format(time.RFC3339),
-		"engine":      "go-microservices",
-		"overview":    overview,
-		"migrations":  migrations,
-	}
-	raw, _ := json.MarshalIndent(snapshot, "", "  ")
-	fname := fmt.Sprintf("maxxpixels-backup-%s.json", time.Now().UTC().Format("20060102-150405"))
-	full := filepath.Join(backupsDir, fname)
-	if err := os.WriteFile(full, raw, 0o644); err != nil {
-		return nil, err
-	}
+	first := results[0]
 	return map[string]any{
-		"filename":  fname,
-		"sizeBytes": len(raw),
-		"createdAt": time.Now().UTC().Format(time.RFC3339),
+		"filename":      first.Filename,
+		"sizeBytes":     first.SizeBytes,
+		"bunnyUploaded": first.BunnyUploaded,
+		"bunnyPath":     first.BunnyPath,
+		"bunnyError":    first.BunnyError,
+		"databases":     results,
+		"createdAt":     first.CreatedAt,
 	}, nil
 }
 

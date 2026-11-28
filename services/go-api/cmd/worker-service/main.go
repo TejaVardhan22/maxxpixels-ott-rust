@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/maxxpixels/go-api/internal/platform"
+	"github.com/maxxpixels/go-api/pkg/backup"
 	"github.com/maxxpixels/go-api/pkg/cache"
 	"github.com/maxxpixels/go-api/pkg/config"
 	"github.com/maxxpixels/go-api/pkg/database"
@@ -116,6 +117,35 @@ func main() {
 			}
 		})
 	}()
+
+	// 5b. Daily Automated Full SQL Database Backup -> Bunny.net Storage (all project databases)
+	if !strings.EqualFold(os.Getenv("DB_BACKUP_ENABLED"), "false") {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			backupHour := 2 // Default 02:00 UTC (07:30 IST)
+			if raw := strings.TrimSpace(os.Getenv("DB_BACKUP_HOUR_UTC")); raw != "" {
+				if h, err := strconv.Atoi(raw); err == nil && h >= 0 && h <= 23 {
+					backupHour = h
+				}
+			}
+			var lastBackupDay string
+			runPeriodic(ctx, 30*time.Minute, "daily_db_backup_worker", func(c context.Context) {
+				now := time.Now().UTC()
+				today := now.Format("2006-01-02")
+				if lastBackupDay == today || now.Hour() < backupHour {
+					return
+				}
+				results, err := backup.RunAllDatabasesBackup(c, db, "./backups")
+				if err != nil {
+					slog.Error("daily_db_backup_worker failed", "err", err)
+					return
+				}
+				lastBackupDay = today
+				slog.Info("daily_db_backup_worker completed", "databases", len(results))
+			})
+		}()
+	}
 
 	// 6. Transactional Outbox Relay Worker (every 2 seconds -> Kafka or local audit)
 	wg.Add(1)
