@@ -115,7 +115,6 @@ function NavbarContent() {
   ).length;
 
   // Fetch Main Content Types dynamically from backend (/api/v1/content-types)
-  // Hydrate immediately from sessionStorage cache to prevent nav layout ripple on refresh
   const contentTypesQ = useQuery<MainContentType[]>({
     queryKey: ['navbar-content-types'],
     queryFn: async () => {
@@ -138,22 +137,11 @@ function NavbarContent() {
           (t.title || t.name),
       );
       try {
-        sessionStorage.setItem('maxxpixels.nav.contentTypes', JSON.stringify(filtered));
+        sessionStorage.removeItem('maxxpixels.nav.contentTypes');
       } catch {}
       return filtered;
     },
-    placeholderData: () => {
-      if (typeof window === 'undefined') return undefined;
-      try {
-        const cached = sessionStorage.getItem('maxxpixels.nav.contentTypes');
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed as MainContentType[];
-        }
-      } catch {}
-      return undefined;
-    },
-    staleTime: 30 * 1000,
+    staleTime: 0,
     refetchOnMount: 'always',
   });
 

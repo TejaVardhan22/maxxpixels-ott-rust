@@ -151,6 +151,7 @@ async function performRequest<T>(
     const response = await fetch(buildUrl(mappedPath, config), {
       method: mappedMethod,
       headers: buildHeaders(normalizeHeaders(config?.headers), hasBody),
+      cache: 'no-store',
       signal,
       body:
         (mappedMethod === 'POST' || mappedMethod === 'PUT')

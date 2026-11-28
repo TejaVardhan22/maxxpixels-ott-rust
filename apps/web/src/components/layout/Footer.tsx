@@ -134,7 +134,7 @@ export default function Footer() {
           (t.title || t.name),
       );
     },
-    staleTime: 30 * 1000,
+    staleTime: 0,
     refetchOnMount: 'always',
   });
 
