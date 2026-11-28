@@ -35,6 +35,8 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		sub.Get("/categories", h.metadataField("categories"))
 		sub.Get("/genres", h.metadataField("genres"))
 		sub.Get("/content-types", h.metadataField("contentTypes"))
+		sub.Get("/seasons/{season_id}/episodes", h.seasonEpisodes)
+		sub.Get("/slug/{id_or_slug}", h.detail)
 		sub.Get("/content/id/{id}", h.detail)
 		sub.Get("/content/{id_or_slug}", h.detail)
 		sub.Get("/id/{id}", h.detail)

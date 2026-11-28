@@ -35,6 +35,9 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		sub.Post("/otp/verify", h.verifyOTP)
 		sub.Post("/firebase-verify", h.verifyOTP)
 		sub.Post("/tv/code", h.generateTVCode)
+		sub.Get("/tv-code", h.generateTVCode)
+		sub.Post("/tv-code", h.generateTVCode)
+		sub.Post("/tv-check", h.pollTVCode)
 		sub.Get("/tv/poll/{code}", h.pollTVCode)
 
 		sub.Group(func(pr chi.Router) {
@@ -413,7 +416,17 @@ func (h *Handler) generateTVCode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) pollTVCode(w http.ResponseWriter, r *http.Request) {
-	res, err := h.svc.PollTVCode(r.Context(), chi.URLParam(r, "code"))
+	code := firstNonEmpty(chi.URLParam(r, "code"), r.URL.Query().Get("code"))
+	if code == "" && r.Body != nil {
+		var body struct {
+			Code       string `json:"code"`
+			UniqueCode string `json:"uniqueCode"`
+			Unique     string `json:"unique_code"`
+		}
+		_ = httpx.DecodeJSON(r, &body)
+		code = firstNonEmpty(body.Code, body.UniqueCode, body.Unique)
+	}
+	res, err := h.svc.PollTVCode(r.Context(), code)
 	if err != nil {
 		httpx.Error(w, http.StatusBadRequest, err.Error())
 		return
