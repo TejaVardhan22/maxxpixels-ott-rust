@@ -44,7 +44,9 @@ export async function apiRequest<T = any>(
   try {
     json = text ? JSON.parse(text) : {};
   } catch {
-    json = { message: text };
+    const trimmed = text.trim();
+    const isHtml = /^<!doctype html|^<html/i.test(trimmed);
+    json = { message: isHtml ? `Backend gateway error (HTTP ${res.status})` : trimmed };
   }
   if (!res.ok) {
     throw new Error(json?.message || json?.error || `HTTP ${res.status}`);

@@ -127,6 +127,15 @@ docker compose "${PROFILE_ARGS[@]}" build identity-service
 echo "==> Building and starting fresh containers..."
 docker compose "${PROFILE_ARGS[@]}" up -d --build --remove-orphans "${SERVICES[@]}"
 
+# If PostgreSQL runs in a separate Docker container (e.g. maxxpixels-postgres), attach it to maxxpixels_maxx-net
+PG_CONTAINER="${DB_HOST:-maxxpixels-postgres}"
+if [[ -n "$PG_CONTAINER" && "$PG_CONTAINER" != "host.docker.internal" && "$PG_CONTAINER" != "localhost" && "$PG_CONTAINER" != "127.0.0.1" ]]; then
+  if docker ps --format '{{.Names}}' | grep -qx "$PG_CONTAINER"; then
+    echo "==> Connecting external Postgres container '$PG_CONTAINER' to maxxpixels_maxx-net..."
+    docker network connect maxxpixels_maxx-net "$PG_CONTAINER" 2>/dev/null || true
+  fi
+fi
+
 echo "==> Waiting for health checks..."
 API_PORT="${API_PORT:-8081}"
 GAMES_PORT="${GAMES_PORT:-8090}"

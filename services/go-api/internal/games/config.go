@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/joho/godotenv"
+	"github.com/maxxpixels/go-api/pkg/database"
 )
 
 // CoinPack represents a purchasable coin pack (default list or COIN_PACKS env override).
@@ -115,7 +116,7 @@ func LoadConfig() Config {
 	}
 
 	return Config{
-		GamesDatabaseURL:         dbURL,
+		GamesDatabaseURL:         database.NormalizePostgresURL(dbURL),
 		MainAPIURL:               strings.TrimRight(getEnv("MAIN_API_URL", "https://api.maxxpixels.com"), "/"),
 		JWTSecret:                jwtSecret,
 		PFFTenant:                strings.TrimSpace(getEnv("PLAYFORFUN_TENANT_ID", "maxxpixels")),

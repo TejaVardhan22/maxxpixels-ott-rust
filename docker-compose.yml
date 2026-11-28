@@ -5,6 +5,8 @@ x-go-common: &go-common
   restart: unless-stopped
   extra_hosts:
     - "host.docker.internal:host-gateway"
+  env_file:
+    - .env
   networks:
     - maxx-net
 
