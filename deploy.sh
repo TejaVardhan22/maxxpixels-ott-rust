@@ -68,10 +68,23 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 
-set -a
-# shellcheck disable=SC1091
-source .env
-set +a
+# Load .env safely without executing values that contain spaces (e.g. "MaxxPixels OTT Admin")
+while IFS= read -r line || [[ -n "$line" ]]; do
+  # Strip CR and leading/trailing whitespace
+  line="${line%$'\r'}"
+  [[ -z "${line//[[:space:]]/}" || "$line" =~ ^[[:space:]]*# ]] && continue
+  if [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+    key="${BASH_REMATCH[2]}"
+    val="${BASH_REMATCH[3]}"
+    # Strip matching surrounding single or double quotes
+    if [[ "$val" =~ ^\"(.*)\"$ ]]; then
+      val="${BASH_REMATCH[1]}"
+    elif [[ "$val" =~ ^\'(.*)\'$ ]]; then
+      val="${BASH_REMATCH[1]}"
+    fi
+    export "$key=$val"
+  fi
+done < .env
 
 if [[ -z "${DATABASE_URL:-}" || "${DATABASE_URL}" == *"CHANGE_ME"* ]]; then
   echo "ERROR: Set a valid DATABASE_URL in .env pointing to host.docker.internal:5432" >&2
