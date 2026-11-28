@@ -153,24 +153,72 @@ func (s *Service) GetPublicSettings(ctx context.Context) (map[string]any, error)
 				kv[r.SettingKey] = *r.SettingValue
 			}
 		}
-		maintActive := strings.EqualFold(kv["maintenance_mode"], "true") || kv["maintenance_mode"] == "1"
+		primaryLogo := nonEmpty(kv["logoUrl"], nonEmpty(kv["logo_url"], nonEmpty(kv["APP_LOGO_URL"], nonEmpty(kv["app_logo_url"], kv["app_logo"]))))
+		darkLogo := nonEmpty(kv["darkLogoUrl"], nonEmpty(kv["dark_logo_url"], primaryLogo))
+		favicon := nonEmpty(kv["faviconUrl"], nonEmpty(kv["favicon_url"], primaryLogo))
+		appName := nonEmpty(kv["appName"], nonEmpty(kv["app_name"], nonEmpty(kv["APP_NAME"], "MaxxPixels")))
+		if primaryLogo != "" {
+			kv["logoUrl"] = primaryLogo
+			kv["logo_url"] = primaryLogo
+			kv["app_logo"] = primaryLogo
+			kv["app_logo_url"] = primaryLogo
+			kv["APP_LOGO_URL"] = primaryLogo
+		}
+		if darkLogo != "" {
+			kv["darkLogoUrl"] = darkLogo
+			kv["dark_logo_url"] = darkLogo
+		}
+		if favicon != "" {
+			kv["faviconUrl"] = favicon
+			kv["favicon_url"] = favicon
+		}
+
+		maintActive := strings.EqualFold(kv["maintenanceMode"], "true") || kv["maintenanceMode"] == "1" ||
+			strings.EqualFold(kv["maintenance_mode"], "true") || kv["maintenance_mode"] == "1" ||
+			strings.EqualFold(kv["MAINTENANCE_MODE_ENABLED"], "true")
 		maintPayload := map[string]any{
 			"active":  maintActive,
-			"message": nonEmpty(kv["maintenance_message"], "We are performing scheduled maintenance. Please check back shortly."),
-			"appName": nonEmpty(kv["app_name"], "MaxxPixels"),
-			"logoUrl": kv["app_logo_url"],
+			"message": nonEmpty(kv["maintenanceMessage"], nonEmpty(kv["maintenance_message"], "We are performing scheduled maintenance. Please check back shortly.")),
+			"appName": appName,
+			"logoUrl": darkLogo,
 		}
 		if b, err := json.Marshal(maintPayload); err == nil {
 			_ = s.cache.Set(c, "maxx:maintenance_mode", string(b), 60*time.Second)
 		}
 		return map[string]any{
-			"settings":    kv,
-			"maintenance": maintPayload,
+			"settings":      kv,
+			"maintenance":   maintPayload,
+			"logoUrl":       primaryLogo,
+			"logo_url":      primaryLogo,
+			"APP_LOGO_URL":  primaryLogo,
+			"app_logo":      primaryLogo,
+			"darkLogoUrl":   darkLogo,
+			"dark_logo_url": darkLogo,
+			"faviconUrl":    favicon,
+			"appName":       appName,
+			"app_name":      appName,
 		}, nil
 	})
 }
 
 func (s *Service) AdminUpdateSettings(ctx context.Context, updates map[string]string, updatedBy string) error {
+	// Keep legacy snake_case/uppercase branding aliases in sync so web & mobile always see the uploaded logo
+	if v := strings.TrimSpace(updates["logoUrl"]); v != "" {
+		updates["logo_url"] = v
+		updates["app_logo"] = v
+		updates["app_logo_url"] = v
+		updates["APP_LOGO_URL"] = v
+	}
+	if v := strings.TrimSpace(updates["darkLogoUrl"]); v != "" {
+		updates["dark_logo_url"] = v
+	}
+	if v := strings.TrimSpace(updates["faviconUrl"]); v != "" {
+		updates["favicon_url"] = v
+	}
+	if v := strings.TrimSpace(updates["appName"]); v != "" {
+		updates["app_name"] = v
+		updates["APP_NAME"] = v
+	}
 	now := time.Now().UTC()
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for k, v := range updates {

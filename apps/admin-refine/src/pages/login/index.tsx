@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { Button, Card, Input, Typography, Checkbox, message } from "antd";
 import { UserOutlined, LockOutlined, MailOutlined } from "@ant-design/icons";
-import { apiPost, TOKEN_KEY, USER_KEY } from "../../providers/api";
+import { apiGet, apiPost, TOKEN_KEY, USER_KEY } from "../../providers/api";
 
 const { Title, Text } = Typography;
 
@@ -12,6 +12,21 @@ export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
+  const [brandLogo, setBrandLogo] = useState<string>("");
+  const [brandName, setBrandName] = useState<string>("MaxxPixels Admin");
+  const [logoFailed, setLogoFailed] = useState(false);
+
+  useEffect(() => {
+    apiGet<any>("/settings/public")
+      .then((res) => {
+        const s = res?.settings && typeof res.settings === "object" ? res.settings : res || {};
+        const logo = String(s.darkLogoUrl || s.logoUrl || res?.darkLogoUrl || res?.logoUrl || "").trim();
+        const name = String(s.appShortName || s.appName || res?.appName || "").trim();
+        if (logo) setBrandLogo(logo);
+        if (name) setBrandName(`${name} Admin`);
+      })
+      .catch(() => {});
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,22 +76,31 @@ export const LoginPage: React.FC = () => {
         styles={{ body: { padding: 36 } }}
       >
         <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div
-            style={{
-              width: 48,
-              height: 48,
-              background: "linear-gradient(135deg, #1a4cd8 0%, #c725a3 100%)",
-              borderRadius: 12,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              margin: "0 auto 16px",
-            }}
-          >
-            <UserOutlined style={{ fontSize: 24, color: "#ffffff" }} />
-          </div>
+          {brandLogo && !logoFailed ? (
+            <img
+              src={brandLogo}
+              alt={brandName}
+              onError={() => setLogoFailed(true)}
+              style={{ maxHeight: 52, maxWidth: 220, objectFit: "contain", margin: "0 auto 14px", display: "block" }}
+            />
+          ) : (
+            <div
+              style={{
+                width: 48,
+                height: 48,
+                background: "linear-gradient(135deg, #1a4cd8 0%, #c725a3 100%)",
+                borderRadius: 12,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                margin: "0 auto 16px",
+              }}
+            >
+              <UserOutlined style={{ fontSize: 24, color: "#ffffff" }} />
+            </div>
+          )}
           <Title level={3} style={{ color: "#ffffff", marginBottom: 6 }}>
-            MaxxPixels Admin
+            {brandName}
           </Title>
           <Text type="secondary" style={{ fontSize: 13 }}>
             Sign in with your administrator credentials

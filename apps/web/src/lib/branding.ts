@@ -68,7 +68,10 @@ export function parseBrandSettings(rows?: any): BrandSettings {
   } else if (typeof rows === 'object') {
     const inner = rows.data ?? rows.result ?? rows;
     if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
-      settings = { ...inner };
+      const nested = inner.settings && typeof inner.settings === 'object' && !Array.isArray(inner.settings)
+        ? inner.settings
+        : null;
+      settings = nested ? { ...inner, ...nested } : { ...inner };
     } else {
       settings = { ...rows };
     }
@@ -96,13 +99,13 @@ export function parseBrandSettings(rows?: any): BrandSettings {
     pick('company_name', 'companyName') || FALLBACK_BRAND.companyName;
 
   const darkLogoUrl = cleanAssetUrl(
-    pick('dark_logo_url', 'darkLogoUrl', 'app_logo', 'logo_url', 'logoUrl'),
+    pick('darkLogoUrl', 'dark_logo_url', 'logoUrl', 'logo_url', 'APP_LOGO_URL', 'app_logo'),
   );
   const lightLogoUrl = cleanAssetUrl(
-    pick('logo_url', 'logoUrl', 'app_logo', 'dark_logo_url', 'darkLogoUrl'),
+    pick('logoUrl', 'logo_url', 'APP_LOGO_URL', 'darkLogoUrl', 'dark_logo_url', 'app_logo'),
   );
   const logoUrl = darkLogoUrl || lightLogoUrl || FALLBACK_BRAND.logoUrl;
-  const faviconUrl = cleanAssetUrl(pick('favicon_url', 'faviconUrl')) || logoUrl;
+  const faviconUrl = cleanAssetUrl(pick('faviconUrl', 'favicon_url')) || logoUrl;
 
   const seoTitle =
     pick('seo_title', 'seoTitle') || `${name} - Stream Movies, Short Films & Web Series`;

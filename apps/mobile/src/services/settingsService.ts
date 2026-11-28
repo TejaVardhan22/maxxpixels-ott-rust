@@ -49,7 +49,11 @@ export class SettingsService {
       if (remote && typeof remote === 'object') {
         const data = (remote as any).data ?? (remote as any).result ?? remote;
         if (data && typeof data === 'object') {
-          this._remoteSettings = data;
+          const nested = (data as any).settings;
+          this._remoteSettings =
+            nested && typeof nested === 'object' && !Array.isArray(nested)
+              ? { ...data, ...nested }
+              : data;
         }
       }
     } catch {}
@@ -131,8 +135,8 @@ export class SettingsService {
     };
     const shortName = pick('app_short_name', 'appShortName', 'app_name', 'appName', 'platform_name') || 'MaxxPixels';
     const name = pick('app_name', 'appName', 'platform_name', 'app_short_name', 'appShortName') || shortName;
-    const darkLogoUrl = pick('dark_logo_url', 'darkLogoUrl', 'logo_url', 'logoUrl', 'app_logo');
-    const logoUrl = pick('logo_url', 'logoUrl', 'dark_logo_url', 'darkLogoUrl', 'app_logo');
+    const darkLogoUrl = pick('darkLogoUrl', 'dark_logo_url', 'logoUrl', 'logo_url', 'APP_LOGO_URL', 'app_logo');
+    const logoUrl = pick('logoUrl', 'logo_url', 'APP_LOGO_URL', 'darkLogoUrl', 'dark_logo_url', 'app_logo');
     return {
       name,
       shortName,

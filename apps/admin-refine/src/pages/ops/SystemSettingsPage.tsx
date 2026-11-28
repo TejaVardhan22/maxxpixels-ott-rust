@@ -169,6 +169,7 @@ export const SystemSettingsPage: React.FC = () => {
           : `Platform settings saved${count !== undefined ? ` (${count} updated)` : ""} and cache refreshed!`
       );
       setDirty(false);
+      window.dispatchEvent(new Event("branding-updated"));
       await loadSettings();
       if (activeTab === "HISTORY") {
         loadHistory();

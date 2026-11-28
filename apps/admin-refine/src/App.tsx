@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Refine } from "@refinedev/core";
 import { RefineKbar, RefineKbarProvider } from "@refinedev/kbar";
 import "@refinedev/antd/dist/reset.css";
@@ -11,7 +11,7 @@ import { LogoutOutlined, SettingOutlined } from "@ant-design/icons";
 import { ColorModeContextProvider } from "./contexts/color-mode";
 import { dataProvider } from "./providers/data";
 import { authProvider } from "./providers/auth";
-import { getToken, TOKEN_KEY, USER_KEY } from "./providers/api";
+import { apiGet, getToken, TOKEN_KEY, USER_KEY } from "./providers/api";
 import Sidebar from "./components/sidebar";
 
 import LoginPage from "./pages/login";
@@ -57,6 +57,40 @@ const MainLayout: React.FC = () => {
   const navigate = useNavigate();
   const token = getToken();
   const user = getUser();
+  const [brandLogo, setBrandLogo] = useState<string>("");
+  const [brandName, setBrandName] = useState<string>("MaxxPixels");
+  const [logoFailed, setLogoFailed] = useState(false);
+
+  useEffect(() => {
+    const loadBrand = async () => {
+      try {
+        const res = await apiGet<any>("/settings/public");
+        const s = res?.settings && typeof res.settings === "object" ? res.settings : res || {};
+        const logo = String(s.darkLogoUrl || s.logoUrl || res?.darkLogoUrl || res?.logoUrl || "").trim();
+        const name = String(s.appShortName || s.appName || res?.appName || "MaxxPixels").trim();
+        const favicon = String(s.faviconUrl || res?.faviconUrl || logo || "").trim();
+        if (logo) {
+          setBrandLogo(logo);
+          setLogoFailed(false);
+        }
+        if (name) setBrandName(name);
+        if (favicon) {
+          let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+          if (!link) {
+            link = document.createElement("link");
+            link.rel = "icon";
+            document.head.appendChild(link);
+          }
+          link.href = favicon;
+        }
+      } catch {
+        // ignore branding fetch errors
+      }
+    };
+    loadBrand();
+    window.addEventListener("branding-updated", loadBrand);
+    return () => window.removeEventListener("branding-updated", loadBrand);
+  }, []);
 
   if (!token) {
     return <Navigate to="/login" replace />;
@@ -98,26 +132,42 @@ const MainLayout: React.FC = () => {
             }}
             onClick={() => navigate("/admin/dashboard")}
           >
-            <Avatar
-              shape="square"
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: 8,
-                background: "linear-gradient(135deg, #e50914 0%, #c725a3 100%)",
-                fontWeight: 800,
-              }}
-            >
-              M
-            </Avatar>
-            <div>
-              <Title level={5} style={{ margin: 0, color: "#ffffff", fontWeight: 800, fontSize: 15, lineHeight: 1.15 }}>
-                MaxxPixels
-              </Title>
-              <span style={{ fontSize: 10, fontWeight: 700, color: "#e50914", letterSpacing: 0.6 }}>
-                CONSOLE ADMIN
-              </span>
-            </div>
+            {brandLogo && !logoFailed ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <img
+                  src={brandLogo}
+                  alt={brandName}
+                  onError={() => setLogoFailed(true)}
+                  style={{ maxHeight: 34, maxWidth: 180, objectFit: "contain", display: "block" }}
+                />
+                <span style={{ fontSize: 10, fontWeight: 700, color: "#e50914", letterSpacing: 0.6 }}>
+                  CONSOLE ADMIN
+                </span>
+              </div>
+            ) : (
+              <>
+                <Avatar
+                  shape="square"
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 8,
+                    background: "linear-gradient(135deg, #e50914 0%, #c725a3 100%)",
+                    fontWeight: 800,
+                  }}
+                >
+                  {brandName.charAt(0).toUpperCase()}
+                </Avatar>
+                <div>
+                  <Title level={5} style={{ margin: 0, color: "#ffffff", fontWeight: 800, fontSize: 15, lineHeight: 1.15 }}>
+                    {brandName}
+                  </Title>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "#e50914", letterSpacing: 0.6 }}>
+                    CONSOLE ADMIN
+                  </span>
+                </div>
+              </>
+            )}
           </div>
           <div style={{ flex: 1, minHeight: 0 }}>
             <Sidebar />
