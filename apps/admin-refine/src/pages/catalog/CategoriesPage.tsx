@@ -217,7 +217,19 @@ const TaxonomyTab: React.FC<{ endpoint: string; label: string; idField?: string 
             render: (_, r) => (
               <Space>
                 <Button size="small" icon={<EditOutlined />} onClick={() => { setEditing(r); form.setFieldsValue(r); setOpen(true); }} />
-                <Popconfirm title={`Delete ${label}?`} onConfirm={async () => { await apiDelete(`/admin/${endpoint}/${r[idField]}`); load(); }}>
+                <Popconfirm
+                  title={`Delete ${label}?`}
+                  onConfirm={async () => {
+                    try {
+                      const key = encodeURIComponent(String(r[idField] ?? r.code ?? r.id ?? ""));
+                      await apiDelete(`/admin/${endpoint}/${key}`);
+                      message.success(`${label} deleted`);
+                      load();
+                    } catch (e: any) {
+                      message.error(e?.message || `Failed to delete ${label}`);
+                    }
+                  }}
+                >
                   <Button size="small" danger icon={<DeleteOutlined />} />
                 </Popconfirm>
               </Space>

@@ -3,6 +3,7 @@ package platform
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/maxxpixels/go-api/pkg/auth"
@@ -254,7 +255,7 @@ func (h *Handler) adminDeleteContentType(w http.ResponseWriter, r *http.Request)
 
 func (h *Handler) adminListCategories(w http.ResponseWriter, r *http.Request) {
 	var rows []models.Category
-	_ = h.svc.db.WithContext(r.Context()).Order("display_order ASC, id ASC").Find(&rows).Error
+	_ = h.svc.db.WithContext(r.Context()).Where("COALESCE(is_active, true) = true").Order("display_order ASC, id ASC").Find(&rows).Error
 	httpx.OK(w, rows)
 }
 
@@ -272,7 +273,9 @@ func (h *Handler) adminUpsertCategory(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) adminDeleteCategory(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	_ = h.svc.db.WithContext(r.Context()).Model(&models.Category{}).Where("id = ?", id).Update("is_active", false).Error
+	if err := h.svc.db.WithContext(r.Context()).Delete(&models.Category{}, id).Error; err != nil {
+		_ = h.svc.db.WithContext(r.Context()).Model(&models.Category{}).Where("id = ?", id).Update("is_active", false).Error
+	}
 	httpx.OK(w, map[string]any{"deleted": true, "id": id})
 }
 
@@ -302,7 +305,7 @@ func (h *Handler) adminDeleteGenre(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) adminListLanguages(w http.ResponseWriter, r *http.Request) {
 	var rows []models.Language
-	_ = h.svc.db.WithContext(r.Context()).Order("name ASC").Find(&rows).Error
+	_ = h.svc.db.WithContext(r.Context()).Where("COALESCE(is_active, true) = true").Order("display_order ASC, name ASC").Find(&rows).Error
 	httpx.OK(w, rows)
 }
 
@@ -319,8 +322,18 @@ func (h *Handler) adminUpsertLanguage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) adminDeleteLanguage(w http.ResponseWriter, r *http.Request) {
-	code := chi.URLParam(r, "code")
-	_ = h.svc.db.WithContext(r.Context()).Model(&models.Language{}).Where("LOWER(code) = LOWER(?)", code).Update("is_active", false).Error
+	code := strings.TrimSpace(chi.URLParam(r, "code"))
+	if code == "" {
+		httpx.Error(w, http.StatusBadRequest, "language code is required")
+		return
+	}
+	// Hard-delete if unreferenced; fall back to soft-delete (is_active = false) if referenced by content rows.
+	if err := h.svc.db.WithContext(r.Context()).Where("LOWER(code) = LOWER(?)", code).Delete(&models.Language{}).Error; err != nil {
+		if err2 := h.svc.db.WithContext(r.Context()).Model(&models.Language{}).Where("LOWER(code) = LOWER(?)", code).Update("is_active", false).Error; err2 != nil {
+			httpx.Error(w, http.StatusInternalServerError, err2.Error())
+			return
+		}
+	}
 	httpx.OK(w, map[string]any{"deleted": true, "code": code})
 }
 
