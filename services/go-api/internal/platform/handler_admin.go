@@ -244,12 +244,20 @@ func (h *Handler) adminUpsertContentType(w http.ResponseWriter, r *http.Request)
 		httpx.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.invalidateCatalogMetadata(r)
 	httpx.OK(w, row)
+}
+
+func (h *Handler) invalidateCatalogMetadata(r *http.Request) {
+	if h.svc.cache != nil {
+		_ = h.svc.cache.Del(r.Context(), "cat:metadata")
+	}
 }
 
 func (h *Handler) adminDeleteContentType(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	_ = h.svc.db.WithContext(r.Context()).Model(&models.ContentType{}).Where("id = ?", id).Update("is_active", false).Error
+	h.invalidateCatalogMetadata(r)
 	httpx.OK(w, map[string]any{"deleted": true, "id": id})
 }
 
@@ -268,6 +276,7 @@ func (h *Handler) adminUpsertCategory(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.invalidateCatalogMetadata(r)
 	httpx.OK(w, row)
 }
 
@@ -276,6 +285,7 @@ func (h *Handler) adminDeleteCategory(w http.ResponseWriter, r *http.Request) {
 	if err := h.svc.db.WithContext(r.Context()).Delete(&models.Category{}, id).Error; err != nil {
 		_ = h.svc.db.WithContext(r.Context()).Model(&models.Category{}).Where("id = ?", id).Update("is_active", false).Error
 	}
+	h.invalidateCatalogMetadata(r)
 	httpx.OK(w, map[string]any{"deleted": true, "id": id})
 }
 
@@ -294,12 +304,14 @@ func (h *Handler) adminUpsertGenre(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.invalidateCatalogMetadata(r)
 	httpx.OK(w, row)
 }
 
 func (h *Handler) adminDeleteGenre(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	_ = h.svc.db.WithContext(r.Context()).Delete(&models.Genre{}, id).Error
+	h.invalidateCatalogMetadata(r)
 	httpx.OK(w, map[string]any{"deleted": true, "id": id})
 }
 
@@ -318,6 +330,7 @@ func (h *Handler) adminUpsertLanguage(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.invalidateCatalogMetadata(r)
 	httpx.OK(w, row)
 }
 
@@ -334,6 +347,7 @@ func (h *Handler) adminDeleteLanguage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	h.invalidateCatalogMetadata(r)
 	httpx.OK(w, map[string]any{"deleted": true, "code": code})
 }
 

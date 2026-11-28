@@ -119,7 +119,7 @@ function NavbarContent() {
   const contentTypesQ = useQuery<MainContentType[]>({
     queryKey: ['navbar-content-types'],
     queryFn: async () => {
-      const res = await fetch('/api/v1/content-types');
+      const res = await fetch('/api/v1/content-types', { cache: 'no-store' });
       if (!res.ok) return [];
       const json = await res.json();
       const list = Array.isArray(json?.data)
@@ -129,13 +129,20 @@ function NavbarContent() {
         : Array.isArray(json)
         ? json
         : [];
-      const filtered = list.filter((t: any) => t && (t.slug || t.id) && (t.title || t.name));
+      const filtered = list.filter(
+        (t: any) =>
+          t &&
+          t.isActive !== false &&
+          t.is_active !== false &&
+          (t.slug || t.id) &&
+          (t.title || t.name),
+      );
       try {
         sessionStorage.setItem('maxxpixels.nav.contentTypes', JSON.stringify(filtered));
       } catch {}
       return filtered;
     },
-    initialData: () => {
+    placeholderData: () => {
       if (typeof window === 'undefined') return undefined;
       try {
         const cached = sessionStorage.getItem('maxxpixels.nav.contentTypes');
@@ -146,7 +153,8 @@ function NavbarContent() {
       } catch {}
       return undefined;
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000,
+    refetchOnMount: 'always',
   });
 
   const mainTypes = contentTypesQ.data ?? [];

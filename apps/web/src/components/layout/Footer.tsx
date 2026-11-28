@@ -115,7 +115,7 @@ export default function Footer() {
   const contentTypesQ = useQuery<MainContentType[]>({
     queryKey: ['navbar-content-types'],
     queryFn: async () => {
-      const res = await fetch('/api/v1/content-types');
+      const res = await fetch('/api/v1/content-types', { cache: 'no-store' });
       if (!res.ok) return [];
       const json = await res.json();
       const list = Array.isArray(json?.data)
@@ -125,9 +125,17 @@ export default function Footer() {
         : Array.isArray(json)
         ? json
         : [];
-      return list.filter((t: any) => t && (t.slug || t.id) && (t.title || t.name));
+      return list.filter(
+        (t: any) =>
+          t &&
+          t.isActive !== false &&
+          t.is_active !== false &&
+          (t.slug || t.id) &&
+          (t.title || t.name),
+      );
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000,
+    refetchOnMount: 'always',
   });
 
   const mainTypes = contentTypesQ.data ?? [];

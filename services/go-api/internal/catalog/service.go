@@ -450,7 +450,7 @@ func (s *Service) GetMetadata(ctx context.Context) (map[string]any, error) {
 		g.Go(func() error { return s.db.WithContext(gctx).Where("COALESCE(is_active, TRUE) = TRUE").Order("id ASC").Find(&langs).Error })
 		g.Go(func() error { return s.db.WithContext(gctx).Where("COALESCE(is_active, TRUE) = TRUE").Order("COALESCE(display_order,0) ASC").Find(&categories).Error })
 		g.Go(func() error { return s.db.WithContext(gctx).Order("id ASC").Find(&genres).Error })
-		g.Go(func() error { return s.db.WithContext(gctx).Order("id ASC").Find(&types).Error })
+		g.Go(func() error { return s.db.WithContext(gctx).Where("COALESCE(is_active, TRUE) = TRUE").Order("COALESCE(display_order,0) ASC, id ASC").Find(&types).Error })
 		if err := g.Wait(); err != nil {
 			return nil, err
 		}
