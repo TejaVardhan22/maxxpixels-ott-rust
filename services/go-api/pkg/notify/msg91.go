@@ -82,7 +82,7 @@ func NewMSG91FromDBAndEnv(ctx context.Context, db *gorm.DB) *MSG91Client {
 		}
 	}
 	if client.SenderID == "" {
-		client.SenderID = "MAXXOT"
+		client.SenderID = "MAXXPX"
 	}
 	return client
 }
