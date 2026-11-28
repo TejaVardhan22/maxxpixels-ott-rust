@@ -33,58 +33,56 @@ type MSG91Client struct {
 }
 
 func NewMSG91FromEnv() *MSG91Client {
-	sender := strings.TrimSpace(os.Getenv("MSG91_SENDER_ID"))
-	if sender == "" {
-		sender = "MAXXOT"
-	}
 	return &MSG91Client{
 		AuthKey:    strings.TrimSpace(os.Getenv("MSG91_AUTH_KEY")),
 		TemplateID: strings.TrimSpace(os.Getenv("MSG91_TEMPLATE_ID")),
-		SenderID:   sender,
+		SenderID:   strings.TrimSpace(os.Getenv("MSG91_SENDER_ID")),
 	}
 }
 
-// NewMSG91FromDBAndEnv loads MSG91 credentials from PostgreSQL system_settings first,
-// falling back to environment variables when unset.
+// NewMSG91FromDBAndEnv prefers explicit .env credentials (1:1 with legacy Rust API),
+// falling back to PostgreSQL system_settings for any unset field.
 func NewMSG91FromDBAndEnv(ctx context.Context, db *gorm.DB) *MSG91Client {
 	client := NewMSG91FromEnv()
-	if db == nil {
-		return client
-	}
-	var rows []struct {
-		Key   string `gorm:"column:k"`
-		Value string `gorm:"column:v"`
-	}
-	_ = db.WithContext(ctx).Raw(`
-		SELECT setting_key AS k, COALESCE(setting_value, '') AS v
-		FROM system_settings
-		WHERE LOWER(COALESCE(setting_key, '')) LIKE '%msg91%'
-	`).Scan(&rows).Error
+	if db != nil && (client.AuthKey == "" || client.TemplateID == "" || client.SenderID == "") {
+		var rows []struct {
+			Key   string `gorm:"column:k"`
+			Value string `gorm:"column:v"`
+		}
+		_ = db.WithContext(ctx).Raw(`
+			SELECT setting_key AS k, COALESCE(setting_value, '') AS v
+			FROM system_settings
+			WHERE LOWER(COALESCE(setting_key, '')) LIKE '%msg91%'
+		`).Scan(&rows).Error
 
-	kv := make(map[string]string, len(rows))
-	for _, r := range rows {
-		val := strings.TrimSpace(r.Value)
-		if val == "" || val == "..." || strings.Contains(val, "****") {
-			continue
-		}
-		kv[r.Key] = val
-	}
-	pick := func(keys ...string) string {
-		for _, k := range keys {
-			if v := kv[k]; v != "" {
-				return v
+		kv := make(map[string]string, len(rows))
+		for _, r := range rows {
+			val := strings.TrimSpace(r.Value)
+			if val == "" || val == "..." || strings.Contains(val, "****") {
+				continue
 			}
+			kv[r.Key] = val
 		}
-		return ""
+		pick := func(keys ...string) string {
+			for _, k := range keys {
+				if v := kv[k]; v != "" {
+					return v
+				}
+			}
+			return ""
+		}
+		if client.AuthKey == "" {
+			client.AuthKey = pick("MSG91_AUTH_KEY", "msg91AuthKey", "msg91_auth_key", "msg91auth_key")
+		}
+		if client.TemplateID == "" {
+			client.TemplateID = pick("MSG91_TEMPLATE_ID", "msg91OtpTemplateId", "msg91TemplateId", "msg91_template_id", "msg91template_id")
+		}
+		if client.SenderID == "" {
+			client.SenderID = pick("MSG91_SENDER_ID", "msg91SenderId", "msg91_sender_id", "msg91sender_id")
+		}
 	}
-	if v := pick("MSG91_AUTH_KEY", "msg91AuthKey", "msg91_auth_key", "msg91auth_key"); v != "" {
-		client.AuthKey = v
-	}
-	if v := pick("MSG91_TEMPLATE_ID", "msg91OtpTemplateId", "msg91TemplateId", "msg91_template_id", "msg91template_id"); v != "" {
-		client.TemplateID = v
-	}
-	if v := pick("MSG91_SENDER_ID", "msg91SenderId", "msg91_sender_id", "msg91sender_id"); v != "" {
-		client.SenderID = v
+	if client.SenderID == "" {
+		client.SenderID = "MAXXOT"
 	}
 	return client
 }
@@ -225,6 +223,7 @@ func (c *MSG91Client) postFlow(ctx context.Context, payload map[string]any) bool
 		slog.Warn("MSG91 Flow API error", "status", resp.StatusCode, "body", truncateStr(string(body), 250))
 		return false
 	}
+	slog.Info("MSG91 Flow API response", "status", resp.StatusCode, "body", truncateStr(string(body), 250))
 	return true
 }
 
