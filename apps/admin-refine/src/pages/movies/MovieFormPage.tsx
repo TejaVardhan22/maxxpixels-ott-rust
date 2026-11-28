@@ -36,6 +36,7 @@ import {
 } from "@ant-design/icons";
 import { apiGet, apiPost, apiPut, apiUpload, extractArray } from "../../providers/api";
 import { MediaUpload } from "../../components/MediaUpload";
+import { CalendarDatePicker, CalendarDateTimePicker, TimerPicker } from "../../components/DateTimePickers";
 
 const { Title, Text } = Typography;
 
@@ -185,7 +186,11 @@ export const MovieFormPage: React.FC = () => {
     try {
       const rec = await apiGet<any>(`/admin/movies/${id}`);
       const secs = rec.durationSeconds || (rec.durationMinutes ? rec.durationMinutes * 60 : 0);
-      const durStr = secs ? `${Math.floor(secs / 3600)}h${Math.floor((secs % 3600) / 60)}m` : "";
+      const durStr = secs
+        ? [Math.floor(secs / 3600), Math.floor((secs % 3600) / 60), secs % 60]
+            .map((n) => String(n).padStart(2, "0"))
+            .join(":")
+        : "";
       form.setFieldsValue({
         title: rec.title,
         contentType: rec.contentType || undefined,
@@ -562,12 +567,12 @@ export const MovieFormPage: React.FC = () => {
               <Row gutter={16}>
                 <Col xs={24} md={12}>
                   <Form.Item name="scheduledPublishAt" label="Publish Date & Time *">
-                    <Input type="datetime-local" />
+                    <CalendarDateTimePicker placeholder="Pick publish date & time" />
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={12}>
                   <Form.Item name="expiresAt" label="Auto-Expire / License End (Optional)">
-                    <Input type="datetime-local" />
+                    <CalendarDateTimePicker placeholder="Pick expiry date & time" />
                   </Form.Item>
                 </Col>
               </Row>
@@ -721,7 +726,7 @@ export const MovieFormPage: React.FC = () => {
           <Row gutter={16}>
             <Col xs={24} md={8}>
               <Form.Item name="releaseDate" label="Release Date">
-                <Input type="date" />
+                <CalendarDatePicker placeholder="Select release date" />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
@@ -730,7 +735,7 @@ export const MovieFormPage: React.FC = () => {
                 label="Run Time / Duration"
                 extra={<Text type="secondary">Parsed: <strong>{formatDurationSummary(watchedDuration)}</strong></Text>}
               >
-                <Input placeholder="e.g. 2h40m20s or 02:40:20" />
+                <TimerPicker placeholder="Select duration (HH:MM:SS)" />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
@@ -1021,8 +1026,8 @@ export const MovieFormPage: React.FC = () => {
           </Row>
 
           {watchedStatus !== "SCHEDULED" && (
-            <Form.Item name="expiresAt" label="License Expiry Date (Optional)">
-              <Input type="datetime-local" style={{ maxWidth: 320 }} />
+            <Form.Item name="expiresAt" label="License Expiry Date & Time (Optional)">
+              <CalendarDateTimePicker placeholder="Pick expiry date & time" style={{ maxWidth: 320 }} />
             </Form.Item>
           )}
 
@@ -1117,17 +1122,17 @@ export const MovieFormPage: React.FC = () => {
           <Row gutter={16}>
             <Col xs={24} md={8}>
               <Form.Item name="skipIntroStart" label="Skip Intro Start (HH:MM:SS)">
-                <Input placeholder="00:01:15" />
+                <TimerPicker placeholder="00:01:15" />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
               <Form.Item name="skipIntroEnd" label="Skip Intro End (HH:MM:SS)">
-                <Input placeholder="00:02:40" />
+                <TimerPicker placeholder="00:02:40" />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="skipOutroStart" label="Skip Outro / Credits Start">
-                <Input placeholder="02:35:10" />
+              <Form.Item name="skipOutroStart" label="Skip Outro / Credits Start (HH:MM:SS)">
+                <TimerPicker placeholder="02:35:10" />
               </Form.Item>
             </Col>
             <Col span={24}>
