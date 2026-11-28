@@ -348,6 +348,25 @@ func (s *Service) AdminDeleteMovie(ctx context.Context, id int64) error {
 
 // --- Admin Series, Seasons & Episodes CRUD ---
 
+func (s *Service) ensureSeriesRow(ctx context.Context, contentID int64) int64 {
+	var ser models.Series
+	if s.db.WithContext(ctx).Where("content_id = ?", contentID).First(&ser).Error == nil && ser.ID > 0 {
+		return ser.ID
+	}
+	one := int32(1)
+	ongoing := true
+	ser = models.Series{
+		ContentId:     &contentID,
+		TotalSeasons:  &one,
+		TotalEpisodes: &one,
+		IsOngoing:     &ongoing,
+	}
+	if err := s.db.WithContext(ctx).Create(&ser).Error; err == nil && ser.ID > 0 {
+		return ser.ID
+	}
+	return contentID
+}
+
 func (s *Service) AdminListSeries(ctx context.Context) ([]models.Content, error) {
 	var rows []models.Content
 	err := s.db.WithContext(ctx).Where("UPPER(content_type) = 'SERIES'").Order("id DESC").Find(&rows).Error
@@ -356,19 +375,36 @@ func (s *Service) AdminListSeries(ctx context.Context) ([]models.Content, error)
 
 func (s *Service) AdminCreateSeries(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	payload["contentType"] = "SERIES"
-	return s.AdminCreateMovie(ctx, payload)
+	res, err := s.AdminCreateMovie(ctx, payload)
+	if err != nil {
+		return nil, err
+	}
+	if cid, ok := res["id"].(int64); ok && cid > 0 {
+		_ = s.ensureSeriesRow(ctx, cid)
+	}
+	return res, nil
 }
 
 func (s *Service) AdminListSeasons(ctx context.Context, seriesID int64) ([]models.Season, error) {
+	ids := []int64{seriesID}
+	var ser models.Series
+	if s.db.WithContext(ctx).Where("content_id = ?", seriesID).First(&ser).Error == nil && ser.ID > 0 && ser.ID != seriesID {
+		ids = append(ids, ser.ID)
+	}
 	var rows []models.Season
-	err := s.db.WithContext(ctx).Where("series_id = ?", seriesID).Order("season_number ASC").Find(&rows).Error
+	err := s.db.WithContext(ctx).Where("series_id IN ?", ids).Order("season_number ASC, id ASC").Find(&rows).Error
 	return rows, err
 }
 
 func (s *Service) AdminCreateSeason(ctx context.Context, seriesID int64, payload map[string]any) (*models.Season, error) {
+	actualSeriesID := s.ensureSeriesRow(ctx, seriesID)
 	num := int32Val(payload, "seasonNumber", "season_number")
 	if num <= 0 {
-		num = 1
+		var maxNum int32
+		_ = s.db.WithContext(ctx).Model(&models.Season{}).
+			Where("series_id IN ?", []int64{seriesID, actualSeriesID}).
+			Select("COALESCE(MAX(season_number), 0)").Scan(&maxNum).Error
+		num = maxNum + 1
 	}
 	title := strVal(payload, "title")
 	if title == "" {
@@ -376,64 +412,165 @@ func (s *Service) AdminCreateSeason(ctx context.Context, seriesID int64, payload
 	}
 	now := time.Now().UTC()
 	active := true
+	desc := strVal(payload, "description", "synopsis")
+	rd := strVal(payload, "releaseDate", "release_date")
 	row := models.Season{
-		SeriesId:     seriesID,
+		SeriesId:     actualSeriesID,
 		SeasonNumber: num,
 		Title:        title,
-		Description:  ptrStr(strVal(payload, "description", "synopsis")),
+		Description:  ptrStr(desc),
+		Synopsis:     ptrStr(desc),
 		PosterUrl:    ptrStr(strVal(payload, "posterUrl", "poster_url")),
 		IsActive:     &active,
 		CreatedAt:    &now,
 		UpdatedAt:    &now,
 	}
+	if rd != "" {
+		if t, err := parseFlexibleDate(rd); err == nil {
+			row.ReleaseDate = &t
+			yr := int32(t.Year())
+			row.ReleaseYear = &yr
+		}
+	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
 		return nil, err
 	}
+	s.invalidateCatalogCache(ctx)
 	return &row, nil
 }
 
 func (s *Service) AdminDeleteSeason(ctx context.Context, seasonID int64) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		_ = tx.Where("season_id = ?", seasonID).Delete(&models.Episode{}).Error
 		return tx.Delete(&models.Season{}, seasonID).Error
 	})
+	s.invalidateCatalogCache(ctx)
+	return err
 }
 
 func (s *Service) AdminCreateEpisode(ctx context.Context, seasonID int64, payload map[string]any) (*models.Episode, error) {
 	num := int32Val(payload, "episodeNumber", "episode_number")
 	if num <= 0 {
-		num = 1
+		var maxNum int32
+		_ = s.db.WithContext(ctx).Model(&models.Episode{}).
+			Where("season_id = ?", seasonID).
+			Select("COALESCE(MAX(episode_number), 0)").Scan(&maxNum).Error
+		num = maxNum + 1
 	}
 	title := strVal(payload, "title")
 	if title == "" {
 		title = fmt.Sprintf("Episode %d", num)
 	}
 	now := time.Now().UTC()
-	st := "PUBLISHED"
+	st := strings.ToUpper(strVal(payload, "status"))
+	if st == "" {
+		st = "PUBLISHED"
+	}
+	desc := strVal(payload, "description", "synopsis")
+	vid := strVal(payload, "videoUrl", "video_url", "hlsUrl", "streamUrl", "masterPlaylistUrl")
+	thumb := strVal(payload, "thumbnailUrl", "thumbnail_url", "stillImageUrl")
+	acc := strings.ToUpper(strVal(payload, "accessType", "access_type"))
+	if acc == "" {
+		acc = "SVOD"
+	}
+	freePrev := boolVal(payload, "isFreePreview", "is_free_preview")
+	isPrem := !freePrev && acc != "AVOD" && acc != "FREE"
 	row := models.Episode{
 		SeasonId:       seasonID,
 		EpisodeNumber:  num,
 		Title:          title,
-		Description:    ptrStr(strVal(payload, "description", "synopsis")),
-		VideoUrl:       ptrStr(strVal(payload, "videoUrl", "video_url", "hlsUrl", "streamUrl")),
+		Description:    ptrStr(desc),
+		Synopsis:       ptrStr(desc),
+		VideoUrl:       ptrStr(vid),
 		BunnyVideoGuid: ptrStr(strVal(payload, "bunnyVideoGuid", "bunny_video_guid")),
-		ThumbnailUrl:   ptrStr(strVal(payload, "thumbnailUrl", "thumbnail_url", "stillImageUrl")),
-		StillImageUrl:  ptrStr(strVal(payload, "stillImageUrl", "thumbnailUrl")),
+		ThumbnailUrl:   ptrStr(thumb),
+		StillImageUrl:  ptrStr(thumb),
+		AccessType:     &acc,
+		IsFreePreview:  &freePrev,
+		IsPremium:      &isPrem,
 		Status:         &st,
 		CreatedAt:      &now,
 		UpdatedAt:      &now,
 	}
 	if d := int32Val(payload, "durationSeconds", "duration_seconds"); d > 0 {
 		row.DurationSeconds = &d
+		mins := d / 60
+		row.DurationMinutes = &mins
+	} else if m := int32Val(payload, "durationMinutes", "duration_minutes"); m > 0 {
+		row.DurationMinutes = &m
+		secs := m * 60
+		row.DurationSeconds = &secs
+	}
+	if rd := strVal(payload, "releaseDate", "release_date"); rd != "" {
+		if t, err := parseFlexibleDate(rd); err == nil {
+			row.ReleaseDate = &t
+		}
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
 		return nil, err
 	}
+	s.invalidateCatalogCache(ctx)
 	return &row, nil
 }
 
+func (s *Service) AdminUpdateEpisode(ctx context.Context, episodeID int64, payload map[string]any) (*models.Episode, error) {
+	var ep models.Episode
+	if err := s.db.WithContext(ctx).First(&ep, episodeID).Error; err != nil {
+		return nil, errors.New("episode not found")
+	}
+	upd := map[string]any{"updated_at": time.Now().UTC()}
+	if n := int32Val(payload, "episodeNumber", "episode_number"); n > 0 {
+		upd["episode_number"] = n
+	}
+	if v := strVal(payload, "title"); v != "" {
+		upd["title"] = v
+	}
+	if v := strVal(payload, "description", "synopsis"); v != "" {
+		upd["description"] = v
+		upd["synopsis"] = v
+	}
+	if v := strVal(payload, "videoUrl", "video_url", "hlsUrl", "streamUrl", "masterPlaylistUrl"); v != "" {
+		upd["video_url"] = v
+	}
+	if v := strVal(payload, "bunnyVideoGuid", "bunny_video_guid"); v != "" {
+		upd["bunny_video_guid"] = v
+	}
+	if v := strVal(payload, "thumbnailUrl", "thumbnail_url", "stillImageUrl"); v != "" {
+		upd["thumbnail_url"] = v
+		upd["still_image_url"] = v
+	}
+	if v := strVal(payload, "status"); v != "" {
+		upd["status"] = strings.ToUpper(v)
+	}
+	if v := strVal(payload, "accessType", "access_type"); v != "" {
+		upd["access_type"] = strings.ToUpper(v)
+	}
+	if _, ok := payload["isFreePreview"]; ok {
+		fp := boolVal(payload, "isFreePreview")
+		upd["is_free_preview"] = fp
+		upd["is_premium"] = !fp
+	}
+	if d := int32Val(payload, "durationSeconds", "duration_seconds"); d > 0 {
+		upd["duration_seconds"] = d
+		upd["duration_minutes"] = d / 60
+	}
+	if rd := strVal(payload, "releaseDate", "release_date"); rd != "" {
+		if t, err := parseFlexibleDate(rd); err == nil {
+			upd["release_date"] = t
+		}
+	}
+	if err := s.db.WithContext(ctx).Model(&models.Episode{}).Where("id = ?", episodeID).Updates(upd).Error; err != nil {
+		return nil, err
+	}
+	s.invalidateCatalogCache(ctx)
+	_ = s.db.WithContext(ctx).First(&ep, episodeID).Error
+	return &ep, nil
+}
+
 func (s *Service) AdminDeleteEpisode(ctx context.Context, episodeID int64) error {
-	return s.db.WithContext(ctx).Delete(&models.Episode{}, episodeID).Error
+	err := s.db.WithContext(ctx).Delete(&models.Episode{}, episodeID).Error
+	s.invalidateCatalogCache(ctx)
+	return err
 }
 
 // --- Live Channels & Live Events ---

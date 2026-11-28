@@ -158,6 +158,18 @@ func (h *Handler) adminCreateEpisode(w http.ResponseWriter, r *http.Request) {
 	httpx.Created(w, row, "Episode created")
 }
 
+func (h *Handler) adminUpdateEpisode(w http.ResponseWriter, r *http.Request) {
+	eid, _ := strconv.ParseInt(chi.URLParam(r, "episode_id"), 10, 64)
+	var body map[string]any
+	_ = httpx.DecodeJSON(r, &body)
+	row, err := h.svc.AdminUpdateEpisode(r.Context(), eid, body)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	httpx.OK(w, row, "Episode updated")
+}
+
 func (h *Handler) adminDeleteEpisode(w http.ResponseWriter, r *http.Request) {
 	eid, _ := strconv.ParseInt(chi.URLParam(r, "episode_id"), 10, 64)
 	if err := h.svc.AdminDeleteEpisode(r.Context(), eid); err != nil {

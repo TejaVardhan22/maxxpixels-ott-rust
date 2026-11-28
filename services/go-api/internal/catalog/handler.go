@@ -118,6 +118,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 			adm.Post(pref+"/admin/series/seasons/{season_id}/episodes", h.adminCreateEpisode)
 			adm.Get(pref+"/admin/series/{series_id}/seasons/{season_id}/episodes", h.seasonEpisodes)
 			adm.Post(pref+"/admin/series/{series_id}/seasons/{season_id}/episodes", h.adminCreateEpisode)
+			adm.Put(pref+"/admin/series/{series_id}/seasons/{season_id}/episodes/{episode_id}", h.adminUpdateEpisode)
 			adm.Delete(pref+"/admin/series/{series_id}/seasons/{season_id}/episodes/{episode_id}", h.adminDeleteEpisode)
 
 			adm.Get(pref+"/admin/live/channels", h.listLiveChannels)
