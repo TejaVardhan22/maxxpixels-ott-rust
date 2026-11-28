@@ -88,15 +88,15 @@ export function parseBrandSettings(rows?: any): BrandSettings {
   };
 
   const shortName =
-    pick('app_short_name', 'appShortName', 'app_name', 'appName', 'platform_name', 'platformName') ||
+    pick('appShortName', 'app_short_name', 'appName', 'app_name', 'APP_NAME', 'platformName', 'platform_name') ||
     FALLBACK_BRAND.shortName;
 
   const name =
-    pick('app_short_name', 'appShortName', 'app_name', 'appName', 'platform_name', 'platformName') ||
+    pick('appShortName', 'app_short_name', 'appName', 'app_name', 'APP_NAME', 'platformName', 'platform_name') ||
     FALLBACK_BRAND.name;
 
   const companyName =
-    pick('company_name', 'companyName') || FALLBACK_BRAND.companyName;
+    pick('companyName', 'company_name', 'COMPANY_NAME') || FALLBACK_BRAND.companyName;
 
   const darkLogoUrl = cleanAssetUrl(
     pick('darkLogoUrl', 'dark_logo_url', 'logoUrl', 'logo_url', 'APP_LOGO_URL', 'app_logo'),
@@ -108,19 +108,19 @@ export function parseBrandSettings(rows?: any): BrandSettings {
   const faviconUrl = cleanAssetUrl(pick('faviconUrl', 'favicon_url')) || logoUrl;
 
   const seoTitle =
-    pick('seo_title', 'seoTitle') || `${name} - Stream Movies, Short Films & Web Series`;
+    pick('seoTitle', 'seo_title') || `${name} - Stream Movies, Short Films & Web Series`;
 
   const description =
-    pick('seo_description', 'seoDescription', 'app_description', 'app_desripation') ||
+    pick('seoDescription', 'seo_description', 'appDescription', 'app_description', 'app_desripation') ||
     FALLBACK_BRAND.description;
 
-  const supportEmail = pick('support_email', 'supportEmail') || FALLBACK_BRAND.supportEmail;
-  const supportPhone = pick('support_phone', 'supportPhone') || '';
-  const websiteUrl = pick('website_url', 'websiteUrl') || FALLBACK_BRAND.websiteUrl;
+  const supportEmail = pick('supportEmail', 'support_email', 'SUPPORT_EMAIL') || FALLBACK_BRAND.supportEmail;
+  const supportPhone = pick('supportPhone', 'support_phone', 'SUPPORT_PHONE') || '';
+  const websiteUrl = pick('websiteUrl', 'website_url', 'WEBSITE_URL') || FALLBACK_BRAND.websiteUrl;
   const androidAppUrl =
-    pick('android_app_url', 'androidAppUrl', 'play_store_url', 'playStoreUrl') ||
+    pick('androidAppUrl', 'android_app_url', 'playStoreUrl', 'play_store_url', 'ANDROID_APP_URL') ||
     FALLBACK_BRAND.androidAppUrl;
-  const iosAppUrl = pick('ios_app_url', 'iosAppUrl') || '';
+  const iosAppUrl = pick('iosAppUrl', 'ios_app_url', 'IOS_APP_URL') || '';
 
   return {
     name,

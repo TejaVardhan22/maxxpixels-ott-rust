@@ -202,22 +202,38 @@ func (s *Service) GetPublicSettings(ctx context.Context) (map[string]any, error)
 }
 
 func (s *Service) AdminUpdateSettings(ctx context.Context, updates map[string]string, updatedBy string) error {
-	// Keep legacy snake_case/uppercase branding aliases in sync so web & mobile always see the uploaded logo
-	if v := strings.TrimSpace(updates["logoUrl"]); v != "" {
-		updates["logo_url"] = v
-		updates["app_logo"] = v
-		updates["app_logo_url"] = v
-		updates["APP_LOGO_URL"] = v
+	aliasGroups := [][]string{
+		{"logoUrl", "logo_url", "app_logo", "app_logo_url", "APP_LOGO_URL"},
+		{"darkLogoUrl", "dark_logo_url"},
+		{"faviconUrl", "favicon_url"},
+		{"appName", "app_name", "APP_NAME"},
+		{"appShortName", "app_short_name"},
+		{"companyName", "company_name", "COMPANY_NAME"},
+		{"seoTitle", "seo_title"},
+		{"seoDescription", "seo_description", "app_description"},
+		{"supportEmail", "support_email", "SUPPORT_EMAIL"},
+		{"supportPhone", "support_phone", "SUPPORT_PHONE"},
+		{"supportWhatsapp", "support_whatsapp"},
+		{"supportUrl", "support_url"},
+		{"websiteUrl", "website_url", "WEBSITE_URL"},
+		{"androidAppUrl", "android_app_url", "playStoreUrl", "play_store_url", "ANDROID_APP_URL"},
+		{"iosAppUrl", "ios_app_url", "IOS_APP_URL"},
+		{"facebookUrl", "facebook_url", "FACEBOOK_URL"},
+		{"instagramUrl", "instagram_url", "INSTAGRAM_URL"},
+		{"twitterUrl", "twitter_url", "TWITTER_URL", "xUrl", "x_url"},
+		{"youtubeUrl", "youtube_url", "YOUTUBE_URL"},
+		{"linkedinUrl", "linkedin_url", "LINKEDIN_URL"},
 	}
-	if v := strings.TrimSpace(updates["darkLogoUrl"]); v != "" {
-		updates["dark_logo_url"] = v
-	}
-	if v := strings.TrimSpace(updates["faviconUrl"]); v != "" {
-		updates["favicon_url"] = v
-	}
-	if v := strings.TrimSpace(updates["appName"]); v != "" {
-		updates["app_name"] = v
-		updates["APP_NAME"] = v
+	for _, grp := range aliasGroups {
+		for _, k := range grp {
+			if v, ok := updates[k]; ok {
+				trimmed := strings.TrimSpace(v)
+				for _, alias := range grp {
+					updates[alias] = trimmed
+				}
+				break
+			}
+		}
 	}
 	now := time.Now().UTC()
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
