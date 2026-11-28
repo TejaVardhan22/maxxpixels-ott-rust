@@ -190,19 +190,25 @@ func (c *StorageClient) UploadFile(ctx context.Context, folder, fileName string,
 		return c.saveLocalFallback(safeFolder, uniqueName, data)
 	}
 
-	directCDN := strings.EqualFold(os.Getenv("MEDIA_DIRECT_CDN"), "true")
-	var fullURL string
-	if directCDN && c.CDNURL != "" {
-		fullURL = fmt.Sprintf("%s/%s/%s", c.CDNURL, safeFolder, uniqueName)
-	} else {
-		fullURL = fmt.Sprintf("%s/api/v1/uploads/%s/%s", c.PublicBaseURL, safeFolder, uniqueName)
+	// Return a path-relative URL so it resolves correctly from any origin
+	// (admin refine at port 4200, web app, mobile, etc.). The nginx proxy
+	// routes /api/ to the Go API which serves the media via ServeMedia.
+	mediaURL := fmt.Sprintf("/api/v1/uploads/%s/%s", safeFolder, uniqueName)
+
+	// Also include the absolute URL for consumers that need it (e.g. mobile apps,
+	// email notifications). Prefer the proxy URL so it works through nginx.
+	absURL := fmt.Sprintf("%s/api/v1/uploads/%s/%s", c.PublicBaseURL, safeFolder, uniqueName)
+	if c.PublicBaseURL == "" {
+		absURL = mediaURL
 	}
+
 	return map[string]any{
 		"provider": "BUNNY_STORAGE",
 		"folder":   safeFolder,
 		"fileName": uniqueName,
-		"url":      fullURL,
-		"fileUrl":  fullURL,
+		"url":      mediaURL,
+		"fileUrl":  mediaURL,
+		"absoluteUrl": absURL,
 	}, nil
 }
 
@@ -214,13 +220,18 @@ func (c *StorageClient) saveLocalFallback(safeFolder, uniqueName string, data []
 	if err := os.WriteFile(fmt.Sprintf("%s/%s", dir, uniqueName), data, 0o644); err != nil {
 		return nil, err
 	}
-	fullURL := fmt.Sprintf("%s/api/v1/uploads/%s/%s", c.PublicBaseURL, safeFolder, uniqueName)
+	mediaURL := fmt.Sprintf("/api/v1/uploads/%s/%s", safeFolder, uniqueName)
+	absURL := mediaURL
+	if c.PublicBaseURL != "" {
+		absURL = fmt.Sprintf("%s/api/v1/uploads/%s/%s", c.PublicBaseURL, safeFolder, uniqueName)
+	}
 	return map[string]any{
-		"provider": "LOCAL_STORAGE",
-		"folder":   safeFolder,
-		"fileName": uniqueName,
-		"url":      fullURL,
-		"fileUrl":  fullURL,
+		"provider":     "LOCAL_STORAGE",
+		"folder":       safeFolder,
+		"fileName":     uniqueName,
+		"url":          mediaURL,
+		"fileUrl":      mediaURL,
+		"absoluteUrl":  absURL,
 	}, nil
 }
 

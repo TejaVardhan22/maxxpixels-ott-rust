@@ -56,6 +56,84 @@ interface AdminDashboardMetrics {
   watchEvents24h?: number;
 }
 
+// New interfaces for enhanced business insights
+interface ContentPerformance {
+  rank: number;
+  title: string;
+  contentType: string;
+  totalViews: number;
+  watchHours: number;
+  totalRevenue: number;
+  rating: string;
+}
+
+interface RevenueByContentType {
+  type: string;
+  label: string;
+  revenue: number;
+  percentage: number;
+  color: string;
+}
+
+interface SalesFunnelStep {
+  label: string;
+  conversions: number;
+  rate: number;
+  color: string;
+}
+
+interface GeoPerformance {
+  country: string;
+  code: string;
+  revenue: number;
+  users: number;
+  percentage: number;
+}
+
+// Additional business metrics interfaces
+interface ARPUTrendPoint {
+  label: string;
+  arpu: number;
+  arppu: number;
+  subscribers: number;
+}
+
+interface SubscriptionFunnelStep {
+  label: string;
+  count: number;
+  rate: number;
+  color: string;
+}
+
+interface ContentCompletion {
+  title: string;
+  contentType: string;
+  totalViews: number;
+  completedViews: number;
+  completionRate: number;
+  rating: string;
+}
+
+interface PeakConcurrentData {
+  label: string;
+  concurrent: number;
+  date: string;
+}
+
+interface RevenueByDevice {
+  device: string;
+  revenue: number;
+  percentage: number;
+  color: string;
+}
+
+interface PaymentMethod {
+  label: string;
+  count: number;
+  amount: number;
+  color: string;
+}
+
 @Component({
   selector: 'app-admin-dashboard',
   standalone: true,
@@ -334,6 +412,199 @@ interface AdminDashboardMetrics {
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          <!-- BEST PERFORMING CONTENT -->
+          <div class="section-card best-content-section">
+            <div class="card-header-row">
+              <h3><mat-icon>trending_up</mat-icon> Best Performing Content</h3>
+              <span class="badge-tag">Top by Revenue</span>
+            </div>
+            <div class="best-content-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Title</th>
+                    <th>Type</th>
+                    <th>Views</th>
+                    <th>Watch Hrs</th>
+                    <th>Revenue</th>
+                    <th>Rating</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let item of bestPerformingContent">
+                    <td>{{ item.rank }}</td>
+                    <td>
+                      <div class="title-cell">
+                        <mat-icon>movie</mat-icon>
+                        <span class="item-title">{{ item.title }}</span>
+                      </div>
+                    </td>
+                    <td><span class="badge-type">{{ item.contentType }}</span></td>
+                    <td class="bold-text">{{ item.totalViews | number }}</td>
+                    <td>{{ item.watchHours }} hrs</td>
+                    <td class="revenue-cell">₹{{ item.totalRevenue | number:'1.2-2' }}</td>
+                    <td><span class="rating-tag">{{ item.rating }}</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- REVENUE BY CONTENT TYPE DONUT -->
+          <div class="section-card revenue-by-type-section">
+            <div class="card-header-row">
+              <h3><mat-icon>palette</mat-icon> Revenue by Content Type</h3>
+              <span class="badge-tag">Distribution across portals/categories</span>
+            </div>
+            <div class="donut-container" style="justify-content: flex-start; gap: 16px; flex-wrap: wrap;">
+              <ng-container *ngFor="let item of revenueByContentType; let i = index">
+                <svg viewBox="0 0 120 120" class="donut-svg">
+                  <!-- Outer ring background -->
+                  <circle cx="60" cy="60" r="45" fill="none" stroke="#202030" stroke-width="12" />
+                  
+                  <!-- Dynamic Segment -->
+                  <circle cx="60" cy="60" r="45" fill="none" 
+                          [attr.stroke]="item.color || '#00d2ff'" 
+                          stroke-width="12"
+                          [attr.stroke-dasharray]="getContentDonutArc(item.revenue)"
+                          stroke-linecap="round" />
+
+                  <text x="60" y="50" text-anchor="middle" fill="#ffffff" font-size="16" font-weight="700">
+                    ₹{{ item.revenue | number:'1.0-0' }}
+                  </text>
+                  <text x="60" y="70" text-anchor="middle" fill="#8e8ea0" font-size="9" font-weight="600">
+                    {{ item.percentage }}%
+                  </text>
+                </svg>
+                <div class="donut-legend-row" style="display:flex;flex-direction:column;gap:4px;">
+                  <span class="legend-color-box" style="background: {{ item.color || '#00d2ff' }}"></span>
+                  <span style="font-size:11px;color:#a0a0b0;">{{ item.label }}</span>
+                </div>
+              </ng-container>
+            </div>
+          </div>
+
+          <!-- SALES FUNNEL CONVERSION -->
+          <div class="section-card funnel-section">
+            <div class="card-header-row">
+              <h3><mat-icon>trending_up</mat-icon> Sales Funnel Conversion</h3>
+              <span class="badge-tag">Visitor → Paid Journey</span>
+            </div>
+            <div class="funnel-bars">
+              <div class="funnel-bar" *ngFor="let step of salesFunnel;">
+                <div class="funnel-label">{{ step.label }}</div>
+                <div class="funnel-progress" [style.width]="step.rate + '%'">
+                  <span class="funnel-percent">{{ step.rate }}%</span>
+                </div>
+                <div class="funnel-count">{{ step.conversions | number }} users</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- GEOGRAPHIC PERFORMANCE -->
+          <div class="section-card geo-performance-section">
+            <div class="card-header-row">
+              <h3><mat-icon>public</mat-icon> Geographic Performance</h3>
+              <span class="badge-tag">Top markets by revenue</span>
+            </div>
+            <div class="geo-bars">
+              <div class="geo-bar" *ngFor="let item of geoPerformance">
+                <div class="geo-label">{{ item.country }}</div>
+                <div class="geo-progress" [style.width]="item.percentage + '%'">
+                  <span class="geo-percent">₹{{ item.revenue | number:'1.0-0' }}</span>
+                </div>
+                <div class="geo-count">{{ item.users | number }} users</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ARPU & REVENUE TRENDS -->
+          <!-- ARPU & Revenue Trends (simplified - KPI cards already show ARPU/ARPPU) -->
+          <!-- SUBSCRIPTION FUNNEL -->
+          <div class="section-card funnel-section">
+            <div class="card-header-row">
+              <h3><mat-icon>trending_up</mat-icon> Subscription Funnel</h3>
+              <span class="badge-tag">Visitor → Paid → Renewal Journey</span>
+            </div>
+            <div class="funnel-bars">
+              <div class="funnel-bar" *ngFor="let step of subscriptionFunnel;">
+                <div class="funnel-label">{{ step.label }}</div>
+                <div class="funnel-progress" [style.width]="step.rate + '%'">
+                  <span class="funnel-percent">{{ step.rate }}%</span>
+                </div>
+                <div class="funnel-count">{{ step.count | number }} users</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- CONTENT COMPLETION RATES -->
+          <div class="section-card completion-section">
+            <div class="card-header-row">
+              <h3><mat-icon>fiber_new</mat-icon> Content Completion Rates</h3>
+              <span class="badge-tag">% of viewers who complete watching</span>
+            </div>
+            <div class="completion-bars">
+              <div class="completion-bar" *ngFor="let item of getCompletionData();">
+                <div class="completion-label">{{ item.label }}</div>
+                <div class="completion-progress" [style.width]="item.rate + '%'">
+                  <span class="completion-percent">{{ item.rate }}%</span>
+                </div>
+                <div class="completion-count">{{ item.label.split(' | ')[0] }}: {{ item.rate | number:'1.0-1' }}%</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- REVENUE BY DEVICE -->
+          <div class="section-card device-revenue-section">
+            <div class="card-header-row">
+              <h3><mat-icon>devices</mat-icon> Revenue by Device</h3>
+              <span class="badge-tag">Revenue breakdown across platforms</span>
+            </div>
+            <div class="donut-container" style="justify-content: flex-start; gap: 16px; flex-wrap: wrap;">
+              <ng-container *ngFor="let item of getRevenueByDeviceData();">
+                <svg viewBox="0 0 120 120" class="donut-svg">
+                  <!-- Outer ring background -->
+                  <circle cx="60" cy="60" r="45" fill="none" stroke="#202030" stroke-width="12" />
+                  <!-- Dynamic Segment -->
+                  <circle cx="60" cy="60" r="45" fill="none"
+                          [attr.stroke]="item.color"
+                          stroke-width="12"
+                          [attr.stroke-dasharray]="getContentDonutArc(item.value)"
+                          stroke-linecap="round" />
+                  <text x="60" y="50" text-anchor="middle" fill="#ffffff" font-size="16" font-weight="700">
+                    ₹{{ item.value | number:'1.0-0' }}
+                  </text>
+                  <text x="60" y="70" text-anchor="middle" fill="#8e8ea0" font-size="9" font-weight="600">
+                    {{ item.percentage }}%
+                  </text>
+                </svg>
+                <div class="donut-legend-row" style="display:flex;flex-direction:column;gap:4px;">
+                  <span class="legend-color-box" style="background: {{ item.color }}"></span>
+                  <span style="font-size:11px;color:#a0a0b0;">{{ item.label }}</span>
+                </div>
+              </ng-container>
+            </div>
+          </div>
+
+          <!-- PAYMENT METHODS -->
+          <div class="section-card payment-section">
+            <div class="card-header-row">
+              <h3><mat-icon>payment</mat-icon> Payment Methods</h3>
+              <span class="badge-tag">Distribution of payments</span>
+            </div>
+            <div class="payment-bars">
+              <div class="payment-bar" *ngFor="let item of getPaymentMethodData();">
+                <div class="payment-label">{{ item.label }}</div>
+                <div class="payment-amount">₹{{ item.formatted }}</div>
+                <div class="payment-progress" [style.width]="item.value + '%'">
+                  <span class="payment-percent">{{ item.value }}% of {{ item.formatted }}</span>
+                </div>
+                <div class="payment-count">{{ item.value | number }} transactions</div>
+              </div>
+            </div>
           </div>
 
           <!-- REAL-TIME LIVE STREAMING CONCURRENCY & USER INTERACTION TELEMETRY -->
@@ -1188,6 +1459,265 @@ interface AdminDashboardMetrics {
       }
     }
 
+    /* === ENHANCED BUSINESS INSIGHTS SECTIONS === */
+
+    .best-content-section {
+      border-left: 4px solid #00e676;
+      margin-bottom: 20px;
+    }
+
+    .best-content-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin-top: 12px;
+
+      th { text-align: left; padding: 8px 10px; color: #8e8ea0; border-bottom: 1px solid #28283c; font-weight: 700; }
+      td { padding: 8px 10px; border-bottom: 1px solid #202030; }
+
+      .title-cell {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        .movie-icon { font-size: 14px; width: 14px; height: 14px; color: #00d2ff; }
+        .item-title { font-weight: 700; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+      }
+      .badge-type { background: rgba(26, 76, 216, 0.15); color: #00d2ff; font-size: 10px; padding: 2px 6px; border-radius: 3px; font-weight: 700; }
+      .bold-text { font-weight: 700; color: #ffffff; }
+      .revenue-cell { font-weight: 800; color: #00e676; }
+    }
+
+    .revenue-by-type-section {
+      border-left: 4px solid #ffab00;
+      margin-bottom: 20px;
+    }
+
+    .donut-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: flex-start;
+
+      .donut-svg {
+        width: 80px;
+        height: 80px;
+        transform: rotate(-90deg);
+      }
+
+      .donut-legend-row {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 80px;
+
+        .legend-color-box { width: 10px; height: 10px; border-radius: 3px; }
+        .dev-info { font-size: 11px; color: #a0a0b0; }
+      }
+    }
+
+    .revenue-by-type-section .donut-container {
+      justify-content: flex-start;
+    }
+
+    .funnel-section {
+      border-left: 4px solid #c725a3;
+      margin-bottom: 20px;
+    }
+
+    .funnel-bars {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+
+      .funnel-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        font-size: 12px;
+
+        .funnel-label { color: #ffffff; white-space: nowrap; }
+        .funnel-percent { color: #00e676; font-weight: 700; }
+        .funnel-count { color: #8e8ea0; }
+
+        .funnel-progress {
+          flex: 1;
+          height: 8px;
+          background: #202030;
+          border-radius: 4px;
+          overflow: hidden;
+          margin-left: 8px;
+          & > span {
+            position: absolute;
+            right: 4px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 10px;
+            color: #a0a0b0;
+          }
+        }
+      }
+    }
+
+    .geo-performance-section {
+      border-left: 4px solid #00d2ff;
+      margin-bottom: 20px;
+    }
+
+    .geo-bars {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+
+      .geo-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 0;
+        font-size: 11px;
+
+        .geo-label { color: #ffffff; white-space: nowrap; }
+        .geo-percent { color: #00d2ff; font-weight: 700; }
+        .geo-count { color: #8e8ea0; }
+
+        .geo-progress {
+          flex: 1;
+          height: 6px;
+          background: #202030;
+          border-radius: 3px;
+          overflow: hidden;
+          margin-left: 8px;
+          & > span {
+            position: absolute;
+            right: 4px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 10px;
+            color: #a0a0b0;
+          }
+        }
+      }
+    }
+
+    .arpu-trends-section {
+      border-left: 4px solid #1a4cd8;
+      margin-bottom: 20px;
+    }
+
+    .arpu-line-chart {
+      position: relative;
+      height: 200px;
+      margin-top: 12px;
+    }
+
+    .funnel-section {
+      border-left: 4px solid #c725a3;
+      margin-bottom: 20px;
+    }
+
+    .completion-section {
+      border-left: 4px solid #00e676;
+      margin-bottom: 20px;
+    }
+
+    .completion-bars {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+
+      .completion-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 0;
+        font-size: 11px;
+
+        .completion-label { color: #ffffff; white-space: nowrap; }
+        .completion-percent { color: #00e676; font-weight: 700; }
+        .completion-count { color: #8e8ea0; }
+
+        .completion-progress {
+          flex: 1;
+          height: 6px;
+          background: #202030;
+          border-radius: 3px;
+          overflow: hidden;
+          margin-left: 8px;
+        }
+      }
+    }
+
+    .peak-section {
+      border-left: 4px solid #a855f7;
+      margin-bottom: 20px;
+    }
+
+    .peak-chart {
+      position: relative;
+      height: 200px;
+      margin-top: 12px;
+    }
+
+    .device-revenue-section {
+      border-left: 4px solid #ffab00;
+      margin-bottom: 20px;
+    }
+
+    .donut-container.device-donut {
+      justify-content: flex-start;
+      flex-wrap: wrap;
+      gap: 16px;
+
+      .donut-svg {
+        width: 80px;
+        height: 80px;
+        transform: rotate(-90deg);
+      }
+
+      .donut-legend-row {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 80px;
+
+        .legend-color-box { width: 10px; height: 10px; border-radius: 3px; }
+        .dev-info { font-size: 11px; color: #a0a0b0; }
+      }
+    }
+
+    .payment-section {
+      border-left: 4px solid #ff5722;
+      margin-bottom: 20px;
+    }
+
+    .payment-bars {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+
+      .payment-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 0;
+        font-size: 11px;
+
+        .payment-label { color: #ffffff; white-space: nowrap; }
+        .payment-amount { color: #00e676; font-weight: 700; }
+        .payment-percent { color: #1a4cd8; font-weight: 700; }
+        .payment-count { color: #8e8ea0; }
+
+        .payment-progress {
+          flex: 1;
+          height: 6px;
+          background: #202030;
+          border-radius: 3px;
+          overflow: hidden;
+          margin-left: 8px;
+        }
+      }
+    }
+
     .live-tracking-section {
       margin-top: 24px;
       border: 1px solid rgba(0, 210, 255, 0.2);
@@ -1313,6 +1843,61 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   geoMetrics: any = { topMarkets: [] };
   engagementMetrics: any = { avgSessionDurationMinutes: 0, avgCompletionRate: 0, returningUsers30d: 0, retentionRate30d: 0, bufferRatioPercentage: 0 };
   contentEngagement: any = { byContentType: [], topEngagedTitles: [] };
+
+  // New enhanced business insights data (with sample fallback data for standalone display)
+  bestPerformingContent: ContentPerformance[] = [
+    { rank: 1, title: 'Smoke Test Film', contentType: 'MOVIE', totalViews: 125000, watchHours: 850, totalRevenue: 25000, rating: 'U/A 13+' },
+    { rank: 2, title: 'Sample Series S1', contentType: 'SERIES', totalViews: 98000, watchHours: 1200, totalRevenue: 18500, rating: 'U/A 16+' },
+    { rank: 3, title: 'Premium VOD Content', contentType: 'PREMIUM', totalViews: 72000, watchHours: 450, totalRevenue: 12000, rating: 'A' },
+    { rank: 4, title: 'Live Sports Event', contentType: 'LIVE', totalViews: 150000, watchHours: 2000, totalRevenue: 8500, rating: 'U' },
+    { rank: 5, title: 'Documentary Series', contentType: 'DOCU', totalViews: 45000, watchHours: 600, totalRevenue: 3200, rating: 'U/A 7+' }
+  ];
+
+  revenueByContentType: RevenueByContentType[] = [
+    { type: 'MOVIE', label: 'Movies', revenue: 45000, percentage: 45, color: '#ff5722' },
+    { type: 'SERIES', label: 'Series', revenue: 28000, percentage: 28, color: '#009688' },
+    { type: 'PREMIUM', label: 'Premium/VOD', revenue: 12000, percentage: 12, color: '#ffab00' },
+    { type: 'LIVE', label: 'Live', revenue: 8500, percentage: 9, color: '#e91e63' },
+    { type: 'DOCU', label: 'Documentaries', revenue: 6000, percentage: 6, color: '#607d8b' }
+  ];
+
+  salesFunnel: SalesFunnelStep[] = [];
+
+  geoPerformance: GeoPerformance[] = [];
+
+  // Additional business metrics data (with sample fallback data for standalone display)
+  arpuTrends: ARPUTrendPoint[] = [];
+
+  subscriptionFunnel: SubscriptionFunnelStep[] = [
+    { label: 'Visitors', count: 500000, rate: 100, color: '#1a4cd8' },
+    { label: 'Signups', count: 125000, rate: 25, color: '#c725a3' },
+    { label: 'Paid', count: 45000, rate: 9, color: '#00e676' },
+    { label: 'Renewals', count: 32000, rate: 7, color: '#ffab00' },
+    { label: 'Churn', count: 13000, rate: 3, color: '#a855f7' }
+  ];
+
+  contentCompletion: ContentCompletion[] = [
+    { title: 'Smoke Test Film', contentType: 'MOVIE', totalViews: 125000, completedViews: 89000, completionRate: 71.2, rating: 'U/A 13+' },
+    { title: 'Sample Series S1', contentType: 'SERIES', totalViews: 98000, completedViews: 62000, completionRate: 63.3, rating: 'U/A 16+' },
+    { title: 'Premium VOD Content', contentType: 'PREMIUM', totalViews: 72000, completedViews: 43000, completionRate: 59.7, rating: 'A' },
+    { title: 'Documentary Series', contentType: 'DOCU', totalViews: 45000, completedViews: 36000, completionRate: 80.0, rating: 'U/A 7+' }
+  ];
+
+  peakConcurrent: PeakConcurrentData[] = [];
+
+  revenueByDevice: RevenueByDevice[] = [
+    { device: 'Desktop Web', revenue: 15000, percentage: 45, color: '#00d2ff' },
+    { device: 'Android Mobile', revenue: 12000, percentage: 35, color: '#1a4cd8' },
+    { device: 'Smart TV', revenue: 5000, percentage: 15, color: '#c725a3' },
+    { device: 'iOS / iPad', revenue: 1500, percentage: 5, color: '#e91e63' }
+  ];
+
+  paymentMethods: PaymentMethod[] = [
+    { label: 'Credit/Debit Card', count: 28000, amount: 35000, color: '#00e676' },
+    { label: 'UPI', count: 12000, amount: 12000, color: '#1a4cd8' },
+    { label: 'Digital Wallet', count: 5000, amount: 5000, color: '#ffab00' },
+    { label: 'Net Banking', count: 3000, amount: 3000, color: '#c725a3' }
+  ];
 
   timeSeriesTrends: Record<string, TrendPoint[]> = {
     '7d': [
@@ -1515,6 +2100,110 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
           this.geoMetrics = d.geoMetrics || d.geo_metrics || this.geoMetrics;
           this.engagementMetrics = d.engagementMetrics || d.engagement_metrics || this.engagementMetrics;
           this.contentEngagement = d.contentEngagement || d.content_engagement || this.contentEngagement;
+
+          // New: Best performing content
+          if (d.bestPerformingContent && d.bestPerformingContent.length > 0) {
+            this.bestPerformingContent = d.bestPerformingContent.map((item: any, idx: number) => ({
+              rank: idx + 1,
+              title: item.title || item.name || `Content #${idx + 1}`,
+              contentType: item.contentType || item.type || 'Content',
+              totalViews: item.totalViews || item.views || 0,
+              watchHours: item.watchHours || item.watch_hours || 0,
+              totalRevenue: item.totalRevenue || item.revenue || 0,
+              rating: item.rating || item.maturityRating || 'N/A'
+            }));
+          }
+
+          // New: Revenue by content type
+          if (d.revenueByContentType && d.revenueByContentType.length > 0) {
+            this.revenueByContentType = d.revenueByContentType.map((item: any) => ({
+              type: item.type || item.contentType || 'Unknown',
+              label: item.label || item.type || 'Unknown',
+              revenue: Number(item.revenue) || 0,
+              percentage: Number(item.percentage) || 0,
+              color: item.color || this.getContentTypeColor(item.type || 'unknown')
+            }));
+          }
+
+          // New: Sales funnel steps
+          if (d.salesFunnel && d.salesFunnel.length > 0) {
+            this.salesFunnel = d.salesFunnel.map((item: any) => ({
+              label: item.label || item.step || 'Step',
+              conversions: Number(item.conversions) || 0,
+              rate: Number(item.rate) || 0,
+              color: item.color || this.getFunnelColor(item.index || 0)
+            }));
+          }
+
+          // New: Geographic performance
+          if (d.geoPerformance && d.geoPerformance.length > 0) {
+            this.geoPerformance = d.geoPerformance.map((item: any) => ({
+              country: item.country || item.name || 'Unknown',
+              code: item.code || item.iso2 || 'XX',
+              revenue: Number(item.revenue) || 0,
+              users: Number(item.users) || 0,
+              percentage: Number(item.percentage) || 0
+            }));
+          }
+
+          // New: ARPU & Revenue Trends
+          if (d.arpuTrends && d.arpuTrends.length > 0) {
+            this.arpuTrends = d.arpuTrends.map((item: any, index: number) => ({
+              label: item.label || item.period || 'Month ' + (index + 1),
+              arpu: Number(item.arpu) || 0,
+              arppu: Number(item.arppu) || 0,
+              subscribers: Number(item.subscribers) || 0
+            }));
+          }
+
+          // New: Subscription Funnel
+          if (d.subscriptionFunnel && d.subscriptionFunnel.length > 0) {
+            this.subscriptionFunnel = d.subscriptionFunnel.map((item: any, idx: number) => ({
+              label: item.label || item.step || 'Step ' + (idx + 1),
+              count: Number(item.count) || 0,
+              rate: Number(item.rate) || 0,
+              color: item.color || this.getFunnelColor(idx)
+            }));
+          }
+
+          // New: Content Completion Rates
+          if (d.contentCompletion && d.contentCompletion.length > 0) {
+            this.contentCompletion = d.contentCompletion.map((item: any) => ({
+              title: item.title || 'Content',
+              contentType: item.contentType || 'Content',
+              totalViews: Number(item.totalViews) || 0,
+              completedViews: Number(item.completedViews) || 0,
+              completionRate: Number(item.completionRate) || 0,
+              rating: item.rating || 'N/A'
+            }));
+          }
+
+          // New: Peak Concurrent Users
+          if (d.peakConcurrent && d.peakConcurrent.length > 0) {
+            this.peakConcurrent = d.peakConcurrent.map((item: any) => ({
+              label: item.label || item.date || 'Date',
+              concurrent: Number(item.concurrent) || 0,
+              date: item.date || ''
+            }));
+          }
+
+          // New: Revenue by Device
+          if (d.revenueByDevice && d.revenueByDevice.length > 0) {
+            this.revenueByDevice = d.revenueByDevice.map((item: any) => ({
+              device: item.device || 'Unknown',
+              revenue: Number(item.revenue) || 0,
+              percentage: Number(item.percentage) || 0
+            }));
+          }
+
+          // New: Payment Methods
+          if (d.paymentMethods && d.paymentMethods.length > 0) {
+            this.paymentMethods = d.paymentMethods.map((item: any) => ({
+              label: item.label || item.method || 'Payment',
+              count: Number(item.count) || 0,
+              amount: Number(item.amount) || 0
+            }));
+          }
         }
       },
       error: () => {
@@ -1662,6 +2351,141 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
     }
     const offset = -(priorPercentage / 100) * circumference;
     return offset.toFixed(1);
+  }
+
+  getContentTypeColor(type: string): string {
+    const lower = (type || '').toLowerCase();
+    if (lower.includes('movie') || lower.includes('film')) return '#ff5722';
+    if (lower.includes('series') || lower.includes('tv')) return '#009688';
+    if (lower.includes('premium') || lower.includes('vod')) return '#ffab00';
+    if (lower.includes('live')) return '#e91e63';
+    return '#607d8b';
+  }
+
+  getFunnelColor(index: number): string {
+    const colors = ['#1a4cd8', '#c725a3', '#00e676', '#ffab00', '#a855f7'];
+    return colors[index] || '#607d8b';
+  }
+
+  getARPUColor(arpu: number): string {
+    if (arpu > 500) return '#00e676';
+    if (arpu > 200) return '#ffab00';
+    if (arpu > 100) return '#c725a3';
+    return '#ff5722';
+  }
+
+  getDeviceColor(device: string): string {
+    const lower = (device || '').toLowerCase();
+    if (lower.includes('desktop') || lower.includes('web')) return '#00d2ff';
+    if (lower.includes('mobile') || lower.includes('android') || lower.includes('ios')) return '#1a4cd8';
+    if (lower.includes('tv') || lower.includes('smart')) return '#c725a3';
+    if (lower.includes('ios') || lower.includes('apple')) return '#e91e63';
+    return '#607d8b';
+  }
+
+  getPaymentColor(index: number): string {
+    const colors = ['#00e676', '#1a4cd8', '#ffab00', '#c725a3', '#a855f7'];
+    return colors[index] || '#607d8b';
+  }
+
+  getContentCompletionColor(rate: number): string {
+    if (rate > 80) return '#00e676';
+    if (rate > 60) return '#ffab00';
+    if (rate > 40) return '#c725a3';
+    return '#ff5722';
+  }
+
+  // Chart calculation helpers for ARPU trends
+  getARPULineData(): { label: string; data: Array<{x: number, y: number}> } {
+    const points = this.arpuTrends.map((point, idx) => ({
+      x: idx,
+      y: point.arpu
+    }));
+    return {
+      label: 'ARPU Monthly',
+      data: points
+    };
+  }
+
+  // Chart calculation helpers for subscription funnel
+  getFunnelData(): Array<{label: string, value: number, rate: number, color: string}> {
+    return this.subscriptionFunnel.map(step => ({
+      label: step.label,
+      value: step.count,
+      rate: step.rate,
+      color: step.color || this.getFunnelColor(this.subscriptionFunnel.indexOf(step))
+    }));
+  }
+
+  // Chart calculation helpers for content completion
+  getCompletionData(): Array<{label: string, rate: number, color: string}> {
+    return this.contentCompletion.map(item => ({
+      label: item.title.substring(0, 20) + (item.title.length > 20 ? '...' : ''),
+      rate: item.completionRate,
+      color: this.getContentCompletionColor(item.completionRate)
+    }));
+  }
+
+  // Chart calculation helpers for peak concurrent
+  getPeakConcurrentData(): Array<{label: string, value: number}> {
+    return this.peakConcurrent.map(item => ({
+      label: item.date.substring(0, 10),
+      value: item.concurrent
+    }));
+  }
+
+  // Chart calculation helpers for revenue by device
+  getRevenueByDeviceData(): Array<{label: string, value: number, percentage: number, color: string}> {
+    return this.revenueByDevice.map(item => ({
+      label: item.device,
+      value: item.revenue,
+      percentage: item.percentage,
+      color: item.color || this.getDeviceColor(item.device)
+    }));
+  }
+
+  // Chart calculation helpers for payment methods
+  getPaymentMethodData(): Array<{label: string, value: number, formatted: string, color: string}> {
+    return this.paymentMethods.map(item => ({
+      label: item.label,
+      value: item.count,
+      formatted: '₹' + item.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ','),
+      color: item.color || this.getPaymentColor(this.paymentMethods.indexOf(item))
+    }));
+  }
+
+  getPeakChartOptions(): any {
+    return {
+      plugins: {
+        legend: {
+          display: false
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: 'Users'
+          }
+        },
+        x: {
+          title: {
+            display: true,
+            text: 'Period'
+          }
+        }
+      }
+    };
+  }
+
+  getContentDonutArc(revenue: number): string {
+    const total = this.revenueByContentType.reduce((sum, i) => sum + i.revenue, 0);
+    if (total <= 0) return '0 100';
+    const percentage = Math.min(100, (revenue / total) * 100);
+    const circumference = 314.16; // 2 * pi * 50
+    const filled = (percentage / 100) * circumference;
+    return `${filled.toFixed(1)} ${circumference.toFixed(1)}`;
   }
 
   getUsersTrendLabel(): string {
