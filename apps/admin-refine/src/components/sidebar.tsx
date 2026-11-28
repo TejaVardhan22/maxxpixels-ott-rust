@@ -50,16 +50,12 @@ export const Sidebar: React.FC = () => {
   const navigate = useNavigate();
   const user = getUser();
   const [pendingReviews, setPendingReviews] = useState(0);
-  const [contentTypes, setContentTypes] = useState<{ slug: string; label: string }[]>([]);
 
   useEffect(() => {
     let active = true;
-    const loadDynamicNav = async () => {
+    const loadPending = async () => {
       try {
-        const [subRes, ctRes] = await Promise.all([
-          apiGet("/admin/content/submissions?status=ALL").catch(() => []),
-          apiGet("/admin/content-types").catch(() => []),
-        ]);
+        const subRes = await apiGet("/admin/content/submissions?status=ALL");
         if (!active) return;
         const list = extractArray(subRes);
         const count = list.filter((item: any) => {
@@ -67,24 +63,12 @@ export const Sidebar: React.FC = () => {
           return st === "SUBMITTED" || st === "KYC_SUBMITTED";
         }).length;
         setPendingReviews(count);
-
-        const cts = extractArray(ctRes)
-          .map((c: any) => {
-            const label = c.title || c.name || c.slug || "";
-            const slug = String(c.slug || c.code || c.title || c.name || "")
-              .trim()
-              .toUpperCase()
-              .replace(/[\s-]+/g, "_");
-            return { slug, label };
-          })
-          .filter((c: any) => c.slug && c.label);
-        setContentTypes(cts);
       } catch {
-        // ignore background nav error
+        // ignore background badge error
       }
     };
-    loadDynamicNav();
-    const timer = setInterval(loadDynamicNav, 60000);
+    loadPending();
+    const timer = setInterval(loadPending, 60000);
     return () => {
       active = false;
       clearInterval(timer);
@@ -114,11 +98,6 @@ export const Sidebar: React.FC = () => {
     },
     { key: "/admin/basic-details", label: "Basic Details", icon: <DatabaseOutlined /> },
     { key: "/admin/movies?type=ALL", label: "All Catalog", icon: <AppstoreOutlined /> },
-    ...contentTypes.map((ct) => ({
-      key: `/admin/movies?type=${ct.slug}`,
-      label: ct.label,
-      icon: <VideoCameraOutlined />,
-    })),
     { key: "/admin/series", label: "Series", icon: <PlaySquareOutlined /> },
     { key: "/admin/live", label: "Live TV & Sports", icon: <WifiOutlined /> },
     { type: "divider" },
